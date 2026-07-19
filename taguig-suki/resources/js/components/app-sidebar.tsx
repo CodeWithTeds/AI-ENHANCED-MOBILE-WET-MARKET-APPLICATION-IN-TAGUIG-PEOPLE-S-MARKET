@@ -212,7 +212,7 @@ export function AppSidebar() {
                                                                             : 'text-white/60 hover:text-white hover:bg-white/5'
                                                                     }
                                                                 >
-                                                                    <Link href={child.href} prefetch>
+                                                                    <Link href={child.href}>
                                                                         <span>{child.title}</span>
                                                                     </Link>
                                                                 </SidebarMenuSubButton>

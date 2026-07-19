@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\StallController;
+use App\Http\Controllers\Admin\VendorApprovalController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -22,6 +23,14 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::post('dashboard/vendors/stalls', [StallController::class, 'store'])->name('stalls.store');
     Route::put('dashboard/vendors/stalls/{stall}', [StallController::class, 'update'])->name('stalls.update');
     Route::delete('dashboard/vendors/stalls/{stall}', [StallController::class, 'destroy'])->name('stalls.destroy');
+
+    // Vendor Pending Approval
+    Route::get('dashboard/vendors/pending', [VendorApprovalController::class, 'index'])->name('vendors.pending');
+    Route::post('dashboard/vendors/{vendor}/approve', [VendorApprovalController::class, 'approve'])->name('vendors.approve');
+    Route::post('dashboard/vendors/{vendor}/reject', [VendorApprovalController::class, 'reject'])->name('vendors.reject');
+
+    // Vendor Documents
+    Route::get('dashboard/vendors/documents', [VendorApprovalController::class, 'documents'])->name('vendors.documents');
 });
 
 require __DIR__ . '/settings.php';
