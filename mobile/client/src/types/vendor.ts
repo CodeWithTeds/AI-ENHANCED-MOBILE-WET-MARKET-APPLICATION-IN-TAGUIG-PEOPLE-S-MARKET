@@ -12,7 +12,8 @@ export interface PersonalInfo {
 
 export interface BusinessInfo {
   stallName: string;
-  stallLocation: string;
+  stallId: number | null;
+  sectionId: number | null;
   productCategories: string[];
 }
 
@@ -70,6 +71,26 @@ export interface VendorRegistrationResponse {
   };
 }
 
+// --- Dynamic data from API ---
+
+export interface Section {
+  id: number;
+  name: string;
+  slug: string;
+  color: string | null;
+}
+
+export interface StallOption {
+  id: number;
+  section_id: number | null;
+  section: string;
+  stall_number: string;
+  store_name: string;
+  size: string;
+  monthly_rent: string;
+  description: string | null;
+}
+
 export const PRODUCT_CATEGORIES = [
   'Meat',
   'Fish',
@@ -81,14 +102,4 @@ export const PRODUCT_CATEGORIES = [
   'Dairy',
   'Grains & Rice',
   'Condiments',
-] as const;
-
-export const STALL_LOCATIONS = [
-  'Meat Section',
-  'Fish Section',
-  'Vegetable Section',
-  'Fruit Section',
-  'Dry Goods Section',
-  'Spices Section',
-  'General Section',
 ] as const;

@@ -4,12 +4,12 @@
 
 import { Platform } from 'react-native';
 
-// Android emulator uses 10.0.2.2, iOS simulator uses localhost
-const BASE_URL = Platform.select({
-  android: 'http://10.0.2.2:8000/api/v1',
-  ios: 'http://localhost:8000/api/v1',
-  default: 'http://localhost:8000/api/v1',
-});
+// Your machine's local network IP — used by physical devices and Expo Go.
+// Change this to your computer's LAN IP if it changes.
+const API_HOST = '192.168.1.12';
+const API_PORT = '8080';
+
+const BASE_URL = `http://${API_HOST}:${API_PORT}/api/v1`;
 
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -42,6 +42,7 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // Do NOT set Content-Type for FormData — let fetch set the boundary automatically
     if (!isFormData) {
       headers['Content-Type'] = 'application/json';
     }
@@ -55,14 +56,38 @@ class ApiService {
       config.body = isFormData ? (body as FormData) : JSON.stringify(body);
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, config);
-    const data = await response.json();
+    const url = `${this.baseUrl}${endpoint}`;
 
-    if (!response.ok) {
-      throw new ApiError(data.message || 'Request failed', response.status, data);
+    try {
+      const response = await fetch(url, config);
+      const text = await response.text();
+
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new ApiError(`Invalid JSON response: ${text.substring(0, 200)}`, response.status);
+      }
+
+      if (!response.ok) {
+        const errorData = data as Record<string, unknown>;
+        throw new ApiError(
+          (errorData.message as string) || `Request failed with status ${response.status}`,
+          response.status,
+          errorData
+        );
+      }
+
+      return data as ApiResponse<T>;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      // Network error — log for debugging
+      const message = error instanceof Error ? error.message : 'Unknown network error';
+      console.error(`[API] ${method} ${url} failed:`, message);
+      throw new ApiError(message, 0);
     }
-
-    return data as ApiResponse<T>;
   }
 }
 

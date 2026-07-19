@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Stall;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorDocument;
@@ -29,9 +30,9 @@ class VendorRegistrationController extends Controller
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', Password::min(8)],
 
-            // Business info
+            // Business info — stall_id references a vacant stall from the DB
             'stall_name' => ['required', 'string', 'max:255'],
-            'stall_location' => ['required', 'string', 'max:255'],
+            'stall_id' => ['required', 'exists:stalls,id'],
             'product_categories' => ['required', 'array', 'min:1'],
             'product_categories.*' => ['string'],
 
@@ -41,7 +42,13 @@ class VendorRegistrationController extends Controller
             'valid_id' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ]);
 
-        $result = DB::transaction(function () use ($request) {
+        // Ensure the selected stall is actually vacant
+        $stall = Stall::findOrFail($request->stall_id);
+        if ($stall->status->value !== 'vacant') {
+            return $this->errorResponse('Selected stall is no longer available', 422);
+        }
+
+        $result = DB::transaction(function () use ($request, $stall) {
             // Create user account
             $user = User::create([
                 'name' => $request->full_name,
@@ -50,13 +57,23 @@ class VendorRegistrationController extends Controller
                 'is_admin' => false,
             ]);
 
+            // Build stall location string from actual stall data
+            $stallLocation = "Stall {$stall->stall_number}, {$stall->section}";
+
             // Create vendor profile
             $vendor = Vendor::create([
                 'user_id' => $user->id,
                 'stall_name' => $request->stall_name,
-                'stall_location' => $request->stall_location,
+                'stall_location' => $stallLocation,
                 'product_categories' => $request->product_categories,
                 'status' => 'pending',
+            ]);
+
+            // Reserve the stall for this vendor (mark as occupied)
+            $stall->update([
+                'vendor_id' => $user->id,
+                'store_name' => $request->stall_name,
+                'status' => 'occupied',
             ]);
 
             // Upload documents
@@ -87,12 +104,7 @@ class VendorRegistrationController extends Controller
             ];
         });
 
-        return $this->successResponse('Vendor registered successfully. Awaiting admin approval.', [
-            'access_token' => $result['token'],
-            'token_type' => 'Bearer',
-            'user' => $result['user'],
-            'vendor' => $result['vendor'],
-        ], 201);
+        return $this->successResponse($result, 'Vendor registered successfully. Awaiting admin approval.', 201);
     }
 
     /**
@@ -108,8 +120,6 @@ class VendorRegistrationController extends Controller
             return $this->errorResponse('No vendor profile found', 404);
         }
 
-        return $this->successResponse('Vendor status retrieved', [
-            'vendor' => $vendor,
-        ]);
+        return $this->successResponse($vendor, 'Vendor status retrieved');
     }
 }

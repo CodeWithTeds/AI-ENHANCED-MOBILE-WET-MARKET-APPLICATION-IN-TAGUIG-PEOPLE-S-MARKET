@@ -40,7 +40,8 @@ const initialPersonal: PersonalInfo = {
 
 const initialBusiness: BusinessInfo = {
   stallName: '',
-  stallLocation: '',
+  stallId: null,
+  sectionId: null,
   productCategories: [],
 };
 
@@ -100,10 +101,8 @@ export default function VendorRegistrationScreen() {
           Alert.alert('Registration Failed', error.message);
         }
       } else {
-        Alert.alert(
-          'Connection Error',
-          'Unable to connect to the server. Please check your internet connection and try again.'
-        );
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        Alert.alert('Error', msg);
       }
     } finally {
       setIsSubmitting(false);

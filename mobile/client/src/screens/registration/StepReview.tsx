@@ -51,7 +51,7 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
         </View>
         <View style={styles.card}>
           <InfoRow label="Stall Name" value={data.business.stallName} />
-          <InfoRow label="Location" value={data.business.stallLocation} />
+          <InfoRow label="Stall ID" value={data.business.stallId ? `#${data.business.stallId}` : 'Not selected'} />
           <InfoRow
             label="Categories"
             value={data.business.productCategories.join(', ')}
