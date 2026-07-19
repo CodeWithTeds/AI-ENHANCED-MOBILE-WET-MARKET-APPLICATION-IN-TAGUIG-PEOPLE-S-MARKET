@@ -4,6 +4,7 @@
  */
 
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import type { DocumentUpload } from '@/types/vendor';
 
@@ -34,7 +35,7 @@ export function DocumentUploader({
       {document ? (
         <View style={styles.fileCard}>
           <View style={styles.fileInfo}>
-            <Text style={styles.fileIcon}>📄</Text>
+            <Feather name="file-text" size={20} color={Colors.primary} />
             <Text style={styles.fileName} numberOfLines={1}>
               {document.name}
             </Text>
@@ -45,7 +46,7 @@ export function DocumentUploader({
             accessibilityLabel={`Remove ${label}`}
             accessibilityRole="button"
           >
-            <Text style={styles.removeText}>✕</Text>
+            <Feather name="x" size={14} color={Colors.destructive} />
           </TouchableOpacity>
         </View>
       ) : (
@@ -55,7 +56,7 @@ export function DocumentUploader({
           accessibilityLabel={`Upload ${label}`}
           accessibilityRole="button"
         >
-          <Text style={styles.uploadIcon}>📁</Text>
+          <Feather name="upload-cloud" size={28} color={Colors.primary} />
           <Text style={styles.uploadText}>Tap to upload</Text>
           <Text style={styles.uploadHint}>JPG, PNG, or PDF (max 5MB)</Text>
         </TouchableOpacity>
@@ -96,14 +97,11 @@ const styles = StyleSheet.create({
   uploadError: {
     borderColor: Colors.destructive,
   },
-  uploadIcon: {
-    fontSize: 28,
-    marginBottom: 8,
-  },
   uploadText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.primary,
+    marginTop: 8,
   },
   uploadHint: {
     fontSize: 11,
@@ -124,10 +122,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-  },
-  fileIcon: {
-    fontSize: 20,
-    marginRight: 10,
+    gap: 10,
   },
   fileName: {
     fontSize: 13,
@@ -143,11 +138,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-  },
-  removeText: {
-    fontSize: 14,
-    color: Colors.destructive,
-    fontWeight: '700',
   },
   errorText: {
     fontSize: 12,

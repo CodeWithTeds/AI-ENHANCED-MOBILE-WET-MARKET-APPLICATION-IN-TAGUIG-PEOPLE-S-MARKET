@@ -3,6 +3,7 @@
  */
 
 import { StyleSheet, Text, View } from 'react-native';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/registration/PrimaryButton';
 import { Colors } from '@/constants/colors';
 
@@ -14,7 +15,7 @@ export function SuccessScreen({ onGoHome }: SuccessScreenProps) {
   return (
     <View style={styles.container}>
       <View style={styles.iconWrapper}>
-        <Text style={styles.icon}>🎉</Text>
+        <Feather name="check-circle" size={44} color={Colors.primary} />
       </View>
 
       <Text style={styles.title}>Registration Submitted!</Text>
@@ -105,9 +106,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-  },
-  icon: {
-    fontSize: 40,
   },
   title: {
     fontSize: 24,

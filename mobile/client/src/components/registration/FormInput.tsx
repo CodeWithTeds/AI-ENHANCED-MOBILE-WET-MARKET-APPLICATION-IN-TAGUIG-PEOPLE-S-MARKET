@@ -11,6 +11,7 @@ import {
   View,
   type TextInputProps,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 
 interface FormInputProps extends TextInputProps {
@@ -58,7 +59,11 @@ export function FormInput({
             accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
             accessibilityRole="button"
           >
-            <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
+            <Feather
+              name={showPassword ? 'eye-off' : 'eye'}
+              size={18}
+              color={Colors.textMuted}
+            />
           </TouchableOpacity>
         )}
       </View>
@@ -104,9 +109,6 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     padding: 8,
-  },
-  eyeText: {
-    fontSize: 18,
   },
   errorText: {
     fontSize: 12,

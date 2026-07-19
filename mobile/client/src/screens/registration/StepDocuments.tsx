@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Feather } from '@expo/vector-icons';
 import { DocumentUploader } from '@/components/registration/DocumentUploader';
 import { PrimaryButton } from '@/components/registration/PrimaryButton';
 import { Colors } from '@/constants/colors';
@@ -97,7 +98,7 @@ export function StepDocuments({ data, onNext, onBack }: StepDocumentsProps) {
       </View>
 
       <View style={styles.infoCard}>
-        <Text style={styles.infoIcon}>ℹ️</Text>
+        <Feather name="info" size={16} color={Colors.primary} />
         <Text style={styles.infoText}>
           These documents will be reviewed by the admin for approval. Please
           ensure they are clear and readable.
@@ -187,9 +188,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     gap: 10,
     alignItems: 'flex-start',
-  },
-  infoIcon: {
-    fontSize: 16,
   },
   infoText: {
     fontSize: 13,

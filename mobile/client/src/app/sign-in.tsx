@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { FormInput } from '@/components/registration/FormInput';
 import { PrimaryButton } from '@/components/registration/PrimaryButton';
 import { Colors } from '@/constants/colors';
@@ -82,7 +83,8 @@ export default function SignInScreen() {
                 accessibilityLabel="Go back"
                 accessibilityRole="button"
               >
-                <Text style={styles.backText}>← Back</Text>
+                <Feather name="arrow-left" size={20} color={Colors.primary} />
+                <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
 
               <View style={styles.logoCircle}>
@@ -171,6 +173,9 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingVertical: 8,
     marginBottom: 20,
   },

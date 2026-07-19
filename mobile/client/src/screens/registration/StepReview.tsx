@@ -3,6 +3,7 @@
  */
 
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/registration/PrimaryButton';
 import { Colors } from '@/constants/colors';
 import type { VendorRegistrationData } from '@/types/vendor';
@@ -31,7 +32,10 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
 
       {/* Personal Info Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>👤 Personal Information</Text>
+        <View style={styles.sectionHeader}>
+          <Feather name="user" size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Personal Information</Text>
+        </View>
         <View style={styles.card}>
           <InfoRow label="Full Name" value={data.personal.fullName} />
           <InfoRow label="Phone" value={data.personal.phone} />
@@ -41,7 +45,10 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
 
       {/* Business Info Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🏪 Business Information</Text>
+        <View style={styles.sectionHeader}>
+          <MaterialCommunityIcons name="store" size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Business Information</Text>
+        </View>
         <View style={styles.card}>
           <InfoRow label="Stall Name" value={data.business.stallName} />
           <InfoRow label="Location" value={data.business.stallLocation} />
@@ -54,7 +61,10 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
 
       {/* Documents Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📄 Documents</Text>
+        <View style={styles.sectionHeader}>
+          <Feather name="file-text" size={16} color={Colors.primary} />
+          <Text style={styles.sectionTitle}>Documents</Text>
+        </View>
         <View style={styles.card}>
           <DocumentRow
             label="Business Permit"
@@ -122,7 +132,11 @@ function DocumentRow({
   return (
     <View style={styles.docRow}>
       <View style={styles.docLeft}>
-        <Text style={styles.docStatus}>{uploaded ? '✅' : '❌'}</Text>
+        <Feather
+          name={uploaded ? 'check-circle' : 'x-circle'}
+          size={16}
+          color={uploaded ? Colors.success : Colors.destructive}
+        />
         <Text style={styles.docLabel}>{label}</Text>
       </View>
       {fileName && (
@@ -166,11 +180,16 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 20,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
   sectionTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.text,
-    marginBottom: 10,
   },
   card: {
     backgroundColor: Colors.surface,
@@ -211,9 +230,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  docStatus: {
-    fontSize: 16,
   },
   docLabel: {
     fontSize: 14,
