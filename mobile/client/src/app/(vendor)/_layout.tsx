@@ -1,24 +1,24 @@
 /**
- * Vendor Layout — bottom tab navigation for authenticated vendors.
+ * Vendor Layout — bottom tab navigation matching the reference UI.
  */
 
 import { Tabs } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
-import { Colors } from '@/constants/colors';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function VendorLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: '#1B6B45',
+        tabBarInactiveTintColor: '#9CA3AF',
         tabBarStyle: {
-          backgroundColor: Colors.surface,
-          borderTopColor: Colors.border,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 4,
+          backgroundColor: '#FFFFFF',
+          borderTopColor: '#F3F4F6',
+          borderTopWidth: 1,
+          height: 64,
+          paddingBottom: 10,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -31,7 +31,7 @@ export default function VendorLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="home" size={size} color={color} />
+            <Feather name="home" size={22} color={color} />
           ),
         }}
       />
@@ -40,7 +40,7 @@ export default function VendorLayout() {
         options={{
           title: 'Products',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="package" size={size} color={color} />
+            <Feather name="search" size={22} color={color} />
           ),
         }}
       />
@@ -49,7 +49,7 @@ export default function VendorLayout() {
         options={{
           title: 'Orders',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="clipboard" size={size} color={color} />
+            <MaterialCommunityIcons name="clipboard-text-outline" size={22} color={color} />
           ),
         }}
       />
@@ -58,7 +58,7 @@ export default function VendorLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="user" size={size} color={color} />
+            <Feather name="user" size={22} color={color} />
           ),
         }}
       />
