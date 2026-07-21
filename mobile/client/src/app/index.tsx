@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,6 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather, FontAwesome, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { useAuth } from '@/context/AuthContext';
+import { ApiError } from '@/services/api';
 
 type Tab = 'sign-in' | 'create-account';
 
@@ -106,37 +109,51 @@ export default function LandingScreen() {
 }
 
 function SignInForm() {
-  const [phone, setPhone] = useState('');
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  function handleSignIn() {
+  async function handleSignIn() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Required', 'Please enter your email and password.');
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
+    try {
+      await login({ email: email.trim(), password });
+      router.replace('/(vendor)/dashboard');
+    } catch (error) {
+      if (error instanceof ApiError) {
+        Alert.alert('Login Failed', error.message);
+      } else {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <View style={styles.formSection}>
-      {/* Mobile Number */}
+      {/* Email */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Mobile Number</Text>
+        <Text style={styles.fieldLabel}>Email Address</Text>
         <View style={styles.phoneInputWrapper}>
-          <View style={styles.phonePrefix}>
-            <Text style={styles.phonePrefixFlag}>PH</Text>
-            <Text style={styles.phonePrefixText}>+63</Text>
-            <View style={styles.phoneDivider} />
-          </View>
+          <Feather name="mail" size={18} color={Colors.textMuted} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.phoneInput}
-            placeholder="917 123 4567"
+            placeholder="your@email.com"
             placeholderTextColor={Colors.textMuted}
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            accessibilityLabel="Mobile number"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            accessibilityLabel="Email address"
           />
-          <Feather name="phone" size={18} color={Colors.textMuted} />
         </View>
       </View>
 

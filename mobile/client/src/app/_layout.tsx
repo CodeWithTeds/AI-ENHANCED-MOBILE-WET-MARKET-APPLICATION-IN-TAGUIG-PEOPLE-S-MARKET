@@ -1,23 +1,22 @@
 /**
- * Root Layout — uses Stack navigation (no bottom tabs).
- * Auth screens (landing, sign-in, register) are full-screen.
+ * Root Layout — manages navigation and auth state.
  */
 
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from '@/context/AuthContext';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useEffect(() => {
-    // Hide the splash screen once the layout is mounted
     SplashScreen.hideAsync();
   }, []);
 
   return (
-    <>
+    <AuthProvider>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -28,7 +27,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="sign-in" />
         <Stack.Screen name="vendor-register" />
+        <Stack.Screen name="(vendor)" options={{ animation: 'fade' }} />
       </Stack>
-    </>
+    </AuthProvider>
   );
 }

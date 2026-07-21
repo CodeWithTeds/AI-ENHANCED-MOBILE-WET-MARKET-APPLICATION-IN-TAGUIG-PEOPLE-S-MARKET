@@ -9,7 +9,6 @@ use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorRegistrationController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Http\Request;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
@@ -21,9 +20,7 @@ Route::get('/stalls/vacant', [StallController::class, 'vacantStalls']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    });
+    Route::get('/user', [AuthController::class, 'profile']);
     Route::get('/vendor/status', [VendorRegistrationController::class, 'status']);
 });
 
