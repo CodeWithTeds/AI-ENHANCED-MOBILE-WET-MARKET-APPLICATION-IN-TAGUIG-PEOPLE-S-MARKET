@@ -2,14 +2,9 @@
  * Base API service — handles HTTP communication with the Laravel backend.
  */
 
-import { Platform } from 'react-native';
+import { API_BASE_URL } from '@/config/api';
 
-// Your machine's local network IP — used by physical devices and Expo Go.
-// Change this to your computer's LAN IP if it changes.
-const API_HOST = '192.168.1.12';
-const API_PORT = '8080';
-
-const BASE_URL = `http://${API_HOST}:${API_PORT}/api/v1`;
+const BASE_URL = API_BASE_URL;
 
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

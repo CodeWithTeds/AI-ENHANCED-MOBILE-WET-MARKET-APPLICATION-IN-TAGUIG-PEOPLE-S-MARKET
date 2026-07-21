@@ -3,6 +3,7 @@
  */
 
 import { api, ApiError } from './api';
+import { API_BASE_URL } from '@/config/api';
 import type {
   Section,
   StallOption,
@@ -86,7 +87,7 @@ export async function registerVendor(
   // Use XMLHttpRequest for reliable multipart uploads on Android
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const url = `http://192.168.1.12:8080/api/v1/vendor/register`;
+    const url = `${API_BASE_URL}/vendor/register`;
 
     xhr.open('POST', url);
     xhr.setRequestHeader('Accept', 'application/json');
