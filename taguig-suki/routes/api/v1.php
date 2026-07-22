@@ -22,6 +22,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'profile']);
     Route::get('/vendor/status', [VendorRegistrationController::class, 'status']);
+
+    // Vendor Products CRUD
+    Route::get('/products', [\App\Http\Controllers\Api\ProductController::class, 'index']);
+    Route::post('/products', [\App\Http\Controllers\Api\ProductController::class, 'store']);
+    Route::put('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'update']);
+    Route::delete('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'destroy']);
 });
 
 Route::apiResource('tasks', TaskController::class);
