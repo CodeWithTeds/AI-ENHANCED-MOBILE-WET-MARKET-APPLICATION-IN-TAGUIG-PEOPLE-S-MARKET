@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\StockAdjustmentType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Enum;
 
 class AdjustStockRequest extends FormRequest
 {
@@ -15,11 +17,8 @@ class AdjustStockRequest extends FormRequest
     {
         return [
             'quantity' => ['required', 'integer', 'not_in:0'],
-            'type' => ['required', 'in:restock,sold,returned,spoiled,adjustment,reserved,unreserved,transferred'],
-            'reason' => ['nullable', 'string', 'max:500'],
-            'reference_number' => ['nullable', 'string', 'max:100'],
-            'unit_cost' => ['nullable', 'numeric', 'min:0'],
-            'supplier_name' => ['nullable', 'string', 'max:255'],
+            'type' => ['required', new Enum(StockAdjustmentType::class)],
+            'reason' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -27,7 +26,7 @@ class AdjustStockRequest extends FormRequest
     {
         return [
             'quantity.not_in' => 'Quantity cannot be zero.',
-            'type.in' => 'Invalid stock movement type.',
+            'type' => 'Invalid stock adjustment type.',
         ];
     }
 }

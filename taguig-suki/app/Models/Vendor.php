@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\VendorStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -36,13 +37,23 @@ class Vendor extends Model
         return $this->hasMany(VendorDocument::class);
     }
 
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class);
+    }
+
     public function isApproved(): bool
     {
-        return $this->status === 'approved';
+        return $this->status === VendorStatus::Approved->value;
     }
 
     public function isPending(): bool
     {
-        return $this->status === 'pending';
+        return $this->status === VendorStatus::Pending->value;
     }
 }
