@@ -2,25 +2,33 @@
 
 namespace App\Services;
 
+use App\Enums\StockAdjustmentType;
 use App\Models\Inventory;
 use App\Models\InventoryLog;
 use App\Models\Product;
+use App\Models\User;
 use App\Models\Vendor;
+use App\Repositories\VendorRepositoryInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class InventoryService
 {
-    /**
-     * Get all inventory items for a vendor with product details.
-     */
-    public function getVendorInventory(Vendor $vendor, array $filters = []): Collection
+    public function __construct(
+        private readonly VendorRepositoryInterface $vendorRepository,
+    ) {}
+
+    public function getVendorInventory(User $user, array $filters = []): Collection
     {
+        $vendor = $this->resolveVendor($user);
+
         $query = Inventory::with('product')
             ->forVendor($vendor->id)
             ->orderByDesc('updated_at');
 
-        // Apply filters
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
@@ -35,55 +43,48 @@ class InventoryService
         }
 
         if (!empty($filters['category'])) {
-            $query->whereHas('product', function ($q) use ($filters) {
-                $q->where('category', $filters['category']);
-            });
+            $query->whereHas('product', fn ($q) => $q->where('category', $filters['category']));
         }
 
         if (!empty($filters['search'])) {
             $search = $filters['search'];
-            $query->whereHas('product', function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('category', 'like', "%{$search}%");
-            });
+            $query->whereHas('product', fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('category', 'like', "%{$search}%"));
         }
 
         return $query->get();
     }
 
-    /**
-     * Get inventory summary/dashboard stats for a vendor.
-     */
-    public function getVendorSummary(Vendor $vendor): array
+    public function getVendorSummary(User $user): array
     {
+        $vendor = $this->resolveVendor($user);
         $inventories = Inventory::forVendor($vendor->id)->get();
 
-        $totalProducts = $inventories->count();
-        $totalUnits = $inventories->sum('stock_quantity');
-        $inStock = $inventories->filter(fn ($i) => $i->stock_quantity > $i->reorder_level)->count();
-        $lowStock = $inventories->filter(fn ($i) => $i->isLowStock())->count();
-        $outOfStock = $inventories->filter(fn ($i) => $i->isOutOfStock())->count();
-
-        $totalValue = $inventories->sum(fn ($i) => ($i->cost_price ?? 0) * $i->stock_quantity);
-        $totalSellingValue = $inventories->sum(fn ($i) => $i->selling_price * $i->stock_quantity);
-
         return [
-            'total_products' => $totalProducts,
-            'total_units' => $totalUnits,
-            'in_stock' => $inStock,
-            'low_stock' => $lowStock,
-            'out_of_stock' => $outOfStock,
-            'total_cost_value' => round($totalValue, 2),
-            'total_selling_value' => round($totalSellingValue, 2),
-            'estimated_profit' => round($totalSellingValue - $totalValue, 2),
+            'total_products' => $inventories->count(),
+            'total_units' => $inventories->sum('stock_quantity'),
+            'in_stock' => $inventories->filter(fn ($i) => $i->stock_quantity > $i->reorder_level)->count(),
+            'low_stock' => $inventories->filter(fn ($i) => $i->isLowStock())->count(),
+            'out_of_stock' => $inventories->filter(fn ($i) => $i->isOutOfStock())->count(),
+            'total_cost_value' => round($inventories->sum(fn ($i) => ($i->cost_price ?? 0) * $i->stock_quantity), 2),
+            'total_selling_value' => round($inventories->sum(fn ($i) => $i->selling_price * $i->stock_quantity), 2),
+            'estimated_profit' => round($inventories->sum(fn ($i) => $i->selling_price * $i->stock_quantity) - $inventories->sum(fn ($i) => ($i->cost_price ?? 0) * $i->stock_quantity), 2),
         ];
     }
 
-    /**
-     * Create an inventory record for a product.
-     */
-    public function createInventory(Vendor $vendor, Product $product, array $data): Inventory
+    public function createInventory(User $user, array $data): Inventory
     {
+        $vendor = $this->resolveVendor($user);
+
+        $product = Product::where('id', $data['product_id'])->where('vendor_id', $vendor->id)->first();
+
+        if (!$product) {
+            throw new NotFoundHttpException('Product not found or does not belong to you');
+        }
+
+        if (Inventory::where('product_id', $product->id)->where('vendor_id', $vendor->id)->exists()) {
+            throw new UnprocessableEntityHttpException('Inventory record already exists for this product');
+        }
+
         return DB::transaction(function () use ($vendor, $product, $data) {
             $inventory = Inventory::create([
                 'product_id' => $product->id,
@@ -97,24 +98,28 @@ class InventoryService
                 'status' => $data['status'] ?? 'active',
             ]);
 
-            // Log initial stock
             if (($data['stock_quantity'] ?? 0) > 0) {
                 $this->createLog($inventory, 'initial', $data['stock_quantity'], 'Initial stock entry');
             }
 
-            return $inventory;
+            return $inventory->load('product');
         });
     }
 
-    /**
-     * Update inventory details.
-     */
-    public function updateInventory(Inventory $inventory, array $data): Inventory
+    public function show(User $user, Inventory $inventory): Inventory
     {
+        $this->authorizeInventory($user, $inventory);
+
+        return $inventory->load('product');
+    }
+
+    public function updateInventory(User $user, Inventory $inventory, array $data): Inventory
+    {
+        $this->authorizeInventory($user, $inventory);
+
         return DB::transaction(function () use ($inventory, $data) {
             $inventory->update($data);
 
-            // Sync selling_price to product price
             if (isset($data['selling_price'])) {
                 $inventory->product->update(['price' => $data['selling_price']]);
             }
@@ -123,46 +128,48 @@ class InventoryService
         });
     }
 
-    /**
-     * Adjust stock quantity with audit log.
-     */
-    public function adjustStock(
-        Inventory $inventory,
-        int $quantityChange,
-        string $type,
-        ?string $reason = null,
-        ?string $referenceNumber = null,
-        ?string $performedBy = null
-    ): Inventory {
-        return DB::transaction(function () use ($inventory, $quantityChange, $type, $reason, $referenceNumber, $performedBy) {
-            $newQuantity = max(0, $inventory->stock_quantity + $quantityChange);
+    public function adjustStock(User $user, Inventory $inventory, array $data): Inventory
+    {
+        $this->authorizeInventory($user, $inventory);
 
-            $this->createLog($inventory, $type, $quantityChange, $reason, $referenceNumber, $performedBy);
+        $quantity = (int) $data['quantity'];
+        $type = StockAdjustmentType::from($data['type']);
 
-            $inventory->update([
-                'stock_quantity' => $newQuantity,
-            ]);
+        if ($type->isOutgoing() && $quantity > 0) {
+            $quantity = -$quantity;
+        }
+
+        if ($type->isIncoming() && $quantity < 0) {
+            $quantity = abs($quantity);
+        }
+
+        if ($quantity < 0 && abs($quantity) > $inventory->stock_quantity) {
+            throw new UnprocessableEntityHttpException('Insufficient stock. Current: ' . $inventory->stock_quantity);
+        }
+
+        return DB::transaction(function () use ($inventory, $quantity, $type, $data) {
+            $this->createLog($inventory, $type->value, $quantity, $data['reason'] ?? null);
+
+            $inventory->update(['stock_quantity' => max(0, $inventory->stock_quantity + $quantity)]);
 
             return $inventory->fresh(['product']);
         });
     }
 
-    /**
-     * Get movement history for an inventory item.
-     */
-    public function getHistory(Inventory $inventory, int $limit = 50): Collection
+    public function getHistory(User $user, Inventory $inventory, int $limit = 50): Collection
     {
+        $this->authorizeInventory($user, $inventory);
+
         return InventoryLog::where('inventory_id', $inventory->id)
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
     }
 
-    /**
-     * Get all recent activity logs for a vendor.
-     */
-    public function getVendorLogs(Vendor $vendor, int $days = 7, ?string $type = null): Collection
+    public function getVendorLogs(User $user, int $days = 7, ?string $type = null): Collection
     {
+        $vendor = $this->resolveVendor($user);
+
         $query = InventoryLog::with('product')
             ->forVendor($vendor->id)
             ->recent($days)
@@ -175,32 +182,47 @@ class InventoryService
         return $query->get();
     }
 
-    /**
-     * Create an audit log entry.
-     */
-    private function createLog(
-        Inventory $inventory,
-        string $type,
-        int $quantityChange,
-        ?string $reason = null,
-        ?string $referenceNumber = null,
-        ?string $performedBy = null
-    ): InventoryLog {
-        $quantityBefore = $inventory->stock_quantity;
-        $quantityAfter = max(0, $quantityBefore + $quantityChange);
+    public function deleteInventory(User $user, Inventory $inventory): void
+    {
+        $this->authorizeInventory($user, $inventory);
 
+        $inventory->delete();
+    }
+
+    private function resolveVendor(User $user): Vendor
+    {
+        $vendor = $this->vendorRepository->findByUser($user);
+
+        if (!$vendor) {
+            throw new NotFoundHttpException('Vendor profile not found');
+        }
+
+        return $vendor;
+    }
+
+    private function authorizeInventory(User $user, Inventory $inventory): void
+    {
+        $vendor = $this->resolveVendor($user);
+
+        if ($inventory->vendor_id !== $vendor->id) {
+            throw new AccessDeniedHttpException('Unauthorized');
+        }
+    }
+
+    private function createLog(Inventory $inventory, string $type, int $quantityChange, ?string $reason = null): InventoryLog
+    {
         return InventoryLog::create([
             'inventory_id' => $inventory->id,
             'vendor_id' => $inventory->vendor_id,
             'product_id' => $inventory->product_id,
             'type' => $type,
-            'quantity_before' => $quantityBefore,
+            'quantity_before' => $inventory->stock_quantity,
             'quantity_change' => $quantityChange,
-            'quantity_after' => $quantityAfter,
+            'quantity_after' => max(0, $inventory->stock_quantity + $quantityChange),
             'reason' => $reason,
-            'reference_number' => $referenceNumber,
+            'reference_number' => null,
             'unit_cost' => $inventory->cost_price,
-            'performed_by' => $performedBy,
+            'performed_by' => null,
         ]);
     }
 }

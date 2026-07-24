@@ -27,6 +27,13 @@ class AuthService
         ];
     }
 
+    public function logout(User $user): null
+    {
+        $user->currentAccessToken()->delete();
+
+        return null;
+    }
+
     /**
      * @throws ValidationException
      */

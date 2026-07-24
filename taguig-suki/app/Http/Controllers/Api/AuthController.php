@@ -14,39 +14,25 @@ class AuthController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(
-        private readonly AuthService $authService,
-    ) {}
+    public function __construct(private readonly AuthService $authService) {}
 
     public function register(RegisterRequest $request): JsonResponse
     {
-        return $this->successResponse(
-            $this->authService->register($request->validated()),
-            'User registered successfully',
-            201
-        );
+        return $this->successResponse($this->authService->register($request->validated()), 'User registered successfully', 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
     {
-        return $this->successResponse(
-            $this->authService->login($request->validated()),
-            'Login successful'
-        );
+        return $this->successResponse($this->authService->login($request->validated()), 'Login successful');
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
-
-        return $this->successResponse(null, 'Successfully logged out');
+        return $this->successResponse($this->authService->logout($request->user()), 'Successfully logged out');
     }
 
     public function profile(Request $request): JsonResponse
     {
-        return $this->successResponse(
-            $this->authService->getProfile($request->user()),
-            'Profile retrieved'
-        );
+        return $this->successResponse($this->authService->getProfile($request->user()), 'Profile retrieved');
     }
 }

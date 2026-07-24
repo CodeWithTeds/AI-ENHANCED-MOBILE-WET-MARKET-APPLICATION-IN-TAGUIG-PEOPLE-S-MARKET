@@ -47,9 +47,15 @@ class VendorRegistrationService
         });
     }
 
-    public function getStatus(User $user): ?Vendor
+    public function getStatus(User $user): Vendor
     {
-        return $this->vendorRepository->findByUserWithDocuments($user);
+        $vendor = $this->vendorRepository->findByUserWithDocuments($user);
+
+        if (!$vendor) {
+            throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException('No vendor profile found');
+        }
+
+        return $vendor;
     }
 
     private function createUser(array $data): User
