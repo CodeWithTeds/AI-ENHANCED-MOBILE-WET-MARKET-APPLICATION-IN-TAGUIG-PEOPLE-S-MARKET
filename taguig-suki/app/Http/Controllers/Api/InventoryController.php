@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\AdjustStockRequest;
 use App\Http\Requests\StoreInventoryRequest;
 use App\Http\Requests\UpdateInventoryRequest;
 use App\Models\Inventory;
@@ -34,7 +33,7 @@ class InventoryController extends Controller
             return $this->errorResponse('Vendor profile not found', 404);
         }
 
-        $filters = $request->only(['status', 'stock_status', 'storage_type', 'category', 'search']);
+        $filters = $request->only(['status', 'stock_status', 'category', 'search']);
 
         $inventory = $this->inventoryService->getVendorInventory($vendor, $filters);
 
@@ -115,7 +114,7 @@ class InventoryController extends Controller
 
     /**
      * PUT /inventory/{inventory}
-     * Update inventory details (metadata, pricing, supplier info).
+     * Update inventory details (pricing, stock levels, status).
      */
     public function update(UpdateInventoryRequest $request, Inventory $inventory): JsonResponse
     {
@@ -134,7 +133,7 @@ class InventoryController extends Controller
      * POST /inventory/{inventory}/adjust
      * Adjust stock quantity (restock, sold, spoiled, etc.)
      */
-    public function adjustStock(AdjustStockRequest $request, Inventory $inventory): JsonResponse
+    public function adjustStock(Request $request, Inventory $inventory): JsonResponse
     {
         $vendor = $this->getVendor($request);
 
@@ -142,17 +141,22 @@ class InventoryController extends Controller
             return $this->errorResponse('Unauthorized', 403);
         }
 
-        $data = $request->validated();
-        $quantity = (int) $data['quantity'];
-        $type = $data['type'];
+        $request->validate([
+            'quantity' => ['required', 'integer'],
+            'type' => ['required', 'in:restock,sold,spoiled,adjustment'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $quantity = (int) $request->quantity;
+        $type = $request->type;
 
         // For outgoing types, ensure quantity is negative
-        if (in_array($type, ['sold', 'spoiled', 'reserved', 'transferred']) && $quantity > 0) {
+        if (in_array($type, ['sold', 'spoiled']) && $quantity > 0) {
             $quantity = -$quantity;
         }
 
         // For incoming types, ensure quantity is positive
-        if (in_array($type, ['restock', 'returned', 'unreserved']) && $quantity < 0) {
+        if ($type === 'restock' && $quantity < 0) {
             $quantity = abs($quantity);
         }
 
@@ -164,22 +168,11 @@ class InventoryController extends Controller
             );
         }
 
-        // Update supplier if provided with restock
-        if ($type === 'restock' && !empty($data['supplier_name'])) {
-            $inventory->update(['supplier_name' => $data['supplier_name']]);
-        }
-
-        if ($type === 'restock' && !empty($data['unit_cost'])) {
-            $inventory->update(['cost_price' => $data['unit_cost']]);
-        }
-
         $updated = $this->inventoryService->adjustStock(
             $inventory,
             $quantity,
             $type,
-            $data['reason'] ?? null,
-            $data['reference_number'] ?? null,
-            $request->user()->name,
+            $request->reason,
         );
 
         return $this->successResponse($updated->load('product'), 'Stock adjusted successfully');

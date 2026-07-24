@@ -15,7 +15,6 @@ class Product extends Model
         'category',
         'price',
         'unit',
-        'stock_quantity',
         'image',
         'is_available',
     ];
@@ -24,7 +23,6 @@ class Product extends Model
     {
         return [
             'price' => 'decimal:2',
-            'stock_quantity' => 'integer',
             'is_available' => 'boolean',
         ];
     }
@@ -37,15 +35,5 @@ class Product extends Model
     public function inventory(): HasOne
     {
         return $this->hasOne(Inventory::class);
-    }
-
-    public function isLowStock(): bool
-    {
-        return $this->stock_quantity <= 5 && $this->stock_quantity > 0;
-    }
-
-    public function isOutOfStock(): bool
-    {
-        return $this->stock_quantity === 0;
     }
 }

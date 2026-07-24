@@ -30,14 +30,8 @@ class InventoryService
                 'low_stock' => $query->lowStock(),
                 'out_of_stock' => $query->outOfStock(),
                 'in_stock' => $query->where('stock_quantity', '>', DB::raw('reorder_level')),
-                'expiring' => $query->expiringSoon(),
-                'expired' => $query->expired(),
                 default => null,
             };
-        }
-
-        if (!empty($filters['storage_type'])) {
-            $query->where('storage_type', $filters['storage_type']);
         }
 
         if (!empty($filters['category'])) {
@@ -69,9 +63,6 @@ class InventoryService
         $inStock = $inventories->filter(fn ($i) => $i->stock_quantity > $i->reorder_level)->count();
         $lowStock = $inventories->filter(fn ($i) => $i->isLowStock())->count();
         $outOfStock = $inventories->filter(fn ($i) => $i->isOutOfStock())->count();
-        $expiringSoon = $inventories->filter(fn ($i) => $i->isExpiringSoon())->count();
-        $expired = $inventories->filter(fn ($i) => $i->isExpired())->count();
-        $unavailable = $inventories->filter(fn ($i) => !$i->is_available)->count();
 
         $totalValue = $inventories->sum(fn ($i) => ($i->cost_price ?? 0) * $i->stock_quantity);
         $totalSellingValue = $inventories->sum(fn ($i) => $i->selling_price * $i->stock_quantity);
@@ -82,9 +73,6 @@ class InventoryService
             'in_stock' => $inStock,
             'low_stock' => $lowStock,
             'out_of_stock' => $outOfStock,
-            'expiring_soon' => $expiringSoon,
-            'expired' => $expired,
-            'unavailable' => $unavailable,
             'total_cost_value' => round($totalValue, 2),
             'total_selling_value' => round($totalSellingValue, 2),
             'estimated_profit' => round($totalSellingValue - $totalValue, 2),
@@ -101,24 +89,12 @@ class InventoryService
                 'product_id' => $product->id,
                 'vendor_id' => $vendor->id,
                 'stock_quantity' => $data['stock_quantity'] ?? 0,
-                'reserved_quantity' => 0,
                 'reorder_level' => $data['reorder_level'] ?? 5,
                 'max_stock_level' => $data['max_stock_level'] ?? null,
-                'is_available' => $data['is_available'] ?? true,
-                'status' => $data['status'] ?? 'active',
-                'batch_number' => $data['batch_number'] ?? null,
-                'expiry_date' => $data['expiry_date'] ?? null,
-                'harvest_date' => $data['harvest_date'] ?? null,
-                'source_location' => $data['source_location'] ?? null,
-                'storage_type' => $data['storage_type'] ?? 'ambient',
-                'weight_per_unit' => $data['weight_per_unit'] ?? null,
                 'cost_price' => $data['cost_price'] ?? null,
                 'selling_price' => $data['selling_price'] ?? $product->price,
                 'markup_percentage' => $data['markup_percentage'] ?? null,
-                'supplier_name' => $data['supplier_name'] ?? null,
-                'supplier_contact' => $data['supplier_contact'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'last_restocked_at' => ($data['stock_quantity'] ?? 0) > 0 ? now() : null,
+                'status' => $data['status'] ?? 'active',
             ]);
 
             // Log initial stock
@@ -126,29 +102,19 @@ class InventoryService
                 $this->createLog($inventory, 'initial', $data['stock_quantity'], 'Initial stock entry');
             }
 
-            // Sync stock_quantity back to products table
-            $product->update([
-                'stock_quantity' => $data['stock_quantity'] ?? 0,
-                'is_available' => $data['is_available'] ?? true,
-            ]);
-
             return $inventory;
         });
     }
 
     /**
-     * Update inventory details (non-stock fields).
+     * Update inventory details.
      */
     public function updateInventory(Inventory $inventory, array $data): Inventory
     {
         return DB::transaction(function () use ($inventory, $data) {
             $inventory->update($data);
 
-            // Sync availability to product
-            if (isset($data['is_available'])) {
-                $inventory->product->update(['is_available' => $data['is_available']]);
-            }
-
+            // Sync selling_price to product price
             if (isset($data['selling_price'])) {
                 $inventory->product->update(['price' => $data['selling_price']]);
             }
@@ -175,55 +141,10 @@ class InventoryService
 
             $inventory->update([
                 'stock_quantity' => $newQuantity,
-                'last_restocked_at' => $quantityChange > 0 ? now() : $inventory->last_restocked_at,
             ]);
-
-            // Sync to products table
-            $inventory->product->update(['stock_quantity' => $newQuantity]);
 
             return $inventory->fresh(['product']);
         });
-    }
-
-    /**
-     * Restock a product (bulk add).
-     */
-    public function restock(
-        Inventory $inventory,
-        int $quantity,
-        ?float $unitCost = null,
-        ?string $supplier = null,
-        ?string $reason = null
-    ): Inventory {
-        return DB::transaction(function () use ($inventory, $quantity, $unitCost, $supplier, $reason) {
-            if ($unitCost) {
-                $inventory->update(['cost_price' => $unitCost]);
-            }
-
-            if ($supplier) {
-                $inventory->update(['supplier_name' => $supplier]);
-            }
-
-            return $this->adjustStock(
-                $inventory,
-                $quantity,
-                'restock',
-                $reason ?? 'Restock delivery',
-            );
-        });
-    }
-
-    /**
-     * Mark stock as spoiled/wasted (common in wet markets).
-     */
-    public function markSpoiled(Inventory $inventory, int $quantity, ?string $reason = null): Inventory
-    {
-        return $this->adjustStock(
-            $inventory,
-            -abs($quantity),
-            'spoiled',
-            $reason ?? 'Product spoiled/expired',
-        );
     }
 
     /**

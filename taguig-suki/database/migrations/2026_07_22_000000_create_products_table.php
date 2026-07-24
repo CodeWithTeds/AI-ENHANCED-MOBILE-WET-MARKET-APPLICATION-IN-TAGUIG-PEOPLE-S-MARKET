@@ -16,7 +16,6 @@ return new class extends Migration
             $table->string('category'); // meat, fish, vegetables, fruits, spices, etc.
             $table->decimal('price', 10, 2);
             $table->string('unit')->default('kg'); // kg, pcs, bundle, pack
-            $table->integer('stock_quantity')->default(0);
             $table->string('image')->nullable();
             $table->boolean('is_available')->default(true);
             $table->timestamps();

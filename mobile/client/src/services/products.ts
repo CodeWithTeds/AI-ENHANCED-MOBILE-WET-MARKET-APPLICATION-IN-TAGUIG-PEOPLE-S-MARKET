@@ -14,7 +14,6 @@ export interface Product {
   category: string;
   price: string;
   unit: string;
-  stock_quantity: number;
   image: string | null;
   is_available: boolean;
   created_at: string;
@@ -27,7 +26,6 @@ export interface CreateProductData {
   category: string;
   price: number;
   unit: string;
-  stock_quantity: number;
   image?: { uri: string; name: string; type: string };
   is_available?: boolean;
 }
@@ -62,7 +60,6 @@ export async function createProduct(data: CreateProductData): Promise<Product> {
   formData.append('category', data.category);
   formData.append('price', String(data.price));
   formData.append('unit', data.unit);
-  formData.append('stock_quantity', String(data.stock_quantity));
   if (data.is_available !== undefined) {
     formData.append('is_available', data.is_available ? '1' : '0');
   }
@@ -125,7 +122,6 @@ export async function updateProduct(id: number, data: UpdateProductData): Promis
   if (data.category) formData.append('category', data.category);
   if (data.price !== undefined) formData.append('price', String(data.price));
   if (data.unit) formData.append('unit', data.unit);
-  if (data.stock_quantity !== undefined) formData.append('stock_quantity', String(data.stock_quantity));
   if (data.is_available !== undefined) formData.append('is_available', data.is_available ? '1' : '0');
 
   formData.append('image', {

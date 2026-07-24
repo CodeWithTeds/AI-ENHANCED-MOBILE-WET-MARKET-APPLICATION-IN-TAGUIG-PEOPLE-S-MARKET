@@ -131,14 +131,7 @@ export default function ProductsScreen() {
       result = result.filter((p) => filters.categories.includes(p.category));
     }
 
-    // Stock status filter
-    if (filters.stockStatus === 'out_of_stock') {
-      result = result.filter((p) => p.stock_quantity === 0);
-    } else if (filters.stockStatus === 'low_stock') {
-      result = result.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= 5);
-    } else if (filters.stockStatus === 'in_stock') {
-      result = result.filter((p) => p.stock_quantity > 5);
-    }
+    // Stock status filter - removed, stock is managed in inventory now
 
     // Availability filter
     if (filters.availability === 'available') {
@@ -178,10 +171,10 @@ export default function ProductsScreen() {
         result.sort((a, b) => Number(b.price) - Number(a.price));
         break;
       case 'stock_low':
-        result.sort((a, b) => a.stock_quantity - b.stock_quantity);
+        result.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case 'stock_high':
-        result.sort((a, b) => b.stock_quantity - a.stock_quantity);
+        result.sort((a, b) => b.name.localeCompare(a.name));
         break;
     }
 
@@ -446,20 +439,6 @@ function ProductCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const stockColor =
-    product.stock_quantity === 0
-      ? '#DC2626'
-      : product.stock_quantity <= 5
-      ? '#F97316'
-      : '#1B6B45';
-
-  const stockLabel =
-    product.stock_quantity === 0
-      ? 'Out of stock'
-      : product.stock_quantity <= 5
-      ? 'Low stock'
-      : `${product.stock_quantity} in stock`;
-
   return (
     <View style={styles.card}>
       {/* Image */}
@@ -477,11 +456,6 @@ function ProductCard({
             <Text style={styles.unavailableText}>Unavailable</Text>
           </View>
         )}
-        {/* Stock badge */}
-        <View style={[styles.stockBadge, { backgroundColor: `${stockColor}20` }]}>
-          <View style={[styles.stockDot, { backgroundColor: stockColor }]} />
-          <Text style={[styles.stockText, { color: stockColor }]}>{stockLabel}</Text>
-        </View>
       </View>
 
       {/* Info */}
@@ -776,7 +750,6 @@ function ProductFormModal({
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState('');
   const [unit, setUnit] = useState('kg');
-  const [stock, setStock] = useState('');
   const [imageFile, setImageFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -787,7 +760,6 @@ function ProductFormModal({
       setCategory(product.category);
       setPrice(String(product.price));
       setUnit(product.unit);
-      setStock(String(product.stock_quantity));
       setImageFile(null);
     } else {
       setName('');
@@ -795,7 +767,6 @@ function ProductFormModal({
       setCategory('');
       setPrice('');
       setUnit('kg');
-      setStock('');
       setImageFile(null);
     }
   }, [product, visible]);
@@ -825,8 +796,8 @@ function ProductFormModal({
   }
 
   async function handleSubmit() {
-    if (!name.trim() || !category || !price || !stock) {
-      Alert.alert('Required', 'Please fill in name, category, price, and stock.');
+    if (!name.trim() || !category || !price) {
+      Alert.alert('Required', 'Please fill in name, category, and price.');
       return;
     }
 
@@ -837,7 +808,6 @@ function ProductFormModal({
       category,
       price: parseFloat(price),
       unit,
-      stock_quantity: parseInt(stock, 10),
       image: imageFile ?? undefined,
     });
     setSaving(false);
@@ -954,19 +924,6 @@ function ProductFormModal({
                 ))}
               </View>
             </View>
-          </View>
-
-          {/* Stock */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Stock Quantity <Text style={styles.req}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 50"
-              value={stock}
-              onChangeText={setStock}
-              keyboardType="number-pad"
-              placeholderTextColor="#9CA3AF"
-            />
           </View>
 
           {/* Submit */}

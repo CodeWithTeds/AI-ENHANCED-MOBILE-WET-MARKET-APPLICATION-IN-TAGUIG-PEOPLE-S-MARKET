@@ -48,12 +48,11 @@ class ProductController extends Controller
             'category' => ['required', 'string', 'max:100'],
             'price' => ['required', 'numeric', 'min:0'],
             'unit' => ['required', 'string', 'max:50'],
-            'stock_quantity' => ['required', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:3072'],
             'is_available' => ['nullable', 'boolean'],
         ]);
 
-        $data = $request->only(['name', 'description', 'category', 'price', 'unit', 'stock_quantity', 'is_available']);
+        $data = $request->only(['name', 'description', 'category', 'price', 'unit', 'is_available']);
         $data['vendor_id'] = $vendor->id;
 
         if ($request->hasFile('image')) {
@@ -82,12 +81,11 @@ class ProductController extends Controller
             'category' => ['sometimes', 'string', 'max:100'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'unit' => ['sometimes', 'string', 'max:50'],
-            'stock_quantity' => ['sometimes', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:3072'],
             'is_available' => ['nullable', 'boolean'],
         ]);
 
-        $data = $request->only(['name', 'description', 'category', 'price', 'unit', 'stock_quantity', 'is_available']);
+        $data = $request->only(['name', 'description', 'category', 'price', 'unit', 'is_available']);
 
         if ($request->hasFile('image')) {
             $data['image'] = $request->file('image')->store("products/{$vendor->id}", 'public');
