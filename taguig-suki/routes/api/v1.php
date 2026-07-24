@@ -5,6 +5,7 @@
  */
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorRegistrationController;
@@ -28,6 +29,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products', [\App\Http\Controllers\Api\ProductController::class, 'store']);
     Route::put('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'update']);
     Route::delete('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'destroy']);
+
+    // Vendor Inventory Management
+    Route::get('/inventory', [InventoryController::class, 'index']);
+    Route::get('/inventory/summary', [InventoryController::class, 'summary']);
+    Route::get('/inventory/logs', [InventoryController::class, 'logs']);
+    Route::post('/inventory', [InventoryController::class, 'store']);
+    Route::get('/inventory/{inventory}', [InventoryController::class, 'show']);
+    Route::put('/inventory/{inventory}', [InventoryController::class, 'update']);
+    Route::post('/inventory/{inventory}/adjust', [InventoryController::class, 'adjustStock']);
+    Route::get('/inventory/{inventory}/history', [InventoryController::class, 'history']);
+    Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy']);
 });
 
 Route::apiResource('tasks', TaskController::class);

@@ -40,7 +40,16 @@ export default function VendorLayout() {
         options={{
           title: 'Products',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="search" size={22} color={color} />
+            <Feather name="shopping-bag" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="inventory"
+        options={{
+          title: 'Inventory',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="package" size={22} color={color} />
           ),
         }}
       />
