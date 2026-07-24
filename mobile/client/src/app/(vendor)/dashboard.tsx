@@ -1,181 +1,144 @@
 /**
- * Vendor Dashboard — same design language as reference UI (green header, cards, etc.)
- * but with vendor-specific data: sales, orders, inventory, products.
+ * Vendor Dashboard — fullscreen single-view layout.
+ * Everything fits on one screen, no scrolling needed.
  */
 
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 
 export default function VendorDashboard() {
-  const { vendor, user } = useAuth();
+  const { vendor } = useAuth();
   const greeting = getGreeting();
 
   return (
     <View style={styles.screen}>
-      {/* Green Header */}
+      {/* Header */}
       <View style={styles.headerBg}>
-        <SafeAreaView edges={['top']}>
+        <SafeAreaView edges={['top']} style={styles.safeHeader}>
           <View style={styles.headerContent}>
-            {/* Top row */}
             <View style={styles.headerTopRow}>
               <View>
                 <View style={styles.locationRow}>
-                  <Ionicons name="location-sharp" size={12} color="#F97316" />
+                  <Ionicons name="location-sharp" size={11} color="#F97316" />
                   <Text style={styles.locationLabel}>Your Stall</Text>
                 </View>
                 <Text style={styles.marketName}>{vendor?.stall_name ?? 'My Store'}</Text>
               </View>
               <TouchableOpacity style={styles.notifButton} accessibilityLabel="Notifications">
-                <Feather name="bell" size={20} color="#FFFFFF" />
+                <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
                 <View style={styles.notifDot} />
               </TouchableOpacity>
             </View>
-
-            {/* Greeting */}
             <Text style={styles.greetingText}>{greeting}! 🇵🇭</Text>
             <Text style={styles.headline}>How's business today?</Text>
-
-            {/* Search */}
-            <View style={styles.searchBar}>
-              <Feather name="search" size={18} color="#9CA3AF" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search products, orders..."
-                placeholderTextColor="#9CA3AF"
-              />
-              <TouchableOpacity style={styles.searchAiButton}>
-                <MaterialCommunityIcons name="filter-variant" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
           </View>
         </SafeAreaView>
       </View>
 
-      {/* Content */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Quick Stats Row */}
+      {/* Body — fills remaining space */}
+      <View style={styles.body}>
+        {/* Today's Overview */}
         <Text style={styles.sectionTitle}>Today's Overview</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.statsRow}
-        >
-          <QuickStatCard icon="trending-up" label="Sales" value="₱0" color="#1B6B45" bgColor="#DCFCE7" />
-          <QuickStatCard icon="clock" label="Pending" value="0" color="#F97316" bgColor="#FFF7ED" />
-          <QuickStatCard icon="package" label="Products" value="0" color="#2563EB" bgColor="#DBEAFE" />
-          <QuickStatCard icon="alert-triangle" label="Low Stock" value="0" color="#DC2626" bgColor="#FEE2E2" />
-        </ScrollView>
 
-        {/* Sales Overview */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.fireEmoji}>💰</Text>
-            <Text style={styles.sectionTitle}>Sales Overview</Text>
+        {/* Stats 2x2 Grid */}
+        <View style={styles.statsGrid}>
+          <View style={styles.statsRow}>
+            <StatCard icon="trending-up-outline" label="Sales" value="₱0" color="#1B6B45" bgColor="#DCFCE7" />
+            <StatCard icon="time-outline" label="Pending" value="0" color="#F97316" bgColor="#FFF7ED" />
           </View>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>See all &gt;</Text>
-          </TouchableOpacity>
+          <View style={styles.statsRow}>
+            <StatCard icon="cube-outline" label="Products" value="0" color="#2563EB" bgColor="#DBEAFE" />
+            <StatCard icon="warning-outline" label="Low Stock" value="0" color="#DC2626" bgColor="#FEE2E2" />
+          </View>
         </View>
 
-        <View style={styles.salesCards}>
-          <View style={styles.salesCard}>
-            <View style={[styles.salesIcon, { backgroundColor: '#DCFCE7' }]}>
-              <Feather name="dollar-sign" size={20} color="#1B6B45" />
+        {/* Sales — compressed inline */}
+        <View style={styles.salesSection}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.titleRow}>
+              <Text style={styles.emoji}>💰</Text>
+              <Text style={styles.subTitle}>Sales</Text>
             </View>
-            <Text style={styles.salesValue}>₱0.00</Text>
-            <Text style={styles.salesLabel}>Today's Revenue</Text>
+            <TouchableOpacity>
+              <Text style={styles.seeAll}>See all</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.salesCard}>
-            <View style={[styles.salesIcon, { backgroundColor: '#DBEAFE' }]}>
-              <Feather name="shopping-bag" size={20} color="#2563EB" />
-            </View>
-            <Text style={styles.salesValue}>0</Text>
-            <Text style={styles.salesLabel}>Orders Completed</Text>
+          <View style={styles.salesRow}>
+            <SalesItem icon="cash-outline" value="₱0.00" label="Revenue" bgColor="#DCFCE7" color="#1B6B45" />
+            <SalesItem icon="bag-check-outline" value="0" label="Completed" bgColor="#DBEAFE" color="#2563EB" />
+            <SalesItem icon="people-outline" value="0" label="Customers" bgColor="#FFF7ED" color="#F97316" />
           </View>
         </View>
 
         {/* Recent Orders */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.fireEmoji}>📋</Text>
-            <Text style={styles.sectionTitle}>Recent Orders</Text>
+        <View style={styles.ordersSection}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.titleRow}>
+              <Text style={styles.emoji}>📋</Text>
+              <Text style={styles.subTitle}>Recent Orders</Text>
+            </View>
+            <TouchableOpacity>
+              <Text style={styles.seeAll}>View all</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>View all &gt;</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.emptyCard}>
-          <Feather name="inbox" size={36} color="#D1D5DB" />
-          <Text style={styles.emptyTitle}>No orders yet</Text>
-          <Text style={styles.emptySubtext}>
-            New customer orders will appear here
-          </Text>
-        </View>
-
-        {/* Inventory Alerts */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.fireEmoji}>📦</Text>
-            <Text style={styles.sectionTitle}>Inventory Alerts</Text>
-          </View>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>Manage &gt;</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.emptyCard}>
-          <Feather name="check-circle" size={36} color="#86EFAC" />
-          <Text style={styles.emptyTitle}>All stocked up!</Text>
-          <Text style={styles.emptySubtext}>
-            You'll be notified when products run low
-          </Text>
-        </View>
-
-        {/* Market Hours Card */}
-        <View style={styles.marketHoursCard}>
-          <View style={styles.marketHoursContent}>
-            <Text style={styles.marketHoursLabel}>Today's Market Hours</Text>
-            <Text style={styles.marketHoursTime}>4:00 AM – 2:00 PM</Text>
-            <Text style={styles.marketHoursNote}>Your stall: {vendor?.stall_location ?? 'Taguig People\'s Market'}</Text>
-          </View>
-          <View style={styles.marketHoursIcon}>
-            <MaterialCommunityIcons name="store" size={28} color="#FFFFFF" />
+          <View style={styles.emptyRow}>
+            <Ionicons name="receipt-outline" size={18} color="#D1D5DB" />
+            <Text style={styles.emptyText}>No orders yet — they'll show up here</Text>
           </View>
         </View>
-      </ScrollView>
+
+        {/* Spacer pushes market hours to bottom */}
+        <View style={styles.spacer} />
+
+        {/* Market Hours Bar */}
+        <View style={styles.marketBar}>
+          <View style={styles.marketIcon}>
+            <MaterialCommunityIcons name="store" size={18} color="#FFFFFF" />
+          </View>
+          <View style={styles.marketInfo}>
+            <Text style={styles.marketTime}>4:00 AM – 2:00 PM</Text>
+            <Text style={styles.marketLocation}>{vendor?.stall_location ?? 'Taguig People\'s Market'}</Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>Open</Text>
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
 
-/* ─── Components ─── */
+/* ─── Sub-components ─── */
 
-function QuickStatCard({
-  icon,
-  label,
-  value,
-  color,
-  bgColor,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  color: string;
-  bgColor: string;
+function StatCard({ icon, label, value, color, bgColor }: {
+  icon: string; label: string; value: string; color: string; bgColor: string;
 }) {
   return (
-    <View style={styles.quickStatCard}>
-      <View style={[styles.quickStatIcon, { backgroundColor: bgColor }]}>
-        <Feather name={icon as any} size={18} color={color} />
+    <View style={styles.statCard}>
+      <View style={[styles.statIcon, { backgroundColor: bgColor }]}>
+        <Ionicons name={icon as any} size={18} color={color} />
       </View>
-      <Text style={[styles.quickStatValue, { color }]}>{value}</Text>
-      <Text style={styles.quickStatLabel}>{label}</Text>
+      <View>
+        <Text style={[styles.statValue, { color }]}>{value}</Text>
+        <Text style={styles.statLabel}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
+function SalesItem({ icon, value, label, bgColor, color }: {
+  icon: string; value: string; label: string; bgColor: string; color: string;
+}) {
+  return (
+    <View style={styles.salesCard}>
+      <View style={[styles.salesIcon, { backgroundColor: bgColor }]}>
+        <Ionicons name={icon as any} size={14} color={color} />
+      </View>
+      <Text style={styles.salesValue}>{value}</Text>
+      <Text style={styles.salesLabel}>{label}</Text>
     </View>
   );
 }
@@ -200,11 +163,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B6B45',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    paddingBottom: 20,
   },
+  safeHeader: {},
   headerContent: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingHorizontal: 18,
+    paddingTop: 4,
+    paddingBottom: 16,
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -214,235 +178,240 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   locationLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#86EFAC',
     fontWeight: '500',
   },
   marketName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 2,
+    marginTop: 1,
   },
   notifButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   notifDot: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
+    top: 7,
+    right: 7,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: '#F97316',
     borderWidth: 1.5,
     borderColor: '#1B6B45',
   },
   greetingText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#86EFAC',
     fontWeight: '500',
-    marginTop: 16,
+    marginTop: 12,
   },
   headline: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 2,
+  },
+
+  // Body
+  body: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 12,
+  },
+
+  // Stats 2x2
+  statsGrid: {
+    gap: 8,
     marginBottom: 16,
   },
-
-  // Search
-  searchBar: {
+  statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 48,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#374151',
-  },
-  searchAiButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#F97316',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Scroll
-  scrollView: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
-  },
-
-  // Quick Stats
-  statsRow: {
-    gap: 12,
-    paddingBottom: 20,
-  },
-  quickStatCard: {
-    width: 100,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F3F4F6',
   },
-  quickStatIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  statIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
   },
-  quickStatValue: {
-    fontSize: 18,
+  statValue: {
+    fontSize: 17,
     fontWeight: '800',
   },
-  quickStatLabel: {
+  statLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#9CA3AF',
-    marginTop: 2,
   },
 
-  // Section
+  // Sales compressed
+  salesSection: {
+    marginBottom: 16,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  sectionTitleRow: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+  emoji: {
+    fontSize: 14,
+  },
+  subTitle: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#111827',
-    marginBottom: 12,
-  },
-  fireEmoji: {
-    fontSize: 16,
-    marginBottom: 12,
   },
   seeAll: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#1B6B45',
-    marginBottom: 12,
   },
-
-  // Sales Cards
-  salesCards: {
+  salesRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
+    gap: 8,
   },
   salesCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F3F4F6',
   },
   salesIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   salesValue: {
-    fontSize: 22,
+    fontSize: 14,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 2,
   },
   salesLabel: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '500',
     color: '#9CA3AF',
+    marginTop: 1,
   },
 
-  // Empty Card
-  emptyCard: {
+  // Orders
+  ordersSection: {
+    marginBottom: 8,
+  },
+  emptyRow: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 28,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     borderWidth: 1,
     borderColor: '#F3F4F6',
-    marginBottom: 24,
   },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#374151',
-    marginTop: 12,
-  },
-  emptySubtext: {
+  emptyText: {
     fontSize: 13,
     color: '#9CA3AF',
-    marginTop: 4,
-    textAlign: 'center',
+    fontWeight: '500',
+    flex: 1,
   },
 
-  // Market Hours
-  marketHoursCard: {
+  // Spacer
+  spacer: {
+    flex: 1,
+  },
+
+  // Market bar
+  marketBar: {
     flexDirection: 'row',
     backgroundColor: '#1B6B45',
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  marketHoursContent: { flex: 1 },
-  marketHoursLabel: {
-    fontSize: 12,
-    color: '#86EFAC',
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  marketHoursTime: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  marketHoursNote: {
-    fontSize: 12,
-    color: '#86EFAC',
-    marginTop: 2,
-  },
-  marketHoursIcon: {
-    width: 52,
-    height: 52,
     borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    gap: 10,
+  },
+  marketIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  marketInfo: {
+    flex: 1,
+  },
+  marketTime: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  marketLocation: {
+    fontSize: 10,
+    color: '#86EFAC',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#86EFAC',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
