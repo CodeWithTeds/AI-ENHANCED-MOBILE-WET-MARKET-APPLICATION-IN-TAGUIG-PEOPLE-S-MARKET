@@ -17,12 +17,14 @@ class Vendor extends Model
         'status',
         'rejection_reason',
         'approved_at',
+        'notification_preferences',
     ];
 
     protected function casts(): array
     {
         return [
             'product_categories' => 'array',
+            'notification_preferences' => 'array',
             'approved_at' => 'datetime',
         ];
     }

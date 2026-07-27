@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\VendorProfileController;
 use App\Http\Controllers\Api\VendorRegistrationController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products', [\App\Http\Controllers\Api\ProductController::class, 'store']);
     Route::put('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'update']);
     Route::delete('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'destroy']);
+
+    // Vendor Profile & Settings
+    Route::get('/vendor/profile', [VendorProfileController::class, 'show']);
+    Route::put('/vendor/profile/business', [VendorProfileController::class, 'updateBusiness']);
+    Route::put('/vendor/profile/password', [VendorProfileController::class, 'changePassword']);
+    Route::put('/vendor/profile/notifications', [VendorProfileController::class, 'updateNotifications']);
 
     // Vendor Inventory Management
     Route::get('/inventory', [InventoryController::class, 'index']);
