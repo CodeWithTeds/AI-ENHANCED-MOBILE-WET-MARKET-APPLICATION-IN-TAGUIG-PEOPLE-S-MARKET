@@ -6,6 +6,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InventoryController;
+use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorProfileController;
@@ -19,6 +20,15 @@ Route::post('/vendor/register', [VendorRegistrationController::class, 'register'
 // Public endpoints for registration form data
 Route::get('/sections', [StallController::class, 'sections']);
 Route::get('/stalls/vacant', [StallController::class, 'vacantStalls']);
+
+// Public marketplace endpoints (customer browsing)
+Route::prefix('marketplace')->group(function () {
+    Route::get('/featured', [MarketplaceController::class, 'featured']);
+    Route::get('/products', [MarketplaceController::class, 'browse']);
+    Route::get('/products/search', [MarketplaceController::class, 'search']);
+    Route::get('/products/{product}', [MarketplaceController::class, 'show']);
+    Route::get('/categories', [MarketplaceController::class, 'categories']);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
