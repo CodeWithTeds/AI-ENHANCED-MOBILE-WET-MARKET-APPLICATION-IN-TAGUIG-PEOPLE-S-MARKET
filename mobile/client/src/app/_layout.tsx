@@ -26,8 +26,10 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="sign-in" />
+        <Stack.Screen name="customer-login" />
         <Stack.Screen name="vendor-register" />
         <Stack.Screen name="(vendor)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="(customer)" options={{ animation: 'fade' }} />
       </Stack>
     </AuthProvider>
   );

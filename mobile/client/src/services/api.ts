@@ -66,11 +66,17 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = data as Record<string, unknown>;
-        throw new ApiError(
-          (errorData.message as string) || `Request failed with status ${response.status}`,
-          response.status,
-          errorData
-        );
+        // Extract Laravel validation errors into a readable message
+        let message = (errorData.message as string) || `Request failed with status ${response.status}`;
+        if (errorData.errors && typeof errorData.errors === 'object') {
+          const validationErrors = Object.values(errorData.errors as Record<string, string[]>)
+            .flat()
+            .join('\n');
+          if (validationErrors) {
+            message = validationErrors;
+          }
+        }
+        throw new ApiError(message, response.status, errorData);
       }
 
       return data as ApiResponse<T>;

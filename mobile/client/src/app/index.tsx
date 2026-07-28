@@ -109,7 +109,7 @@ export default function LandingScreen() {
 }
 
 function SignInForm() {
-  const { login } = useAuth();
+  const { login, vendor } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -123,8 +123,13 @@ function SignInForm() {
 
     setLoading(true);
     try {
-      await login({ email: email.trim(), password });
-      router.replace('/(vendor)/dashboard');
+      const result = await login({ email: email.trim(), password });
+      // Route based on role — vendor goes to vendor dashboard, customer goes to customer home
+      if (result.is_vendor && result.vendor) {
+        router.replace('/(vendor)/dashboard');
+      } else {
+        router.replace('/(customer)/home');
+      }
     } catch (error) {
       if (error instanceof ApiError) {
         Alert.alert('Login Failed', error.message);
@@ -264,6 +269,7 @@ function CreateAccountPrompt() {
 
         <TouchableOpacity
           style={styles.customerButton}
+          onPress={() => router.push('/customer-login')}
           activeOpacity={0.85}
           accessibilityRole="button"
         >

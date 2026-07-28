@@ -24,7 +24,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<{ is_vendor: boolean; vendor: AuthVendor | null }>;
   logout: () => Promise<void>;
 }
 
@@ -78,6 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: true,
     });
+
+    return response;
   }
 
   async function logout() {
