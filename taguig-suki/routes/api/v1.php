@@ -7,6 +7,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorProfileController;
@@ -29,6 +30,9 @@ Route::prefix('marketplace')->group(function () {
     Route::get('/products/{product}', [MarketplaceController::class, 'show']);
     Route::get('/categories', [MarketplaceController::class, 'categories']);
 });
+
+// AI Recipe Search (public — no auth required)
+Route::get('/recipes/search', [RecipeController::class, 'search']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);

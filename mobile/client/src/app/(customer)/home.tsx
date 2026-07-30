@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Image,
   RefreshControl,
   ScrollView,
@@ -26,6 +25,7 @@ import {
   browseProducts,
   type MarketProduct,
 } from '@/services/marketplace';
+import { searchRecipe, type RecipeResult } from '@/services/recipe';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
@@ -47,6 +47,8 @@ export default function CustomerHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [recipe, setRecipe] = useState<RecipeResult | null>(null);
+  const [recipeLoading, setRecipeLoading] = useState(false);
 
   const greeting = getGreeting();
 
@@ -91,7 +93,30 @@ export default function CustomerHomeScreen() {
   function onRefresh() {
     setRefreshing(true);
     setSelectedCategory('all');
+    setRecipe(null);
     fetchData();
+  }
+
+  async function handleRecipeSearch() {
+    const query = searchQuery.trim();
+    if (!query || query.length < 2) return;
+
+    setRecipeLoading(true);
+    setRecipe(null);
+    try {
+      const result = await searchRecipe(query);
+      setRecipe(result);
+    } catch (err) {
+      console.error('[Recipe] search failed:', err);
+      setRecipe({ found: false, message: 'Failed to search. Check your connection.' });
+    } finally {
+      setRecipeLoading(false);
+    }
+  }
+
+  function clearRecipe() {
+    setRecipe(null);
+    setSearchQuery('');
   }
 
   return (
@@ -125,8 +150,10 @@ export default function CustomerHomeScreen() {
                 placeholderTextColor="#9CA3AF"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                onSubmitEditing={handleRecipeSearch}
+                returnKeyType="search"
               />
-              <TouchableOpacity style={styles.searchFilterBtn}>
+              <TouchableOpacity style={styles.searchFilterBtn} onPress={handleRecipeSearch}>
                 <Ionicons name="flash" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -141,6 +168,18 @@ export default function CustomerHomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1B6B45" />}
       >
+        {/* Recipe Result (AI-generated) */}
+        {recipeLoading && (
+          <View style={styles.recipeLoading}>
+            <ActivityIndicator size="small" color="#1B6B45" />
+            <Text style={styles.recipeLoadingText}>Generating recipe...</Text>
+          </View>
+        )}
+
+        {recipe && !recipeLoading && (
+          <RecipeCard recipe={recipe} onClose={clearRecipe} />
+        )}
+
         {/* Categories */}
         <Text style={styles.sectionTitle}>Categories</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
@@ -264,6 +303,112 @@ function ProductCard({ product }: { product: MarketProduct }) {
   );
 }
 
+function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => void }) {
+  if (!recipe.found) {
+    return (
+      <View style={styles.recipeCard}>
+        <View style={styles.recipeHeader}>
+          <Ionicons name="alert-circle-outline" size={20} color="#F97316" />
+          <Text style={styles.recipeNotFound}>{recipe.message || 'Recipe not found'}</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Ionicons name="close" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.recipeCard}>
+      {/* Header */}
+      <View style={styles.recipeHeader}>
+        <View style={styles.recipeAiBadge}>
+          <Ionicons name="flash" size={12} color="#FFFFFF" />
+          <Text style={styles.recipeAiBadgeText}>AI Recipe</Text>
+        </View>
+        <TouchableOpacity onPress={onClose}>
+          <Ionicons name="close" size={20} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Title */}
+      <Text style={styles.recipeName}>{recipe.recipe_name}</Text>
+      <Text style={styles.recipeDesc}>{recipe.description}</Text>
+
+      {/* Meta */}
+      <View style={styles.recipeMeta}>
+        <View style={styles.recipeMetaItem}>
+          <Ionicons name="time-outline" size={14} color="#6B7280" />
+          <Text style={styles.recipeMetaText}>{recipe.cook_time}</Text>
+        </View>
+        <View style={styles.recipeMetaItem}>
+          <Ionicons name="people-outline" size={14} color="#6B7280" />
+          <Text style={styles.recipeMetaText}>{recipe.servings}</Text>
+        </View>
+        <View style={styles.recipeMetaItem}>
+          <Ionicons name="restaurant-outline" size={14} color="#6B7280" />
+          <Text style={styles.recipeMetaText}>{recipe.prep_time} prep</Text>
+        </View>
+      </View>
+
+      {/* Ingredients */}
+      <Text style={styles.recipeSubtitle}>Ingredients</Text>
+      {recipe.ingredients?.map((ing, i) => (
+        <View key={i} style={styles.ingredientRow}>
+          <Ionicons
+            name={ing.available_in_market ? 'checkmark-circle' : 'ellipse-outline'}
+            size={16}
+            color={ing.available_in_market ? '#1B6B45' : '#D1D5DB'}
+          />
+          <Text style={styles.ingredientText}>
+            {ing.quantity} {ing.name}
+          </Text>
+          {ing.available_in_market && (
+            <View style={styles.ingredientBadge}>
+              <Text style={styles.ingredientBadgeText}>In Market</Text>
+            </View>
+          )}
+        </View>
+      ))}
+
+      {/* Orderable Products */}
+      {recipe.matching_products && recipe.matching_products.length > 0 && (
+        <>
+          <Text style={[styles.recipeSubtitle, { marginTop: 14 }]}>🛒 Order from Market</Text>
+          {recipe.matching_products.map((mp, i) => (
+            <View key={i} style={styles.matchingProductRow}>
+              <View style={styles.matchingProductInfo}>
+                <Text style={styles.matchingProductName}>{mp.product_name}</Text>
+                <Text style={styles.matchingProductMeta}>{mp.category} · per {mp.unit}</Text>
+              </View>
+              <Text style={styles.matchingProductPrice}>₱{Number(mp.price).toFixed(0)}</Text>
+            </View>
+          ))}
+        </>
+      )}
+
+      {/* Steps */}
+      <Text style={[styles.recipeSubtitle, { marginTop: 14 }]}>Steps</Text>
+      {recipe.steps?.map((step, i) => (
+        <View key={i} style={styles.stepRow}>
+          <View style={styles.stepNumber}>
+            <Text style={styles.stepNumberText}>{i + 1}</Text>
+          </View>
+          <Text style={styles.stepText}>{step}</Text>
+        </View>
+      ))}
+
+      {/* Tips */}
+      {recipe.tips && (
+        <View style={styles.tipBox}>
+          <Ionicons name="bulb-outline" size={14} color="#F97316" />
+          <Text style={styles.tipText}>{recipe.tips}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning!';
@@ -339,4 +484,44 @@ const styles = StyleSheet.create({
   marketHoursTime: { fontSize: 19, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
   marketHoursNote: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   marketHoursIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+
+  // Recipe Loading
+  recipeLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E8F5E9' },
+  recipeLoadingText: { fontSize: 14, color: '#1B6B45', fontWeight: '600' },
+
+  // Recipe Card
+  recipeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E8F5E9' },
+  recipeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  recipeAiBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1B6B45', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  recipeAiBadgeText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  recipeNotFound: { flex: 1, fontSize: 13, color: '#6B7280', marginLeft: 8 },
+  recipeName: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  recipeDesc: { fontSize: 13, color: '#6B7280', marginBottom: 12 },
+  recipeMeta: { flexDirection: 'row', gap: 16, marginBottom: 14, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  recipeMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  recipeMetaText: { fontSize: 12, color: '#6B7280', fontWeight: '500' },
+  recipeSubtitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 8 },
+
+  // Ingredients
+  ingredientRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  ingredientText: { flex: 1, fontSize: 13, color: '#374151' },
+  ingredientBadge: { backgroundColor: '#DCFCE7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  ingredientBadgeText: { fontSize: 10, fontWeight: '600', color: '#1B6B45' },
+
+  // Matching Products
+  matchingProductRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10, marginBottom: 6 },
+  matchingProductInfo: { flex: 1 },
+  matchingProductName: { fontSize: 13, fontWeight: '600', color: '#111827' },
+  matchingProductMeta: { fontSize: 11, color: '#9CA3AF' },
+  matchingProductPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45' },
+
+  // Steps
+  stepRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  stepNumber: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
+  stepNumberText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  stepText: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 19 },
+
+  // Tips
+  tipBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FFF7ED', borderRadius: 10, padding: 12, marginTop: 12 },
+  tipText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
 });
