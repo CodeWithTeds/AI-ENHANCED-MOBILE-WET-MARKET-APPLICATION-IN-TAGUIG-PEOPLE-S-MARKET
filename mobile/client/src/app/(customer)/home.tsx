@@ -3,9 +3,10 @@
  * Matches the reference UI: green header, categories, featured products, market hours.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   Image,
   RefreshControl,
@@ -27,6 +28,7 @@ import {
   type MarketProduct,
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
+import { useCart } from '@/context/CartContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
@@ -377,13 +379,7 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
         <>
           <Text style={[styles.recipeSubtitle, { marginTop: 14 }]}>🛒 Order from Market</Text>
           {recipe.matching_products.map((mp, i) => (
-            <View key={i} style={styles.matchingProductRow}>
-              <View style={styles.matchingProductInfo}>
-                <Text style={styles.matchingProductName}>{mp.product_name}</Text>
-                <Text style={styles.matchingProductMeta}>{mp.category} · per {mp.unit}</Text>
-              </View>
-              <Text style={styles.matchingProductPrice}>₱{Number(mp.price).toFixed(0)}</Text>
-            </View>
+            <MarketProductRow key={i} product={mp} />
           ))}
         </>
       )}
@@ -411,6 +407,73 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
       <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownloadRecipe(recipe)}>
         <Ionicons name="download-outline" size={18} color="#FFFFFF" />
         <Text style={styles.downloadBtnText}>Save Recipe</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matching_products']>[number] }) {
+  const { addItem, isInCart } = useCart();
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const checkAnim = useRef(new Animated.Value(0)).current;
+  const [added, setAdded] = useState(isInCart(product.product_id));
+
+  function handleAddToCart() {
+    if (added) return;
+
+    // Bounce animation
+    Animated.sequence([
+      Animated.spring(scaleAnim, { toValue: 0.88, useNativeDriver: true, speed: 40 }),
+      Animated.spring(scaleAnim, { toValue: 1.08, useNativeDriver: true, speed: 30 }),
+      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 20 }),
+    ]).start();
+
+    // Checkmark fade-in
+    Animated.timing(checkAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+
+    addItem({
+      product_id: product.product_id,
+      product_name: product.product_name,
+      price: product.price,
+      unit: product.unit,
+      category: product.category,
+    });
+
+    setAdded(true);
+  }
+
+  return (
+    <View style={styles.matchingProductRow}>
+      <View style={styles.matchingProductInfo}>
+        <Text style={styles.matchingProductName}>{product.product_name}</Text>
+        <Text style={styles.matchingProductMeta}>{product.category} · per {product.unit}</Text>
+      </View>
+      <Text style={styles.matchingProductPrice}>₱{Number(product.price).toFixed(0)}</Text>
+
+      <TouchableOpacity
+        onPress={handleAddToCart}
+        activeOpacity={0.8}
+        accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
+      >
+        <Animated.View
+          style={[
+            styles.addCartBtn,
+            added && styles.addCartBtnAdded,
+            { transform: [{ scale: scaleAnim }] },
+          ]}
+        >
+          <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
+            <Ionicons
+              name={added ? 'checkmark' : 'add'}
+              size={18}
+              color="#FFFFFF"
+            />
+          </Animated.View>
+        </Animated.View>
       </TouchableOpacity>
     </View>
   );
@@ -566,7 +629,9 @@ const styles = StyleSheet.create({
   matchingProductInfo: { flex: 1 },
   matchingProductName: { fontSize: 13, fontWeight: '600', color: '#111827' },
   matchingProductMeta: { fontSize: 11, color: '#9CA3AF' },
-  matchingProductPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45' },
+  matchingProductPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45', marginRight: 10 },
+  addCartBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
+  addCartBtnAdded: { backgroundColor: '#16A34A' },
 
   // Steps
   stepRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
