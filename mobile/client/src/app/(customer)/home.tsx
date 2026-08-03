@@ -30,6 +30,7 @@ import {
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
+import { ProductDetailModal } from '@/components/customer/ProductDetailModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
@@ -53,6 +54,7 @@ export default function CustomerHomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [recipe, setRecipe] = useState<RecipeResult | null>(null);
   const [recipeLoading, setRecipeLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<MarketProduct | null>(null);
 
   const greeting = getGreeting();
 
@@ -233,7 +235,7 @@ export default function CustomerHomeScreen() {
         ) : (
           <View style={styles.productsGrid}>
             {products.slice(0, 6).map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard key={product.id} product={product} onPress={() => setSelectedProduct(product)} />
             ))}
           </View>
         )}
@@ -250,6 +252,13 @@ export default function CustomerHomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        product={selectedProduct}
+        visible={selectedProduct !== null}
+        onClose={() => setSelectedProduct(null)}
+      />
     </View>
   );
 }
@@ -269,7 +278,7 @@ function CategoryChip({ label, emoji, bgColor, isActive, onPress }: {
   );
 }
 
-function ProductCard({ product }: { product: MarketProduct }) {
+function ProductCard({ product, onPress }: { product: MarketProduct; onPress: () => void }) {
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
   const heartAnim = useRef(new Animated.Value(1)).current;
   const isFav = isProductFavorited(product.id);
@@ -292,7 +301,7 @@ function ProductCard({ product }: { product: MarketProduct }) {
   }
 
   return (
-    <TouchableOpacity style={styles.productCard} activeOpacity={0.85}>
+    <TouchableOpacity style={styles.productCard} activeOpacity={0.85} onPress={onPress}>
       {/* Image */}
       <View style={styles.productImageWrap}>
         {imageUrl ? (
