@@ -7,6 +7,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
@@ -61,6 +62,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/inventory/{inventory}/adjust', [InventoryController::class, 'adjustStock']);
     Route::get('/inventory/{inventory}/history', [InventoryController::class, 'history']);
     Route::delete('/inventory/{inventory}', [InventoryController::class, 'destroy']);
+
+    // Customer Orders
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+
+    // Vendor Orders (orders that contain this vendor's products)
+    Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);
+    Route::patch('/vendor/orders/{id}/status', [OrderController::class, 'updateStatus']);
 });
 
 Route::apiResource('tasks', TaskController::class);

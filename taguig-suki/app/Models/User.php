@@ -35,6 +35,11 @@ class User extends Authenticatable
         ];
     }
 
+    public function vendor(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(Vendor::class);
+    }
+
     /**
      * Determine if the user is an admin.
      */

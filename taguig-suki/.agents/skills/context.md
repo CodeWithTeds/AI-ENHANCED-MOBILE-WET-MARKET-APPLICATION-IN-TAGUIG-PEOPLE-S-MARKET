@@ -1,31 +1,102 @@
+Implement a fully functional **Place Order** system that works like a real production e-commerce application.
 
-### Product Details Screen
+### Order Processing
 
-When a user taps a featured product, navigate to a beautiful product details page instead of ordering immediately.
+When the user taps the **Place Order** button:
 
-The product details page should include:
+1. Validate all required information:
 
-* Large image gallery with swipe support
-* Product name
-* Brand
-* Category
-* Price
-* ETC ETC BASED ON MY DB, STORE, SECTION ETC
+   * Shipping address
+   * Payment method
+   * Cart is not empty
+   * Product stock is available
 
-### Add to Cart
+2. Create the order successfully.
 
-Instead of placing an order immediately:
-
-* Show an **Add to Cart** button.
-* When tapped:
-
-  * Add the selected quantity to the shopping cart.
-  * Show a success animation or snackbar saying "Added to Cart."
-  * Keep the user on the product page.
-  * ETC ETC ETC
+3. Save all purchased products into the **Orders** collection/table with:
 
 
+### Inventory Management
 
-* Empty states for cart and favorites
+After a successful order:
 
-The overall experience should feel like a professional, production-ready mobile e-commerce application rather than a basic CRUD interface.
+* Automatically deduct the purchased quantity from the vendor's inventory.
+* Update the product stock in the database immediately.
+* Example:
+
+  * Current Stock: **25**
+  * Customer Orders: **3**
+  * Updated Stock: **22**
+
+### Stock Validation
+
+Before placing the order:
+
+* Check the latest stock from the database.
+* Prevent ordering if stock is insufficient.
+* Display a modern error message such as:
+
+  * "Only 2 items remaining in stock."
+  * "This product is currently out of stock."
+
+Never allow stock values to become negative.
+
+### Atomic Transaction
+
+The order process must be atomic:
+
+* Create the order.
+* Deduct product stock.
+* Save order items.
+* Update inventory.
+
+If any step fails, roll back all changes so that:
+
+* No partial order is created.
+* Stock remains unchanged.
+* The cart is not cleared.
+
+### Shopping Cart
+
+Only clear the user's cart after the order has been successfully completed and saved.
+
+### Vendor Dashboard
+
+Immediately update the vendor dashboard after an order:
+
+
+### Customer Orders
+
+After placing an order, it should appear instantly in **My Orders** with statuses such as:
+
+* Pending
+* Confirmed
+* Processing
+* Shipped
+* Delivered
+* Cancelled
+
+### UI/UX
+
+While processing the order:
+
+* Show a loading indicator.
+* Disable the **Place Order** button to prevent duplicate submissions.
+* Prevent multiple taps.
+
+After success:
+
+* Show a modern success animation.
+* Display an order confirmation page with:
+
+  * Order Number
+  * Purchased Products
+  * Total Amount
+  * Estimated Delivery Date
+  * Payment Summary
+  * Continue Shopping button
+  * View My Orders button
+
+### Data Consistency
+
+Ensure inventory, cart, orders, vendor data, and customer order history always remain synchronized. The stock deduction must happen only after a successful order and should be reflected immediately across the entire application without requiring a manual refresh.
