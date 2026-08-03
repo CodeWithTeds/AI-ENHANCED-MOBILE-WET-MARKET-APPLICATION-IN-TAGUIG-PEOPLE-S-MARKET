@@ -29,6 +29,7 @@ import {
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
 import { useCart } from '@/context/CartContext';
+import { useFavorites } from '@/context/FavoritesContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
@@ -269,9 +270,26 @@ function CategoryChip({ label, emoji, bgColor, isActive, onPress }: {
 }
 
 function ProductCard({ product }: { product: MarketProduct }) {
+  const { addProduct, removeProduct, isProductFavorited } = useFavorites();
+  const heartAnim = useRef(new Animated.Value(1)).current;
+  const isFav = isProductFavorited(product.id);
+
   const imageUrl = product.image
     ? `${API_BASE_URL.replace('/api/v1', '')}/storage/${product.image}`
     : null;
+
+  function handleToggleFavorite() {
+    Animated.sequence([
+      Animated.spring(heartAnim, { toValue: 1.35, useNativeDriver: true, speed: 50 }),
+      Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 30 }),
+    ]).start();
+
+    if (isFav) {
+      removeProduct(product.id);
+    } else {
+      addProduct(product);
+    }
+  }
 
   return (
     <TouchableOpacity style={styles.productCard} activeOpacity={0.85}>
@@ -289,6 +307,12 @@ function ProductCard({ product }: { product: MarketProduct }) {
           <Ionicons name="star" size={10} color="#F97316" />
           <Text style={styles.productBadgeText}>Fresh</Text>
         </View>
+        {/* Heart */}
+        <TouchableOpacity style={styles.productHeartBtn} onPress={handleToggleFavorite}>
+          <Animated.View style={{ transform: [{ scale: heartAnim }] }}>
+            <Ionicons name={isFav ? 'heart' : 'heart-outline'} size={16} color={isFav ? '#E11D48' : '#FFFFFF'} />
+          </Animated.View>
+        </TouchableOpacity>
       </View>
 
       {/* Info */}
@@ -307,6 +331,25 @@ function ProductCard({ product }: { product: MarketProduct }) {
 }
 
 function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => void }) {
+  const { addRecipe, removeRecipe, isRecipeFavorited } = useFavorites();
+  const heartAnim = useRef(new Animated.Value(1)).current;
+  const isFav = recipe.recipe_name ? isRecipeFavorited(recipe.recipe_name) : false;
+
+  function handleToggleFavorite() {
+    // Pulse animation
+    Animated.sequence([
+      Animated.spring(heartAnim, { toValue: 1.35, useNativeDriver: true, speed: 50 }),
+      Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 30 }),
+    ]).start();
+
+    if (isFav) {
+      const id = recipe.recipe_name!.toLowerCase().replace(/\s+/g, '-');
+      removeRecipe(id);
+    } else {
+      addRecipe(recipe);
+    }
+  }
+
   if (!recipe.found) {
     return (
       <View style={styles.recipeCard}>
@@ -329,9 +372,22 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
           <Ionicons name="flash" size={12} color="#FFFFFF" />
           <Text style={styles.recipeAiBadgeText}>AI Recipe</Text>
         </View>
-        <TouchableOpacity onPress={onClose}>
-          <Ionicons name="close" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
+        <View style={styles.recipeHeaderActions}>
+          {/* Heart / Favorite */}
+          <TouchableOpacity onPress={handleToggleFavorite} accessibilityLabel={isFav ? 'Remove from favorites' : 'Add to favorites'}>
+            <Animated.View style={{ transform: [{ scale: heartAnim }] }}>
+              <Ionicons
+                name={isFav ? 'heart' : 'heart-outline'}
+                size={22}
+                color={isFav ? '#E11D48' : '#9CA3AF'}
+              />
+            </Animated.View>
+          </TouchableOpacity>
+          {/* Close */}
+          <TouchableOpacity onPress={onClose}>
+            <Ionicons name="close" size={22} color="#9CA3AF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Title */}
@@ -580,6 +636,7 @@ const styles = StyleSheet.create({
   productImagePlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9FAFB' },
   productBadge: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   productBadgeText: { fontSize: 10, fontWeight: '600', color: '#F97316' },
+  productHeartBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' },
   productInfo: { padding: 10 },
   productName: { fontSize: 14, fontWeight: '700', color: '#111827' },
   productVendor: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
@@ -608,6 +665,7 @@ const styles = StyleSheet.create({
   // Recipe Card
   recipeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#E8F5E9' },
   recipeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  recipeHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   recipeAiBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1B6B45', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   recipeAiBadgeText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
   recipeNotFound: { flex: 1, fontSize: 13, color: '#6B7280', marginLeft: 8 },

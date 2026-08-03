@@ -7,6 +7,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomerAuthProvider } from '@/context/CustomerAuthContext';
 import { CartProvider, useCart } from '@/context/CartContext';
+import { FavoritesProvider } from '@/context/FavoritesContext';
 
 function CartTabIcon({ color, focused }: { color: string; focused: boolean }) {
   const { totalItems } = useCart();
@@ -25,73 +26,75 @@ function CartTabIcon({ color, focused }: { color: string; focused: boolean }) {
 export default function CustomerLayout() {
   return (
     <CustomerAuthProvider>
-      <CartProvider>
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarActiveTintColor: '#1B6B45',
-            tabBarInactiveTintColor: '#9CA3AF',
-            tabBarStyle: {
-              backgroundColor: '#FFFFFF',
-              borderTopColor: '#F3F4F6',
-              borderTopWidth: 1,
-              height: 64,
-              paddingBottom: 10,
-              paddingTop: 6,
-            },
-            tabBarLabelStyle: {
-              fontSize: 11,
-              fontWeight: '600',
-            },
-          }}
-        >
-          <Tabs.Screen
-            name="home"
-            options={{
-              title: 'Home',
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-              ),
+      <FavoritesProvider>
+        <CartProvider>
+          <Tabs
+            screenOptions={{
+              headerShown: false,
+              tabBarActiveTintColor: '#1B6B45',
+              tabBarInactiveTintColor: '#9CA3AF',
+              tabBarStyle: {
+                backgroundColor: '#FFFFFF',
+                borderTopColor: '#F3F4F6',
+                borderTopWidth: 1,
+                height: 64,
+                paddingBottom: 10,
+                paddingTop: 6,
+              },
+              tabBarLabelStyle: {
+                fontSize: 11,
+                fontWeight: '600',
+              },
             }}
-          />
-          <Tabs.Screen
-            name="explore"
-            options={{
-              title: 'Explore',
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="cart"
-            options={{
-              title: 'Cart',
-              tabBarIcon: ({ color, focused }) => (
-                <CartTabIcon color={color} focused={focused} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="orders"
-            options={{
-              title: 'Orders',
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="profile"
-            options={{
-              title: 'Profile',
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
-              ),
-            }}
-          />
-        </Tabs>
-      </CartProvider>
+          >
+            <Tabs.Screen
+              name="home"
+              options={{
+                title: 'Home',
+                tabBarIcon: ({ color, focused }) => (
+                  <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="explore"
+              options={{
+                title: 'Favorites',
+                tabBarIcon: ({ color, focused }) => (
+                  <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="cart"
+              options={{
+                title: 'Cart',
+                tabBarIcon: ({ color, focused }) => (
+                  <CartTabIcon color={color} focused={focused} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="orders"
+              options={{
+                title: 'Orders',
+                tabBarIcon: ({ color, focused }) => (
+                  <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="profile"
+              options={{
+                title: 'Profile',
+                tabBarIcon: ({ color, focused }) => (
+                  <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+                ),
+              }}
+            />
+          </Tabs>
+        </CartProvider>
+      </FavoritesProvider>
     </CustomerAuthProvider>
   );
 }
