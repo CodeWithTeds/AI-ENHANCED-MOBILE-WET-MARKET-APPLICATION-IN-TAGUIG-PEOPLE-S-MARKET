@@ -198,13 +198,30 @@ function OrderCard({
           </View>
 
           {/* Track + Review actions */}
+          {order.status === 'completed' && (
+            <TouchableOpacity
+              style={styles.rateBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/track/${order.id}?rate=1`)}
+            >
+              <Ionicons name="star" size={16} color="#FFFFFF" />
+              <Text style={styles.rateBtnText}>Rate Your Purchase</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={styles.trackBtn}
+            style={[styles.trackBtn, order.status === 'completed' && styles.trackBtnOutline]}
             activeOpacity={0.85}
             onPress={() => router.push(`/track/${order.id}`)}
           >
-            <Ionicons name="pulse-outline" size={16} color="#FFFFFF" />
-            <Text style={styles.trackBtnText}>Track Order</Text>
+            <Ionicons
+              name={order.status === 'completed' ? 'pulse-outline' : 'pulse-outline'}
+              size={16}
+              color={order.status === 'completed' ? '#1B6B45' : '#FFFFFF'}
+            />
+            <Text style={[styles.trackBtnText, order.status === 'completed' && styles.trackBtnTextOutline]}>
+              Track Order
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -319,4 +336,23 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   trackBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+
+  rateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  rateBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+
+  trackBtnOutline: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#1B6B45',
+  },
+  trackBtnTextOutline: { color: '#1B6B45' },
 });

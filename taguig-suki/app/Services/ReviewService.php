@@ -7,7 +7,7 @@ use App\Models\Product;
 use App\Models\Review;
 use App\Models\User;
 use App\Models\Vendor;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -235,9 +235,16 @@ class ReviewService
     private function createReview(User $user, array $attributes): Review
     {
         $existing = Review::where('user_id', $user->id)
-            ->where('reviewable_type', $attributes['reviewable_type'])
-            ->where('reviewable_id', $attributes['reviewable_id'])
-            ->orWhere(fn ($q) => $q->where('user_id', $user->id)->where('recipe_name', $attributes['recipe_name']))
+            ->where(function ($q) use ($attributes) {
+                if ($attributes['recipe_name'] !== null) {
+                    // Recipe reviews: one per recipe name
+                    $q->where('recipe_name', $attributes['recipe_name']);
+                } else {
+                    // Vendor/product reviews: one per target
+                    $q->where('reviewable_type', $attributes['reviewable_type'])
+                        ->where('reviewable_id', $attributes['reviewable_id']);
+                }
+            })
             ->first();
 
         if ($existing) {

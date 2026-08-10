@@ -51,7 +51,7 @@ const STATUS_STEPS: OrderStatus[] = ['pending', 'confirmed', 'processing', 'read
 const POLL_INTERVAL_MS = 5000;
 
 export default function OrderTrackingScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, rate } = useLocalSearchParams<{ id: string; rate?: string }>();
   const orderId = Number(id);
 
   const { token } = useCustomerAuth();
@@ -116,6 +116,15 @@ export default function OrderTrackingScreen() {
       }
     })();
   }, [order?.status, order?.id]);
+
+  /* Auto-open the rating sheet when arriving from the "Rate Your Purchase" button */
+  const autoOpenedRating = useRef(false);
+  useEffect(() => {
+    if (order?.status === 'completed' && rate === '1' && !autoOpenedRating.current) {
+      autoOpenedRating.current = true;
+      setReviewSheetOpen(true);
+    }
+  }, [order?.status, rate]);
 
   function onRefresh() {
     setRefreshing(true);
