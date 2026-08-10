@@ -24,12 +24,12 @@ class OrderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'items'                     => 'required|array|min:1',
-            'items.*.product_id'        => 'required|integer|exists:products,id',
-            'items.*.product_name'      => 'required|string',
-            'items.*.quantity'          => 'required|integer|min:1',
-            'payment_method'            => 'nullable|string|in:cash,gcash,maya',
-            'notes'                     => 'nullable|string|max:500',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|integer|exists:products,id',
+            'items.*.product_name' => 'required|string',
+            'items.*.quantity' => 'required|integer|min:1',
+            'payment_method' => 'nullable|string|in:cash,gcash,maya',
+            'notes' => 'nullable|string|max:500',
         ]);
 
         try {
@@ -43,7 +43,7 @@ class OrderController extends Controller
             return $this->successResponse($order, 'Order placed successfully', 201);
         } catch (UnprocessableEntityHttpException $e) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => $e->getMessage(),
             ], 422);
         }
@@ -71,6 +71,18 @@ class OrderController extends Controller
         $order = $this->orderService->getOrder($request->user(), $id);
 
         return $this->successResponse($order, 'Order retrieved');
+    }
+
+    /**
+     * Real-time order tracking with status timeline.
+     *
+     * GET /orders/{id}/track
+     */
+    public function track(Request $request, int $id): JsonResponse
+    {
+        $order = $this->orderService->track($request->user(), $id);
+
+        return $this->successResponse($order, 'Order tracking retrieved');
     }
 
     /**

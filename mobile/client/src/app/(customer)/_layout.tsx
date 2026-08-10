@@ -2,14 +2,14 @@
  * Customer Layout — bottom tab navigation for customer app.
  */
 
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type ColorValue } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomerAuthProvider } from '@/context/CustomerAuthContext';
 import { CartProvider, useCart } from '@/context/CartContext';
 import { FavoritesProvider } from '@/context/FavoritesContext';
 
-function CartTabIcon({ color, focused }: { color: string; focused: boolean }) {
+function CartTabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
   const { totalItems } = useCart();
   return (
     <View style={styles.iconWrap}>
@@ -92,6 +92,8 @@ export default function CustomerLayout() {
                 ),
               }}
             />
+            {/* Order tracking screen — opened from the Orders tab, not a tab itself */}
+            <Tabs.Screen name="track/[id]" options={{ href: null }} />
           </Tabs>
         </CartProvider>
       </FavoritesProvider>

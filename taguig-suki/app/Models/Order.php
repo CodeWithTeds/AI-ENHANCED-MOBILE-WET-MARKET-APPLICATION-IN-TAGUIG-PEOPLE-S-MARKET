@@ -34,6 +34,11 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(OrderStatusHistory::class)->orderBy('created_at');
+    }
+
     /**
      * Generate a unique, human-readable order number.
      */
@@ -41,6 +46,7 @@ class Order extends Model
     {
         $date = now()->format('Ymd');
         $last = static::whereDate('created_at', today())->count() + 1;
-        return 'ORD-' . $date . '-' . str_pad($last, 4, '0', STR_PAD_LEFT);
+
+        return 'ORD-'.$date.'-'.str_pad($last, 4, '0', STR_PAD_LEFT);
     }
 }

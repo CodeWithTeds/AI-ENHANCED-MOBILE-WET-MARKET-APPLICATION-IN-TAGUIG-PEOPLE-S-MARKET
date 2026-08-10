@@ -24,6 +24,20 @@ export interface OrderItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
+  vendor?: {
+    id: number;
+    stall_name: string;
+    stall_location: string;
+  };
+}
+
+/** One step in the order status timeline (recorded server-side). */
+export interface OrderStatusHistory {
+  id: number;
+  order_id: number;
+  status: OrderStatus;
+  note: string | null;
+  created_at: string;
 }
 
 export interface Order {
@@ -36,6 +50,7 @@ export interface Order {
   created_at: string;
   updated_at: string;
   items: OrderItem[];
+  status_history?: OrderStatusHistory[];
   user?: { id: number; name: string; email: string };
 }
 
@@ -78,6 +93,18 @@ export async function getOrders(token: string, page = 1): Promise<PaginatedOrder
 
 export async function getOrder(id: number, token: string): Promise<Order> {
   const response = await api.request<Order>(`/orders/${id}`, {
+    method: 'GET',
+    token,
+  });
+  return response.data;
+}
+
+/**
+ * Real-time order tracking — order + items (with vendor stalls) + status timeline.
+ * Poll this endpoint while the tracking screen is open.
+ */
+export async function getOrderTracking(id: number, token: string): Promise<Order> {
+  const response = await api.request<Order>(`/orders/${id}/track`, {
     method: 'GET',
     token,
   });

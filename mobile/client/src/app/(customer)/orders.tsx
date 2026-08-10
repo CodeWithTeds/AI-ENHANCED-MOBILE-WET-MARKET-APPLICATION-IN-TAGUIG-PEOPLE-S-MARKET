@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getToken } from '@/services/auth';
 import {
@@ -195,6 +196,16 @@ function OrderCard({
               ₱{Number(order.total_amount).toFixed(2)}
             </Text>
           </View>
+
+          {/* Track + Review actions */}
+          <TouchableOpacity
+            style={styles.trackBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push(`/track/${order.id}`)}
+          >
+            <Ionicons name="pulse-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.trackBtnText}>Track Order</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -296,4 +307,16 @@ const styles = StyleSheet.create({
   },
   itemsTotalLabel: { fontSize: 14, fontWeight: '700', color: '#374151' },
   itemsTotalValue: { fontSize: 16, fontWeight: '800', color: '#1B6B45' },
+
+  trackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#1B6B45',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  trackBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 });

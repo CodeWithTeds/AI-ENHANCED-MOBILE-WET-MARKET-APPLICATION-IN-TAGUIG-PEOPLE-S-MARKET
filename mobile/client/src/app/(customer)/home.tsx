@@ -28,9 +28,13 @@ import {
   type MarketProduct,
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
+import { getRecipeReviews, submitRecipeReview, type ReviewSummary } from '@/services/reviews';
+import { getToken } from '@/services/auth';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
+import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ProductDetailModal } from '@/components/customer/ProductDetailModal';
+import { StarRating, StarRatingDisplay } from '@/components/customer/StarRating';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
@@ -341,8 +345,47 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
 
 function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => void }) {
   const { addRecipe, removeRecipe, isRecipeFavorited } = useFavorites();
+  const { isAuthenticated } = useCustomerAuth();
   const heartAnim = useRef(new Animated.Value(1)).current;
   const isFav = recipe.recipe_name ? isRecipeFavorited(recipe.recipe_name) : false;
+
+  const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
+  const [myRating, setMyRating] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+
+  /* Load the recipe's public rating summary once */
+  useEffect(() => {
+    if (!recipe.found || !recipe.recipe_name) return;
+    getRecipeReviews(recipe.recipe_name)
+      .then(setRatingSummary)
+      .catch(() => setRatingSummary(null));
+  }, [recipe.found, recipe.recipe_name]);
+
+  async function handleRate(rating: number) {
+    if (!isAuthenticated || !recipe.recipe_name) return;
+    const token = (await getToken()) ?? null;
+    if (!token) return;
+
+    setRatingSubmitting(true);
+    try {
+      if (myRating > 0) {
+        // already rated — update in place; keep UX simple (in-memory tracking)
+        setMyRating(rating);
+      } else {
+        const review = await submitRecipeReview(recipe.recipe_name, { rating, comment: undefined }, token);
+        setMyRating(review.rating);
+        setRatingSummary((prev) => {
+          const total = (prev?.total ?? 0) + 1;
+          const average = total === 0 ? rating : ((prev?.average_rating ?? 0) * (total - 1) + rating) / total;
+          return { reviews: prev?.reviews ?? [], average_rating: Math.round(average * 10) / 10, total, rating_counts: prev?.rating_counts ?? {} };
+        });
+      }
+    } catch {
+      /* silent — recipe rating is a nice-to-have */
+    } finally {
+      setRatingSubmitting(false);
+    }
+  }
 
   function handleToggleFavorite() {
     // Pulse animation
@@ -467,6 +510,34 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
           <Text style={styles.tipText}>{recipe.tips}</Text>
         </View>
       )}
+
+      {/* Rating */}
+      <View style={styles.recipeRatingBox}>
+        <View style={styles.recipeRatingTop}>
+          <Ionicons name="star" size={14} color="#F59E0B" />
+          <Text style={styles.recipeRatingLabel}>Did you like this recipe?</Text>
+          {ratingSummary && ratingSummary.total > 0 && (
+            <StarRatingDisplay value={ratingSummary.average_rating} total={ratingSummary.total} />
+          )}
+        </View>
+        {isAuthenticated ? (
+          <View style={styles.recipeRatingInput}>
+            <StarRating
+              value={myRating}
+              onChange={handleRate}
+              size={26}
+              disabled={ratingSubmitting}
+            />
+            {myRating > 0 && (
+              <Text style={styles.recipeRatingMine}>You rated {myRating} star{myRating > 1 ? 's' : ''}</Text>
+            )}
+          </View>
+        ) : (
+          <Text style={styles.recipeRatingLoginHint}>
+            Sign in to rate this recipe
+          </Text>
+        )}
+      </View>
 
       {/* Download/Share Button */}
       <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownloadRecipe(recipe)}>
@@ -709,6 +780,14 @@ const styles = StyleSheet.create({
   // Tips
   tipBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FFF7ED', borderRadius: 10, padding: 12, marginTop: 12 },
   tipText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
+
+  // Recipe rating
+  recipeRatingBox: { backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginTop: 12 },
+  recipeRatingTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  recipeRatingLabel: { fontSize: 13, fontWeight: '700', color: '#92400E' },
+  recipeRatingInput: { marginTop: 8, alignItems: 'center' },
+  recipeRatingMine: { fontSize: 12, color: '#B45309', fontWeight: '600', marginTop: 6 },
+  recipeRatingLoginHint: { fontSize: 12, color: '#B45309', marginTop: 8 },
 
   // Download button
   downloadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1B6B45', borderRadius: 12, paddingVertical: 12, marginTop: 16 },

@@ -1,14 +1,16 @@
 <?php
 
 /**
- * API versioning -> for scalable future changes 
+ * API versioning -> for scalable future changes
  */
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RecipeController;
+use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorProfileController;
@@ -35,16 +37,21 @@ Route::prefix('marketplace')->group(function () {
 // AI Recipe Search (public — no auth required)
 Route::get('/recipes/search', [RecipeController::class, 'search']);
 
+// Public reviews (vendors, products, recipes) + aggregates
+Route::get('/reviews/vendor/{vendor}', [ReviewController::class, 'vendorReviews']);
+Route::get('/reviews/product/{product}', [ReviewController::class, 'productReviews']);
+Route::get('/reviews/recipe', [ReviewController::class, 'recipeReviews']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'profile']);
     Route::get('/vendor/status', [VendorRegistrationController::class, 'status']);
 
     // Vendor Products CRUD
-    Route::get('/products', [\App\Http\Controllers\Api\ProductController::class, 'index']);
-    Route::post('/products', [\App\Http\Controllers\Api\ProductController::class, 'store']);
-    Route::put('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'update']);
-    Route::delete('/products/{product}', [\App\Http\Controllers\Api\ProductController::class, 'destroy']);
+    Route::get('/products', [ProductController::class, 'index']);
+    Route::post('/products', [ProductController::class, 'store']);
+    Route::put('/products/{product}', [ProductController::class, 'update']);
+    Route::delete('/products/{product}', [ProductController::class, 'destroy']);
 
     // Vendor Profile & Settings
     Route::get('/vendor/profile', [VendorProfileController::class, 'show']);
@@ -67,6 +74,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::get('/orders/{id}/track', [OrderController::class, 'track']);
+
+    // Customer Reviews (only from completed orders)
+    Route::get('/reviews/eligible', [ReviewController::class, 'eligible']);
+    Route::post('/reviews/vendor', [ReviewController::class, 'storeVendor']);
+    Route::post('/reviews/product', [ReviewController::class, 'storeProduct']);
+    Route::post('/reviews/recipe', [ReviewController::class, 'storeRecipe']);
+    Route::put('/reviews/{review}', [ReviewController::class, 'update']);
+    Route::delete('/reviews/{review}', [ReviewController::class, 'destroy']);
 
     // Vendor Orders (orders that contain this vendor's products)
     Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);

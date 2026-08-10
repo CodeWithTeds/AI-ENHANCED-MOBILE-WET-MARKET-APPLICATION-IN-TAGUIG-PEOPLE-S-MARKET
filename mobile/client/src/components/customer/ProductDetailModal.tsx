@@ -32,6 +32,8 @@ import { API_BASE_URL } from '@/config/api';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
 import type { MarketProduct } from '@/services/marketplace';
+import { getProductReviews, type ReviewSummary } from '@/services/reviews';
+import { StarRatingDisplay } from '@/components/customer/StarRating';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.88;
@@ -191,6 +193,7 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [snackVisible, setSnackVisible] = useState(false);
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
 
   const { addItem, isInCart, items } = useCart();
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
@@ -198,6 +201,14 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
   const inCart = product ? isInCart(product.id) : false;
   const cartItem = product ? items.find((i) => i.product_id === product.id) : null;
   const isFav = product ? isProductFavorited(product.id) : false;
+
+  /* Load the product's public rating summary when opened */
+  useEffect(() => {
+    if (!visible || !product) return;
+    getProductReviews(product.id)
+      .then(setRatingSummary)
+      .catch(() => setRatingSummary(null));
+  }, [visible, product]);
 
   /* Open / close animation */
   useEffect(() => {
@@ -431,6 +442,30 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
               value={product.vendor?.stall_location ?? 'Taguig Market'}
             />
           </View>
+
+          {/* Ratings */}
+          {ratingSummary && ratingSummary.total > 0 && (
+            <View style={styles.ratingBox}>
+              <View style={styles.ratingTop}>
+                <Ionicons name="star" size={14} color="#F59E0B" />
+                <Text style={styles.ratingTitle}>Ratings</Text>
+                <View style={styles.ratingRight}>
+                  <StarRatingDisplay value={ratingSummary.average_rating} total={ratingSummary.total} />
+                </View>
+              </View>
+              {ratingSummary.reviews.slice(0, 3).map((review) => (
+                <View key={review.id} style={styles.ratingRow}>
+                  <View style={styles.ratingRowTop}>
+                    <Text style={styles.ratingUserName}>{review.user}</Text>
+                    <StarRatingDisplay value={review.rating} size={11} />
+                  </View>
+                  {review.comment ? (
+                    <Text style={styles.ratingComment} numberOfLines={2}>{review.comment}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Divider */}
           <View style={styles.divider} />
@@ -714,6 +749,23 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 16,
   },
+
+  /* ── Ratings ── */
+  ratingBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+  },
+  ratingTop: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  ratingTitle: { fontSize: 13, fontWeight: '800', color: '#92400E', flex: 1 },
+  ratingRight: { marginLeft: 'auto' },
+  ratingRow: { paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#FEF3C7' },
+  ratingRowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  ratingUserName: { fontSize: 12, fontWeight: '700', color: '#78350F' },
+  ratingComment: { fontSize: 12, color: '#92400E', marginTop: 3, lineHeight: 17 },
 
   divider: { height: 1, backgroundColor: '#F3F4F6', marginBottom: 16 },
 

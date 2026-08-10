@@ -5,9 +5,12 @@ namespace App\Services;
 use App\Models\Inventory;
 use App\Models\InventoryLog;
 use App\Models\Order;
+use App\Models\OrderStatusHistory;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class OrderService
@@ -27,7 +30,7 @@ class OrderService
 
             // ── 1. Load & lock all products in one query ──────────────────
             $productIds = array_column($items, 'product_id');
-            $products   = Product::whereIn('id', $productIds)
+            $products = Product::whereIn('id', $productIds)
                 ->where('is_available', true)
                 ->lockForUpdate()
                 ->get()
@@ -44,11 +47,11 @@ class OrderService
             $totalAmount = 0;
 
             foreach ($items as $item) {
-                $product   = $products->get($item['product_id']);
+                $product = $products->get($item['product_id']);
                 $inventory = $inventories->get($item['product_id']);
-                $qty       = (int) $item['quantity'];
+                $qty = (int) $item['quantity'];
 
-                if (!$product) {
+                if (! $product) {
                     throw new UnprocessableEntityHttpException(
                         "Product \"{$item['product_name']}\" is no longer available."
                     );
@@ -74,52 +77,59 @@ class OrderService
 
             // ── 4. Create Order ────────────────────────────────────────────
             $order = Order::create([
-                'user_id'        => $user->id,
-                'order_number'   => Order::generateOrderNumber(),
-                'status'         => 'pending',
-                'total_amount'   => round($totalAmount, 2),
+                'user_id' => $user->id,
+                'order_number' => Order::generateOrderNumber(),
+                'status' => 'pending',
+                'total_amount' => round($totalAmount, 2),
                 'payment_method' => $paymentMethod,
-                'notes'          => $notes,
+                'notes' => $notes,
+            ]);
+
+            // ── 4b. Start the status timeline ──────────────────────────────
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => 'pending',
+                'note' => 'Order placed',
             ]);
 
             // ── 5. Create Order Items + Deduct Inventory ───────────────────
             foreach ($items as $item) {
-                $product   = $products->get($item['product_id']);
+                $product = $products->get($item['product_id']);
                 $inventory = $inventories->get($item['product_id']);
-                $qty       = (int) $item['quantity'];
+                $qty = (int) $item['quantity'];
                 $unitPrice = (float) $product->price;
 
                 // Create order item (snapshot of product data at purchase time)
                 $order->items()->create([
-                    'product_id'   => $product->id,
-                    'vendor_id'    => $product->vendor_id,
+                    'product_id' => $product->id,
+                    'vendor_id' => $product->vendor_id,
                     'product_name' => $product->name,
-                    'category'     => $product->category,
-                    'unit'         => $product->unit,
-                    'quantity'     => $qty,
-                    'unit_price'   => $unitPrice,
-                    'subtotal'     => round($unitPrice * $qty, 2),
+                    'category' => $product->category,
+                    'unit' => $product->unit,
+                    'quantity' => $qty,
+                    'unit_price' => $unitPrice,
+                    'subtotal' => round($unitPrice * $qty, 2),
                 ]);
 
                 // Deduct stock and log the sale
                 if ($inventory) {
                     $before = $inventory->stock_quantity;
-                    $after  = max(0, $before - $qty);
+                    $after = max(0, $before - $qty);
 
                     $inventory->update(['stock_quantity' => $after]);
 
                     InventoryLog::create([
-                        'inventory_id'     => $inventory->id,
-                        'vendor_id'        => $inventory->vendor_id,
-                        'product_id'       => $product->id,
-                        'type'             => 'sold',
-                        'quantity_before'  => $before,
-                        'quantity_change'  => -$qty,
-                        'quantity_after'   => $after,
-                        'reason'           => "Customer order #{$order->order_number}",
+                        'inventory_id' => $inventory->id,
+                        'vendor_id' => $inventory->vendor_id,
+                        'product_id' => $product->id,
+                        'type' => 'sold',
+                        'quantity_before' => $before,
+                        'quantity_change' => -$qty,
+                        'quantity_after' => $after,
+                        'reason' => "Customer order #{$order->order_number}",
                         'reference_number' => $order->order_number,
-                        'unit_cost'        => $inventory->cost_price,
-                        'performed_by'     => $user->name,
+                        'unit_cost' => $inventory->cost_price,
+                        'performed_by' => $user->name,
                     ]);
                 }
             }
@@ -134,7 +144,7 @@ class OrderService
     public function getCustomerOrders(User $user, int $perPage = 20)
     {
         return Order::where('user_id', $user->id)
-            ->with(['items'])
+            ->with(['items.vendor:id,stall_name,stall_location'])
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }
@@ -145,7 +155,21 @@ class OrderService
     public function getOrder(User $user, int $orderId): Order
     {
         return Order::where('user_id', $user->id)
-            ->with(['items'])
+            ->with(['items.vendor:id,stall_name,stall_location'])
+            ->findOrFail($orderId);
+    }
+
+    /**
+     * Real-time tracking data for a customer's order:
+     * order + items (with vendor stalls) + full status timeline.
+     */
+    public function track(User $user, int $orderId): Order
+    {
+        return Order::where('user_id', $user->id)
+            ->with([
+                'items.vendor:id,stall_name,stall_location',
+                'statusHistory',
+            ])
             ->findOrFail($orderId);
     }
 
@@ -153,11 +177,11 @@ class OrderService
      * Get all orders that contain items belonging to this vendor.
      * Groups by order, includes only items relevant to this vendor.
      */
-    public function getVendorOrders(User $user): \Illuminate\Support\Collection
+    public function getVendorOrders(User $user): Collection
     {
         $vendor = $user->vendor ?? null;
 
-        if (!$vendor) {
+        if (! $vendor) {
             return collect();
         }
 
@@ -178,8 +202,8 @@ class OrderService
     {
         $vendor = $user->vendor ?? null;
 
-        if (!$vendor) {
-            throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException('Vendor profile not found');
+        if (! $vendor) {
+            throw new AccessDeniedHttpException('Vendor profile not found');
         }
 
         // Confirm this vendor has items in this order
@@ -187,6 +211,12 @@ class OrderService
             ->findOrFail($orderId);
 
         $order->update(['status' => $status]);
+
+        OrderStatusHistory::create([
+            'order_id' => $order->id,
+            'status' => $status,
+            'note' => 'Status updated by vendor',
+        ]);
 
         return $order->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
     }

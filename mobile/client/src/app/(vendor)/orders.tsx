@@ -3,11 +3,10 @@
  *
  * Features:
  *  - Shows only orders that contain this vendor's items
- *  - Status filter tabs (All / Pending / Confirmed / Processing / Ready / Completed)
- *  - Expandable order cards with customer name, items, subtotal
+ *  - Segmented status filter (All / Pending / Confirmed / Processing / Ready / Completed) — fits one row, no scrolling
+ *  - Expandable order cards with customer avatar, items, subtotal
  *  - One-tap status update (Confirm → Processing → Ready → Completed)
  *  - Pull-to-refresh
- *  - Badge count on "Pending" tab
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -139,48 +138,50 @@ export default function VendorOrdersScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Orders</Text>
-          <Text style={styles.headerSub}>
-            {orders.length} total · {pendingCount} pending
-          </Text>
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerIconWrap}>
+            <Ionicons name="receipt" size={18} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text style={styles.headerTitle}>Orders</Text>
+            <Text style={styles.headerSub}>
+              {orders.length} total · {pendingCount} waiting
+            </Text>
+          </View>
         </View>
       </View>
 
       {/* Status Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsRow}
-      >
+      <View style={styles.tabsRow}>
         {STATUS_TABS.map((tab) => {
           const isActive = activeTab === tab.value;
           const cfg = tab.value !== 'all' ? ORDER_STATUS_CONFIG[tab.value as OrderStatus] : null;
-          const count = tab.value === 'all'
-            ? orders.length
-            : orders.filter((o) => o.status === tab.value).length;
 
           return (
             <TouchableOpacity
               key={tab.value}
               style={[
                 styles.tab,
-                isActive && { backgroundColor: cfg?.bg ?? '#F3F4F6', borderColor: cfg?.color ?? '#1B6B45' },
+                isActive && {
+                  backgroundColor: cfg?.color ?? '#1B6B45',
+                  borderColor: cfg?.color ?? '#1B6B45',
+                },
               ]}
               onPress={() => setActiveTab(tab.value)}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.tabLabel, isActive && { color: cfg?.color ?? '#1B6B45', fontWeight: '700' }]}>
+              <Text
+                style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
                 {tab.label}
               </Text>
-              {count > 0 && (
-                <View style={[styles.tabBadge, isActive && { backgroundColor: cfg?.color ?? '#1B6B45' }]}>
-                  <Text style={[styles.tabBadgeText, isActive && { color: '#FFF' }]}>{count}</Text>
-                </View>
-              )}
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
 
       {/* Orders List */}
       <ScrollView
@@ -243,6 +244,7 @@ function VendorOrderCard({
   const nextStatus = NEXT_STATUS[order.status as OrderStatus];
   const nextCfg = nextStatus ? ORDER_STATUS_CONFIG[nextStatus] : null;
 
+  const customerName = order.user?.name ?? 'Customer';
   const date = new Date(order.created_at).toLocaleDateString('en-PH', {
     month: 'short', day: 'numeric',
   });
@@ -251,52 +253,74 @@ function VendorOrderCard({
   });
 
   return (
-    <View style={styles.card}>
-      {/* Header Row */}
+    <View style={[styles.card, { borderLeftColor: statusCfg.color }]}>
+      {/* Compact Single-Line Header (collapsed) */}
       <TouchableOpacity style={styles.cardHeader} onPress={onToggle} activeOpacity={0.7}>
-        <View style={styles.cardHeaderLeft}>
-          <Text style={styles.orderNumber}>{order.order_number}</Text>
-          <Text style={styles.orderMeta}>
-            {order.user?.name ?? 'Customer'} · {date} {time}
+        {/* Avatar */}
+        <View style={[styles.avatar, { backgroundColor: statusCfg.bg }]}>
+          <Text style={[styles.avatarText, { color: statusCfg.color }]}>
+            {customerName.charAt(0).toUpperCase()}
           </Text>
         </View>
+
+        <View style={styles.cardHeaderCenter}>
+          <View style={styles.nameRow}>
+            <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
+            {order.status === 'pending' && <View style={styles.newDot} />}
+          </View>
+        </View>
+
         <View style={styles.cardHeaderRight}>
-          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
+          <Text style={styles.cardTotal}>₱{Number(order.total_amount).toFixed(2)}</Text>
+          <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
             <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
             <Text style={[styles.statusText, { color: statusCfg.color }]}>
               {statusCfg.label}
             </Text>
           </View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#9CA3AF" />
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color="#9CA3AF" />
         </View>
       </TouchableOpacity>
 
-      {/* Summary chips */}
-      <View style={styles.chipRow}>
-        <View style={styles.chip}>
-          <Ionicons name="cube-outline" size={12} color="#6B7280" />
-          <Text style={styles.chipText}>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</Text>
-        </View>
-        <View style={styles.chip}>
-          <Ionicons name="cash-outline" size={12} color="#6B7280" />
-          <Text style={styles.chipText}>{order.payment_method.toUpperCase()}</Text>
-        </View>
-        <Text style={styles.cardTotal}>₱{Number(order.total_amount).toFixed(2)}</Text>
-      </View>
-
-      {/* Expanded: items + action button */}
+      {/* Expanded: meta + items + action button */}
       {expanded && (
         <View style={styles.expandedSection}>
           <View style={styles.divider} />
 
+          {/* Order details */}
+          <View style={styles.detailRow}>
+            <Ionicons name="receipt-outline" size={13} color="#9CA3AF" />
+            <Text style={styles.detailText}>{order.order_number}</Text>
+            <Text style={styles.detailText}>·</Text>
+            <Text style={styles.detailText}>{date} {time}</Text>
+          </View>
+
+          {/* Meta row */}
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Ionicons name="cube-outline" size={13} color="#9CA3AF" />
+              <Text style={styles.metaText}>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Ionicons name={paymentIcon(order.payment_method) as any} size={13} color="#9CA3AF" />
+              <Text style={styles.metaText}>{order.payment_method.toUpperCase()}</Text>
+            </View>
+          </View>
+
+          {/* Items */}
           {order.items.map((item) => (
             <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+              <View style={styles.itemIconWrap}>
+                <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+              </View>
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
-                <Text style={styles.itemMeta}>
-                  ×{item.quantity} {item.unit} · ₱{Number(item.unit_price).toFixed(2)}/unit
-                </Text>
+                <View style={styles.itemMetaRow}>
+                  <View style={styles.qtyBadge}>
+                    <Text style={styles.qtyBadgeText}>×{item.quantity} {item.unit}</Text>
+                  </View>
+                  <Text style={styles.itemUnitPrice}>₱{Number(item.unit_price).toFixed(2)}/unit</Text>
+                </View>
               </View>
               <Text style={styles.itemSubtotal}>₱{Number(item.subtotal).toFixed(2)}</Text>
             </View>
@@ -318,25 +342,33 @@ function VendorOrderCard({
               {updating ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Ionicons name={nextCfg.icon as any} size={16} color="#FFFFFF" />
+                <>
+                  <View style={styles.actionIconWrap}>
+                    <Ionicons name={nextCfg.icon as any} size={16} color={nextCfg.color} />
+                  </View>
+                  <Text style={styles.actionBtnText}>
+                    {updating ? 'Updating…' : `Mark as ${nextCfg.label}`}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.9)" />
+                </>
               )}
-              <Text style={styles.actionBtnText}>
-                {updating ? 'Updating…' : `Mark as ${nextCfg.label}`}
-              </Text>
             </TouchableOpacity>
           )}
 
           {order.status === 'completed' && (
-            <View style={styles.completedRow}>
-              <Ionicons name="checkmark-done-circle" size={16} color="#16A34A" />
-              <Text style={styles.completedText}>Order completed</Text>
+            <View style={[styles.statusRow, { backgroundColor: '#F0FDF4' }]}>
+              <Ionicons name="checkmark-done-circle" size={18} color="#16A34A" />
+              <Text style={[styles.statusRowText, { color: '#15803D' }]}>Order completed</Text>
+              <Text style={[styles.statusRowHint, { color: '#16A34A' }]}>
+                {new Date(order.updated_at).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
             </View>
           )}
 
           {order.status === 'cancelled' && (
-            <View style={[styles.completedRow, { backgroundColor: '#FEF2F2' }]}>
-              <Ionicons name="close-circle" size={16} color="#DC2626" />
-              <Text style={[styles.completedText, { color: '#DC2626' }]}>Order cancelled</Text>
+            <View style={[styles.statusRow, { backgroundColor: '#FEF2F2' }]}>
+              <Ionicons name="close-circle" size={18} color="#DC2626" />
+              <Text style={[styles.statusRowText, { color: '#B91C1C' }]}>Order cancelled</Text>
             </View>
           )}
         </View>
@@ -355,36 +387,46 @@ function getCategoryEmoji(category: string): string {
   return map[category.toLowerCase()] ?? '🛒';
 }
 
+function paymentIcon(method: string): string {
+  switch (method.toLowerCase()) {
+    case 'gcash': return 'phone-portrait-outline';
+    case 'maya': return 'wallet-outline';
+    default: return 'cash-outline';
+  }
+}
+
 /* ─── Styles ─── */
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F9FAFB' },
 
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
-    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10,
+  /* Header */
+  header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerIconWrap: {
+    width: 40, height: 40, borderRadius: 13,
+    backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#111827' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#111827' },
   headerSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  tabsRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+  /* Tabs */
+  tabsRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingBottom: 10 },
   tab: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
+    flex: 1,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, paddingVertical: 8,
+    borderRadius: 22, backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#F3F4F6',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
-  tabLabel: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
-  tabBadge: {
-    backgroundColor: '#F3F4F6', borderRadius: 9,
-    minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 5,
-  },
-  tabBadgeText: { fontSize: 10, fontWeight: '800', color: '#6B7280' },
+  tabLabel: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+  tabLabelActive: { color: '#FFFFFF', fontWeight: '700' },
 
-  listContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32 },
+  listContent: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 32 },
 
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -404,70 +446,105 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32, lineHeight: 18,
   },
 
+  /* Card */
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 12,
+    backgroundColor: '#FFFFFF', borderRadius: 18, marginBottom: 12,
     borderWidth: 1, borderColor: '#F3F4F6',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+    borderLeftWidth: 5,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
     overflow: 'hidden',
   },
 
   cardHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: 14, gap: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 8, gap: 10,
   },
-  cardHeaderLeft: { flex: 1 },
-  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-
-  orderNumber: { fontSize: 15, fontWeight: '800', color: '#111827' },
-  orderMeta: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-
-  statusBadge: {
+  avatar: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { fontSize: 13, fontWeight: '800' },
+  cardHeaderCenter: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  customerName: { fontSize: 13, fontWeight: '800', color: '#111827', flexShrink: 1 },
+  newDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#F97316' },
+  orderNumber: {
+    fontSize: 11, color: '#9CA3AF',
+    fontVariant: ['tabular-nums'],
+  },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  cardTotal: { fontSize: 14, fontWeight: '800', color: '#15803D' },
+  statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
   },
-  statusText: { fontSize: 11, fontWeight: '700' },
+  statusText: { fontSize: 10, fontWeight: '800' },
 
-  chipRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingBottom: 12,
-  },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
-  },
-  chipText: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
-  cardTotal: { marginLeft: 'auto', fontSize: 16, fontWeight: '800', color: '#1B6B45' },
+  /* Expanded: order details */
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+  detailText: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
 
+  /* Expanded: meta */
+  metaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    marginBottom: 4,
+  },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
+
+  /* Expanded */
   expandedSection: { paddingHorizontal: 14, paddingBottom: 14 },
-  divider: { height: 1, backgroundColor: '#F3F4F6', marginBottom: 12 },
+  divider: { height: 1, backgroundColor: '#F3F4F6', marginBottom: 8 },
 
   itemRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
+    paddingVertical: 9,
   },
-  itemEmoji: { fontSize: 18 },
+  itemIconWrap: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#F3F4F6',
+  },
+  itemEmoji: { fontSize: 17 },
   itemInfo: { flex: 1 },
-  itemName: { fontSize: 13, fontWeight: '600', color: '#111827' },
-  itemMeta: { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-  itemSubtotal: { fontSize: 13, fontWeight: '700', color: '#1B6B45' },
+  itemName: { fontSize: 13, fontWeight: '700', color: '#111827' },
+  itemMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+  qtyBadge: {
+    backgroundColor: '#F3F4F6', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 1,
+  },
+  qtyBadgeText: { fontSize: 10, fontWeight: '800', color: '#374151' },
+  itemUnitPrice: { fontSize: 11, color: '#9CA3AF' },
+  itemSubtotal: { fontSize: 14, fontWeight: '800', color: '#1B6B45' },
 
   itemsTotalRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingTop: 10, marginBottom: 12,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#F9FAFB', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    marginTop: 4, marginBottom: 12,
   },
-  itemsTotalLabel: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  itemsTotalLabel: { fontSize: 13, fontWeight: '700', color: '#374151' },
   itemsTotalValue: { fontSize: 16, fontWeight: '800', color: '#1B6B45' },
 
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, borderRadius: 12, paddingVertical: 12,
+    gap: 10, borderRadius: 13, paddingVertical: 13,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12, shadowRadius: 6, elevation: 3,
   },
-  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  actionIconWrap: {
+    width: 26, height: 26, borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionBtnText: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
 
-  completedRow: {
+  statusRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10,
+    borderRadius: 11, paddingHorizontal: 12, paddingVertical: 10,
+    marginTop: 10,
   },
-  completedText: { fontSize: 13, fontWeight: '600', color: '#16A34A' },
+  statusRowText: { flex: 1, fontSize: 13, fontWeight: '700' },
+  statusRowHint: { fontSize: 11, fontWeight: '600' },
 });
