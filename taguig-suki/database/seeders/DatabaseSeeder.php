@@ -19,8 +19,5 @@ class DatabaseSeeder extends Seeder
             'is_admin' => true,
             'email_verified_at' => now(),
         ]);
-
-        $this->call(StallSeeder::class);
-        $this->call(ProductSeeder::class);
     }
 }

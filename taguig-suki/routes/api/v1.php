@@ -5,6 +5,7 @@
  */
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CustomerProfileController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\OrderController;
@@ -52,6 +53,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
     Route::put('/products/{product}', [ProductController::class, 'update']);
     Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+
+    // Customer Profile & Settings
+    Route::get('/profile', [CustomerProfileController::class, 'show']);
+    Route::put('/profile', [CustomerProfileController::class, 'updateProfile']);
+    Route::put('/profile/password', [CustomerProfileController::class, 'changePassword']);
+    Route::put('/profile/notifications', [CustomerProfileController::class, 'updateNotifications']);
 
     // Vendor Profile & Settings
     Route::get('/vendor/profile', [VendorProfileController::class, 'show']);

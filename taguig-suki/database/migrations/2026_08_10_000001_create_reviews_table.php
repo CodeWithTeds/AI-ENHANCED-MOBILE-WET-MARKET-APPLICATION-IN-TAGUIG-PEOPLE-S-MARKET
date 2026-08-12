@@ -29,8 +29,6 @@ return new class extends Migration
             // One review per user per target
             $table->unique(['user_id', 'reviewable_type', 'reviewable_id']);
             $table->unique(['user_id', 'recipe_name']);
-
-            $table->index(['reviewable_type', 'reviewable_id']);
         });
     }
 
