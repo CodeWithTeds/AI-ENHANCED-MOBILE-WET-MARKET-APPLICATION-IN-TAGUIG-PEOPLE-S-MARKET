@@ -5,6 +5,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import type { RecipeResult } from '@/services/recipe';
 import type { MarketProduct } from '@/services/marketplace';
 
@@ -59,25 +60,48 @@ const STORAGE_KEY = '@taguigsuki_favorites';
 const FavoritesContext = createContext<FavoritesContextValue | undefined>(undefined);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
+  const { user } = useCustomerAuth();
+  const userId = user?.id;
   const [state, setState] = useState<FavoritesState>({ recipes: [], products: [] });
 
-  // Load from storage on mount
+  // Load this user's favorites whenever the signed-in user changes
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-      if (raw) {
-        try {
-          setState(JSON.parse(raw));
-        } catch {
-          // corrupted — ignore
+    if (!userId) {
+      setState({ recipes: [], products: [] });
+      return;
+    }
+
+    const key = `${STORAGE_KEY}_${userId}`;
+    let cancelled = false;
+
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (cancelled) return;
+        if (raw) {
+          try {
+            setState(JSON.parse(raw));
+            return;
+          } catch {
+            // corrupted — start fresh
+          }
         }
-      }
-    });
-  }, []);
+        setState({ recipes: [], products: [] });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ recipes: [], products: [] });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   // Persist whenever state changes
   function persist(next: FavoritesState) {
     setState(next);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    if (userId) {
+      AsyncStorage.setItem(`${STORAGE_KEY}_${userId}`, JSON.stringify(next));
+    }
   }
 
   function addRecipe(recipe: RecipeResult) {

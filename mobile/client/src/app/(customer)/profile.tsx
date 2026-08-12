@@ -37,7 +37,10 @@ export default function CustomerProfileScreen() {
   const [activeSection, setActiveSection] = useState<'main' | 'editProfile' | 'changePassword' | 'notifications'>('main');
 
   const fetchProfile = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
       const data = await getCustomerProfile(token);
       setProfile(data);

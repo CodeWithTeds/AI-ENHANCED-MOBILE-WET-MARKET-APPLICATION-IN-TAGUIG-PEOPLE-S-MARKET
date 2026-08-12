@@ -54,7 +54,10 @@ class ApiService {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      const response = await fetch(url, config);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(url, { ...config, signal: controller.signal });
+      clearTimeout(timeout);
       const text = await response.text();
 
       let data: unknown;

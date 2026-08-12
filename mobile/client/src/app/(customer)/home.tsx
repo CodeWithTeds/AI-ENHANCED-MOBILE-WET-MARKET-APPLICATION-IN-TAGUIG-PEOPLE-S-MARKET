@@ -29,7 +29,7 @@ import {
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
 import { getRecipeReviews, submitRecipeReview, type ReviewSummary } from '@/services/reviews';
-import { getToken } from '@/services/auth';
+import { getCustomerToken } from '@/services/customer-auth';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
@@ -363,7 +363,7 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
 
   async function handleRate(rating: number) {
     if (!isAuthenticated || !recipe.recipe_name) return;
-    const token = (await getToken()) ?? null;
+    const token = (await getCustomerToken()) ?? null;
     if (!token) return;
 
     setRatingSubmitting(true);

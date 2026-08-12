@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
-import { getToken } from '@/services/auth';
+import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrders,
   ORDER_STATUS_CONFIG,
@@ -27,8 +27,8 @@ import {
 export default function OrdersScreen() {
   const { token } = useCustomerAuth();
 
-  // useCustomerAuth may not have loaded yet — fall back to the shared auth token
-  const getAuthToken = async () => token ?? await getToken();
+  // useCustomerAuth may not have loaded yet — fall back to the stored customer token
+  const getAuthToken = async () => token ?? await getCustomerToken();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

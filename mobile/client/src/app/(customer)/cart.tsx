@@ -25,8 +25,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCart, type CartItem } from '@/context/CartContext';
-import { useAuth } from '@/context/AuthContext';
-import { getToken } from '@/services/auth';
+import { useCustomerAuth } from '@/context/CustomerAuthContext';
+import { getCustomerToken } from '@/services/customer-auth';
 import { placeOrder, ORDER_STATUS_CONFIG, type Order } from '@/services/orders';
 import { ApiError } from '@/services/api';
 
@@ -40,7 +40,7 @@ const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: string; colo
 
 export default function CartScreen() {
   const { items, totalItems, totalPrice, clearCart } = useCart();
-  const { token } = useAuth();
+  const { token } = useCustomerAuth();
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [placing, setPlacing] = useState(false);
@@ -49,7 +49,7 @@ export default function CartScreen() {
 
   async function handlePlaceOrder() {
     // Read token directly from AsyncStorage — never blocked by context hydration timing
-    const authToken = token ?? await getToken();
+    const authToken = token ?? await getCustomerToken();
 
     if (!authToken) {
       Alert.alert('Sign In Required', 'Please sign in to place an order.');

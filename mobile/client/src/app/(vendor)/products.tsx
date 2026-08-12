@@ -76,6 +76,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - 52) / 2;
 export default function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -91,12 +92,18 @@ export default function ProductsScreen() {
       // silently fail
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    loadProducts();
+  }
 
   // Count active filters
   useEffect(() => {
@@ -392,6 +399,8 @@ export default function ProductsScreen() {
           contentContainerStyle={styles.gridContent}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           renderItem={({ item }) => (
             <ProductCard
               product={item}

@@ -162,7 +162,7 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
                 <Text style={styles.marketPrice}>₱{Number(mp.price).toFixed(0)}</Text>
                 <TouchableOpacity
                   style={[styles.addBtn, inCart && styles.addBtnAdded]}
-                  onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, quantity: 1 })}
+                  onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category })}
                 >
                   <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
                 </TouchableOpacity>

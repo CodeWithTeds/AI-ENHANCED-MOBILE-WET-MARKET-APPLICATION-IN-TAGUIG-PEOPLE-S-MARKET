@@ -30,7 +30,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
-import { getToken } from '@/services/auth';
+import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrderTracking,
   ORDER_STATUS_CONFIG,
@@ -55,7 +55,7 @@ export default function OrderTrackingScreen() {
   const orderId = Number(id);
 
   const { token } = useCustomerAuth();
-  const getAuthToken = async () => token ?? await getToken();
+  const getAuthToken = async () => token ?? await getCustomerToken();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -418,7 +418,7 @@ function ReviewSheet({
   onSubmitted: () => void;
 }) {
   const { token } = useCustomerAuth();
-  const getAuthToken = async () => token ?? await getToken();
+  const getAuthToken = async () => token ?? await getCustomerToken();
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
