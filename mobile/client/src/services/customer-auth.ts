@@ -9,6 +9,10 @@ import { api } from './api';
 const CUSTOMER_TOKEN_KEY = '@taguigsuki_customer_token';
 const CUSTOMER_USER_KEY = '@taguigsuki_customer_user';
 
+const VENDOR_TOKEN_KEY = '@taguigsuki_token';
+const VENDOR_USER_KEY = '@taguigsuki_user';
+const VENDOR_DATA_KEY = '@taguigsuki_vendor';
+
 export interface CustomerUser {
   id: number;
   name: string;
@@ -45,9 +49,13 @@ export async function registerCustomer(data: CustomerRegisterData): Promise<Cust
 
   const result = response.data;
 
+  // Sync both customer and vendor storages so the session works everywhere
   await AsyncStorage.multiSet([
     [CUSTOMER_TOKEN_KEY, result.access_token],
     [CUSTOMER_USER_KEY, JSON.stringify(result.user)],
+    [VENDOR_TOKEN_KEY, result.access_token],
+    [VENDOR_USER_KEY, JSON.stringify(result.user)],
+    [VENDOR_DATA_KEY, JSON.stringify(null)],
   ]);
 
   return result;
@@ -64,9 +72,13 @@ export async function loginCustomer(credentials: CustomerLoginCredentials): Prom
 
   const result = response.data;
 
+  // Sync both customer and vendor storages so the session works everywhere
   await AsyncStorage.multiSet([
     [CUSTOMER_TOKEN_KEY, result.access_token],
     [CUSTOMER_USER_KEY, JSON.stringify(result.user)],
+    [VENDOR_TOKEN_KEY, result.access_token],
+    [VENDOR_USER_KEY, JSON.stringify(result.user)],
+    [VENDOR_DATA_KEY, JSON.stringify(null)],
   ]);
 
   return result;
@@ -86,7 +98,13 @@ export async function logoutCustomer(): Promise<void> {
     }
   }
 
-  await AsyncStorage.multiRemove([CUSTOMER_TOKEN_KEY, CUSTOMER_USER_KEY]);
+  await AsyncStorage.multiRemove([
+    CUSTOMER_TOKEN_KEY,
+    CUSTOMER_USER_KEY,
+    VENDOR_TOKEN_KEY,
+    VENDOR_USER_KEY,
+    VENDOR_DATA_KEY,
+  ]);
 }
 
 /**

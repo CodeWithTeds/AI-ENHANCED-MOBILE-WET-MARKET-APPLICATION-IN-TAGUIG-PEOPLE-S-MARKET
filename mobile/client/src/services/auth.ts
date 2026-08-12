@@ -9,6 +9,9 @@ const TOKEN_KEY = '@taguigsuki_token';
 const USER_KEY = '@taguigsuki_user';
 const VENDOR_KEY = '@taguigsuki_vendor';
 
+const CUSTOMER_TOKEN_KEY = '@taguigsuki_customer_token';
+const CUSTOMER_USER_KEY = '@taguigsuki_customer_user';
+
 export interface AuthUser {
   id: number;
   name: string;
@@ -50,11 +53,14 @@ export async function login(credentials: LoginCredentials): Promise<LoginRespons
 
   const data = response.data;
 
-  // Persist auth data
+  // Persist auth data — sync both vendor and customer storages so
+  // customer-only accounts also work across the app
   await AsyncStorage.multiSet([
     [TOKEN_KEY, data.access_token],
     [USER_KEY, JSON.stringify(data.user)],
     [VENDOR_KEY, JSON.stringify(data.vendor)],
+    [CUSTOMER_TOKEN_KEY, data.access_token],
+    [CUSTOMER_USER_KEY, JSON.stringify(data.user)],
   ]);
 
   return data;
@@ -74,7 +80,13 @@ export async function logout(): Promise<void> {
     }
   }
 
-  await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, VENDOR_KEY]);
+  await AsyncStorage.multiRemove([
+    TOKEN_KEY,
+    USER_KEY,
+    VENDOR_KEY,
+    CUSTOMER_TOKEN_KEY,
+    CUSTOMER_USER_KEY,
+  ]);
 }
 
 /**
