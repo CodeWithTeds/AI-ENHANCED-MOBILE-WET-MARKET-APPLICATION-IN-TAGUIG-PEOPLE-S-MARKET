@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\InventoryMonitoringController;
+use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\StallController;
 use App\Http\Controllers\Admin\VendorApprovalController;
@@ -36,6 +37,10 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
 
     // Inventory Monitoring
     Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');
+
+    // Order Management
+    Route::get('dashboard/orders', [OrderManagementController::class, 'index'])->name('orders.index');
+    Route::patch('dashboard/orders/{order}/status', [OrderManagementController::class, 'updateStatus'])->name('orders.update-status');
 });
 
 require __DIR__.'/settings.php';
