@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\InventoryMonitoringController;
+use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\StallController;
 use App\Http\Controllers\Admin\VendorApprovalController;
 use Illuminate\Support\Facades\Route;
@@ -13,10 +15,10 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
 
     // Section Management
-    Route::get('dashboard/vendors/sections', [\App\Http\Controllers\Admin\SectionController::class, 'index'])->name('sections.index');
-    Route::post('dashboard/vendors/sections', [\App\Http\Controllers\Admin\SectionController::class, 'store'])->name('sections.store');
-    Route::put('dashboard/vendors/sections/{section}', [\App\Http\Controllers\Admin\SectionController::class, 'update'])->name('sections.update');
-    Route::delete('dashboard/vendors/sections/{section}', [\App\Http\Controllers\Admin\SectionController::class, 'destroy'])->name('sections.destroy');
+    Route::get('dashboard/vendors/sections', [SectionController::class, 'index'])->name('sections.index');
+    Route::post('dashboard/vendors/sections', [SectionController::class, 'store'])->name('sections.store');
+    Route::put('dashboard/vendors/sections/{section}', [SectionController::class, 'update'])->name('sections.update');
+    Route::delete('dashboard/vendors/sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
 
     // Stall Management
     Route::get('dashboard/vendors/stalls', [StallController::class, 'index'])->name('stalls.index');
@@ -31,6 +33,9 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
 
     // Vendor Documents
     Route::get('dashboard/vendors/documents', [VendorApprovalController::class, 'documents'])->name('vendors.documents');
+
+    // Inventory Monitoring
+    Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');
 });
 
-require __DIR__ . '/settings.php';
+require __DIR__.'/settings.php';
