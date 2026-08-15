@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Models\RecipeRecommendation;
 use Illuminate\Support\Facades\Http;
 
 class RecipeService
@@ -14,19 +15,54 @@ class RecipeService
      */
     public function generateRecipe(string $query): array
     {
-        $availableProducts = Product::where('is_available', true)
-            ->select('id', 'name', 'category', 'price', 'unit')
-            ->get()
-            ->toArray();
+        try {
+            $availableProducts = Product::where('is_available', true)
+                ->select('id', 'name', 'category', 'price', 'unit')
+                ->get()
+                ->toArray();
 
-        $productList = collect($availableProducts)
-            ->map(fn($p) => "{$p['name']} ({$p['category']}) - ₱{$p['price']}/{$p['unit']}")
-            ->implode(', ');
+            $productList = collect($availableProducts)
+                ->map(fn ($p) => "{$p['name']} ({$p['category']}) - ₱{$p['price']}/{$p['unit']}")
+                ->implode(', ');
 
-        $prompt = $this->buildPrompt($query, $productList);
-        $response = $this->callGemini($prompt);
+            $prompt = $this->buildPrompt($query, $productList);
+            $response = $this->callGemini($prompt);
 
-        return $this->parseResponse($response, $availableProducts);
+            $recipe = $this->parseResponse($response, $availableProducts);
+
+            $this->record($query, $recipe);
+
+            return $recipe;
+        } catch (\Throwable $e) {
+            $this->record($query, ['found' => false, 'message' => $e->getMessage()], $e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Persist an AI recommendation so admins can monitor and manage them.
+     * Logging must never break the recipe flow, so failures are swallowed.
+     */
+    private function record(string $query, array $recipe, ?\Throwable $error = null): void
+    {
+        try {
+            $found = ($recipe['found'] ?? false) === true;
+
+            RecipeRecommendation::create([
+                'user_id' => auth('sanctum')->id(),
+                'query' => $query,
+                'recipe_name' => $found ? ($recipe['recipe_name'] ?? null) : null,
+                'status' => $error
+                    ? RecipeRecommendation::STATUS_ERROR
+                    : ($found ? RecipeRecommendation::STATUS_FOUND : RecipeRecommendation::STATUS_NOT_FOUND),
+                'payload' => $found ? $recipe : null,
+                'matching_products' => $found ? ($recipe['matching_products'] ?? []) : null,
+                'error_message' => $error?->getMessage() ?? ($found ? null : ($recipe['message'] ?? null)),
+            ]);
+        } catch (\Throwable) {
+            // Logging is best-effort — never let it take down recipe search.
+        }
     }
 
     private function buildPrompt(string $query, string $productList): string
@@ -75,7 +111,7 @@ PROMPT;
                 "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
                 [
                     'contents' => [
-                        ['parts' => [['text' => $prompt]]]
+                        ['parts' => [['text' => $prompt]]],
                     ],
                     'generationConfig' => [
                         'temperature' => 0.3,
@@ -86,6 +122,7 @@ PROMPT;
 
             if ($response->successful()) {
                 $data = $response->json();
+
                 return $data['candidates'][0]['content']['parts'][0]['text'] ?? '{"found": false, "message": "Could not generate recipe."}';
             }
 
@@ -110,11 +147,11 @@ PROMPT;
     {
         $recipe = json_decode($jsonResponse, true);
 
-        if (!$recipe || !isset($recipe['found'])) {
+        if (! $recipe || ! isset($recipe['found'])) {
             return ['found' => false, 'message' => 'Could not understand the recipe request.'];
         }
 
-        if (!$recipe['found']) {
+        if (! $recipe['found']) {
             return $recipe;
         }
 

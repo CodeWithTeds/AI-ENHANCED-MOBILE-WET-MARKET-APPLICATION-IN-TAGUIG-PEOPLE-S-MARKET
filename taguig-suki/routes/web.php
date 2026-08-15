@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\SectionController;
@@ -41,6 +42,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     // Order Management
     Route::get('dashboard/orders', [OrderManagementController::class, 'index'])->name('orders.index');
     Route::patch('dashboard/orders/{order}/status', [OrderManagementController::class, 'updateStatus'])->name('orders.update-status');
+
+    // AI Recommendation Management
+    Route::get('dashboard/recommendations', [AiRecommendationManagementController::class, 'index'])->name('recommendations.index');
+    Route::delete('dashboard/recommendations/{recommendation}', [AiRecommendationManagementController::class, 'destroy'])->name('recommendations.destroy');
+    Route::delete('dashboard/recommendations', [AiRecommendationManagementController::class, 'destroyAll'])->name('recommendations.destroy-all');
 });
 
 require __DIR__.'/settings.php';

@@ -12,7 +12,7 @@ Single git repo at `cap-taguig/` containing **two apps**:
 | `mobile/client/` | Expo SDK 57 (expo-router, RN 0.86) | Mobile app: customer + vendor flows |
 
 - Backend serves the mobile app via a **JSON API** (`/api/v1`), and the web admin via **Inertia**.
-- Web UI (pages under `resources/js/pages/`): `admin/` (sections, stalls, pending vendors, documents), `auth/`, `settings/`, `dashboard`, `welcome`.
+- Web UI (pages under `resources/js/pages/`): `admin/` (sections, stalls, pending vendors, documents, inventory, orders, recommendations), `auth/`, `settings/`, `dashboard`, `welcome`.
 - Mobile UI (routes under `mobile/client/src/app/`): `(customer)/` home, explore, cart, orders, profile + `(vendor)/` dashboard, products, inventory, orders, profile + auth/registration screens.
 
 ## Tech Stack
@@ -45,6 +45,7 @@ Single git repo at `cap-taguig/` containing **two apps**:
 - `orders` + `order_items` — customer orders (order_number `ORD-YYYYMMDD-NNNN`, status: pending→confirmed→processing→ready→completed/cancelled, payment_method: cash/gcash/maya, item snapshots with vendor_id)
 - `order_status_histories` — full status timeline per order (every status change logged with timestamp; powers the tracking screen)
 - `reviews` — polymorphic reviews: vendors + products (gated on COMPLETED orders, unique per user+target) and AI recipes (keyed by `recipe_name`, auth only)
+- `recipe_recommendations` — log of every AI recipe search (query, recipe_name, status: found/not_found/error, payload + matching_products JSON, error_message, nullable user_id) — powers the admin AI Recommendations dashboard
 - `tasks` — todo/demo feature (TaskRepository + TaskResource + TaskPolicy, auth:sanctum)
 
 ## API v1 (`routes/api/v1.php`)
@@ -59,7 +60,7 @@ Public: review listings + aggregates (`GET /reviews/vendor/{vendor}`, `GET /revi
 
 - **`OrderService::placeOrder`** — fully atomic (DB transaction): locks products + inventories (`lockForUpdate`), validates stock, creates order + items, deducts stock and logs each sale as `sold`. Throws `UnprocessableEntityHttpException` with friendly messages ("Only X item(s) of ... remaining in stock"). Seeds the first `pending` entry in `order_status_histories`.
 - **`ReviewService`** — vendor/product reviews verified against the customer's **completed** orders (item must be in a completed order owned by the user); one review per user per target; recipes keyed by `recipe_name`. `getEligibleItems()` powers the "what can I still review" list.
-- **`RecipeService`** — calls Gemini (`config/services.gemini.api_key`, `GEMINI_API_KEY` env, model fallback chain) with a strict prompt that only returns *standard* Metro Manila Filipino recipes, matches ingredients against marketplace products (`available_in_market`).
+- **`RecipeService`** — calls Gemini (`config/services.gemini.api_key`, `GEMINI_API_KEY` env, model fallback chain) with a strict prompt that only returns *standard* Metro Manila Filipino recipes, matches ingredients against marketplace products (`available_in_market`). Every generation is logged to `recipe_recommendations` (best-effort, never breaks search) for the admin AI Recommendations dashboard (`AiRecommendationManagementService`).
 - **`AuthService::login`** — blocks pending/rejected/suspended vendors with contextual messages.
 - **`VendorRegistrationService`** — transactional: creates user+vendor, reserves stall (must be vacant), uploads documents.
 
