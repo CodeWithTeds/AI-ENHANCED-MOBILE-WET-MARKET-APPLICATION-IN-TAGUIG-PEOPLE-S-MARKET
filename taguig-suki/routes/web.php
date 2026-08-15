@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\StallController;
 use App\Http\Controllers\Admin\VendorApprovalController;
+use App\Http\Controllers\Admin\VendorManagementController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -27,6 +28,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::post('dashboard/vendors/stalls', [StallController::class, 'store'])->name('stalls.store');
     Route::put('dashboard/vendors/stalls/{stall}', [StallController::class, 'update'])->name('stalls.update');
     Route::delete('dashboard/vendors/stalls/{stall}', [StallController::class, 'destroy'])->name('stalls.destroy');
+
+    // Vendor Management (All Vendors)
+    Route::get('dashboard/vendors', [VendorManagementController::class, 'index'])->name('vendors.index');
+    Route::post('dashboard/vendors/{vendor}/suspend', [VendorManagementController::class, 'suspend'])->name('vendors.suspend');
+    Route::post('dashboard/vendors/{vendor}/activate', [VendorManagementController::class, 'activate'])->name('vendors.activate');
 
     // Vendor Pending Approval
     Route::get('dashboard/vendors/pending', [VendorApprovalController::class, 'index'])->name('vendors.pending');
