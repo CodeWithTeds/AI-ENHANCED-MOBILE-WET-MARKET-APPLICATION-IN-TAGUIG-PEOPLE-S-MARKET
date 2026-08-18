@@ -16,12 +16,16 @@ class Review extends Model
         'recipe_name',
         'rating',
         'comment',
+        'status',
+        'admin_response',
+        'resolved_at',
     ];
 
     protected function casts(): array
     {
         return [
             'rating' => 'integer',
+            'resolved_at' => 'datetime',
         ];
     }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AiRecommendationManagementController;
+use App\Http\Controllers\Admin\FeedbackController;
 use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\ReportsAnalyticsController;
@@ -57,6 +58,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard/recommendations', [AiRecommendationManagementController::class, 'index'])->name('recommendations.index');
     Route::delete('dashboard/recommendations/{recommendation}', [AiRecommendationManagementController::class, 'destroy'])->name('recommendations.destroy');
     Route::delete('dashboard/recommendations', [AiRecommendationManagementController::class, 'destroyAll'])->name('recommendations.destroy-all');
+
+    // Feedback & Complaints Management
+    Route::get('dashboard/feedback', [FeedbackController::class, 'index'])->name('feedback.index');
+    Route::post('dashboard/feedback/{review}/respond', [FeedbackController::class, 'respond'])->name('feedback.respond');
+    Route::patch('dashboard/feedback/{review}/status', [FeedbackController::class, 'updateStatus'])->name('feedback.update-status');
 });
 
 require __DIR__.'/settings.php';
