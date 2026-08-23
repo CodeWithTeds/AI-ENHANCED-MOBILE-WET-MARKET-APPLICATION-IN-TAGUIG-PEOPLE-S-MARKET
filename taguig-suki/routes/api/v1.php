@@ -91,9 +91,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/reviews/{review}', [ReviewController::class, 'update']);
     Route::delete('/reviews/{review}', [ReviewController::class, 'destroy']);
 
-    // Vendor Orders (orders that contain this vendor's products)
+    // Vendor Orders & Sales (orders that contain this vendor's products)
     Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);
     Route::patch('/vendor/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::get('/vendor/sales', [OrderController::class, 'vendorSales']);
 });
 
 Route::apiResource('tasks', TaskController::class);

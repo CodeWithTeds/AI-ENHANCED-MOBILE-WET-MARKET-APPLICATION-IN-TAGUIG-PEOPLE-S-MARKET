@@ -119,7 +119,8 @@ export default function ProfileScreen() {
 
         {/* Business Section */}
         <View style={styles.menuSection}>
-          <Text style={styles.menuSectionTitle}>Business</Text>
+          <Text style={styles.menuSectionTitle}>Business & Finance</Text>
+          <MenuItem icon="trending-up-outline" label="Sales History & Revenue" subtitle="Analytics, revenue reports & transactions" onPress={() => router.push('/(vendor)/sales' as any)} />
           <MenuItem icon="storefront-outline" label="Business Info" subtitle={profile?.vendor?.stall_name} onPress={() => setActiveSection('editBusiness')} />
           <MenuItem icon="pricetags-outline" label="Product Categories" subtitle={profile?.vendor?.product_categories?.join(', ') || 'None set'} />
           <MenuItem icon="location-outline" label="Stall Location" subtitle={profile?.vendor?.stall_location ?? 'Not set'} />

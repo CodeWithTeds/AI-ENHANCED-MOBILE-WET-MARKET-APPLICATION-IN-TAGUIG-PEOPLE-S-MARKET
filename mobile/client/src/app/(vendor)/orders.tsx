@@ -23,6 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'expo-router';
 import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
@@ -51,6 +52,7 @@ const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
 };
 
 export default function VendorOrdersScreen() {
+  const router = useRouter();
   const { token } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +85,17 @@ export default function VendorOrdersScreen() {
   }
 
   const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const completedOrders = orders.filter((o) => o.status === 'completed');
+  const completedCount = completedOrders.length;
+  const completedRevenue = completedOrders.reduce(
+    (sum, o) =>
+      sum +
+      o.items.reduce(
+        (iSum, it) => iSum + Number(it.subtotal || it.quantity * it.unit_price || 0),
+        0,
+      ),
+    0,
+  );
 
   const filtered = activeTab === 'all'
     ? orders
@@ -139,15 +152,25 @@ export default function VendorOrdersScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <View style={styles.headerIconWrap}>
-            <Ionicons name="receipt" size={18} color="#FFFFFF" />
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="receipt" size={18} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>Orders</Text>
+              <Text style={styles.headerSub}>
+                {orders.length} total · {pendingCount} waiting
+              </Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.headerTitle}>Orders</Text>
-            <Text style={styles.headerSub}>
-              {orders.length} total · {pendingCount} waiting
-            </Text>
-          </View>
+          <TouchableOpacity
+            style={styles.salesBtn}
+            onPress={() => router.push('/(vendor)/sales' as any)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="trending-up" size={14} color="#1B6B45" />
+            <Text style={styles.salesBtnText}>Sales & Revenue</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -191,6 +214,26 @@ export default function VendorOrdersScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1B6B45" />
         }
       >
+        {/* Completed revenue banner if on Completed tab */}
+        {activeTab === 'completed' && completedCount > 0 && (
+          <View style={styles.completedRevenueBanner}>
+            <View style={styles.completedRevenueLeft}>
+              <Text style={styles.completedRevenueLabel}>COMPLETED REVENUE</Text>
+              <Text style={styles.completedRevenueAmount}>₱{completedRevenue.toFixed(2)}</Text>
+              <Text style={styles.completedRevenueMeta}>
+                {completedCount} completed transaction{completedCount !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.viewAnalyticsBtn}
+              onPress={() => router.push('/(vendor)/sales' as any)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.viewAnalyticsText}>Analytics</Text>
+              <Ionicons name="arrow-forward" size={13} color="#1B6B45" />
+            </TouchableOpacity>
+          </View>
+        )}
         {error ? (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle-outline" size={18} color="#DC2626" />
@@ -402,13 +445,60 @@ const styles = StyleSheet.create({
 
   /* Header */
   header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12 },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerIconWrap: {
     width: 40, height: 40, borderRadius: 13,
     backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#111827' },
   headerSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  salesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#E7F7EF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#B8F0D4',
+  },
+  salesBtnText: { fontSize: 11, fontWeight: '700', color: '#1B6B45' },
+
+  /* Completed revenue banner */
+  completedRevenueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E7ECE9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#16A34A',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  completedRevenueLeft: { flex: 1 },
+  completedRevenueLabel: { fontSize: 10, fontWeight: '800', color: '#9CA3AF', letterSpacing: 0.5 },
+  completedRevenueAmount: { fontSize: 20, fontWeight: '800', color: '#15803D', marginTop: 2, fontVariant: ['tabular-nums'] },
+  completedRevenueMeta: { fontSize: 11, color: '#6B7280', marginTop: 1 },
+  viewAnalyticsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E7F7EF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  viewAnalyticsText: { fontSize: 12, fontWeight: '700', color: '#1B6B45' },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 

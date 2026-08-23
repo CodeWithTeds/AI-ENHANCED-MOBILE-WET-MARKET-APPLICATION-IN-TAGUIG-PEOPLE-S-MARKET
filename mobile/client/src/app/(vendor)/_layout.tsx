@@ -71,6 +71,13 @@ export default function VendorLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="sales"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
   );
 }

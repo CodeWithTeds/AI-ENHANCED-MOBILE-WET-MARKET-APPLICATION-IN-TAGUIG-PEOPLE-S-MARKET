@@ -112,4 +112,17 @@ class OrderController extends Controller
 
         return $this->successResponse($order, 'Order status updated');
     }
+
+    /**
+     * Get vendor sales history, revenue analytics, and completed transactions.
+     *
+     * GET /vendor/sales
+     */
+    public function vendorSales(Request $request): JsonResponse
+    {
+        $period = $request->query('period', 'all');
+        $analytics = $this->orderService->getVendorSalesAnalytics($request->user(), $period);
+
+        return $this->successResponse($analytics, 'Vendor sales analytics retrieved');
+    }
 }

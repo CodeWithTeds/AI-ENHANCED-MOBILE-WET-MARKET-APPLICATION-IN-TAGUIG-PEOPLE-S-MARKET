@@ -188,14 +188,24 @@ export default function VendorDashboard() {
           />
         }
       >
-        {/* Hero — all-time revenue */}
-        <View style={styles.heroCard}>
+        {/* Hero — all-time revenue & sales analytics entry */}
+        <TouchableOpacity
+          style={styles.heroCard}
+          onPress={() => router.push('/(vendor)/sales' as any)}
+          activeOpacity={0.85}
+        >
           <View style={styles.heroLeft}>
-            <Text style={styles.heroLabel}>Total Revenue</Text>
+            <View style={styles.heroHeaderRow}>
+              <Text style={styles.heroLabel}>Total Revenue</Text>
+              <View style={styles.heroArrowBadge}>
+                <Text style={styles.heroArrowText}>Analytics</Text>
+                <Ionicons name="chevron-forward" size={12} color={C.brandDark} />
+              </View>
+            </View>
             <Text style={styles.heroAmount}>{formatMoney(totalRevenue)}</Text>
             <View style={styles.heroMetaRow}>
               <View style={styles.heroChip}>
-                <Ionicons name="trending-up" size={12} color={C.brand} />
+                <Ionicons name="checkmark-done-circle" size={12} color={C.brand} />
                 <Text style={styles.heroChipText}>{completedCount} completed order{completedCount !== 1 ? 's' : ''}</Text>
               </View>
               <Text style={styles.heroMeta}>· {formatMoney(todaysSales)} today</Text>
@@ -204,7 +214,7 @@ export default function VendorDashboard() {
           <View style={styles.heroIcon}>
             <MaterialCommunityIcons name="currency-php" size={30} color={C.brand} />
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Metric tiles */}
         <View style={styles.tilesRow}>
@@ -509,7 +519,18 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   heroLeft: { flex: 1 },
+  heroHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 10 },
   heroLabel: { fontSize: 13, fontWeight: '600', color: C.muted },
+  heroArrowBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: C.brandSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  heroArrowText: { fontSize: 10, fontWeight: '700', color: C.brandDark },
   heroAmount: {
     fontSize: 34,
     fontWeight: '800',
