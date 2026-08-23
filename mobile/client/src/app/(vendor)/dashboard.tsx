@@ -252,6 +252,22 @@ export default function VendorDashboard() {
           />
         </View>
 
+        {/* Reviews Quick-action */}
+        <TouchableOpacity
+          style={styles.reviewsQuickCard}
+          onPress={() => router.push('/(vendor)/reviews' as any)}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.reviewsQuickIcon, { backgroundColor: C.amberSoft }]}>
+            <Ionicons name="star" size={22} color={C.amber} />
+          </View>
+          <View style={styles.reviewsQuickText}>
+            <Text style={styles.reviewsQuickTitle}>Customer Reviews & Feedback</Text>
+            <Text style={styles.reviewsQuickSub}>View stall and product ratings from customers</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={C.muted} />
+        </TouchableOpacity>
+
         {/* Recent Orders */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
@@ -722,4 +738,32 @@ const styles = StyleSheet.create({
   },
   openDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.brand },
   openText: { fontSize: 11, fontWeight: '700', color: C.brandDark },
+
+  /* Reviews Quick-action */
+  reviewsQuickCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: C.card,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: C.line,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  reviewsQuickIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewsQuickText: { flex: 1 },
+  reviewsQuickTitle: { fontSize: 14, fontWeight: '700', color: C.ink },
+  reviewsQuickSub: { fontSize: 11, color: C.muted, marginTop: 2 },
 });

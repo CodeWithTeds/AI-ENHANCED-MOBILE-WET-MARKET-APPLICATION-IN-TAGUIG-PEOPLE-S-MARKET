@@ -275,6 +275,76 @@ class ReviewService
             ->pluck('reviewable_id');
     }
 
+    /**
+     * Get all ratings, feedback, and reviews for a vendor's stall and products.
+     */
+    public function getVendorReviewsDashboard(User $user): array
+    {
+        $vendor = $user->vendor ?? null;
+
+        if (! $vendor) {
+            return [
+                'stall' => [
+                    'average_rating' => 0.0,
+                    'total' => 0,
+                    'rating_counts' => [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0],
+                    'reviews' => [],
+                ],
+                'products' => [
+                    'average_rating' => 0.0,
+                    'total' => 0,
+                    'rating_counts' => [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0],
+                    'reviews' => [],
+                ],
+            ];
+        }
+
+        // 1. Fetch Vendor/Stall reviews
+        $stallReviews = Review::where('reviewable_type', Vendor::class)
+            ->where('reviewable_id', $vendor->id)
+            ->with('user:id,name')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $stallSummary = $this->summarize($stallReviews);
+
+        // 2. Fetch Product reviews for all products belonging to this vendor
+        $productIds = Product::where('vendor_id', $vendor->id)->pluck('id');
+
+        $productReviews = Review::where('reviewable_type', Product::class)
+            ->whereIn('reviewable_id', $productIds)
+            ->with(['user:id,name', 'reviewable'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        $productReviewsSummary = [
+            'reviews' => $productReviews->map(fn (Review $r) => [
+                'id' => $r->id,
+                'rating' => $r->rating,
+                'comment' => $r->comment,
+                'created_at' => $r->created_at,
+                'user' => $r->user?->name ?? 'Anonymous',
+                'product_id' => $r->reviewable_id,
+                'product_name' => $r->reviewable?->name ?? 'Deleted Product',
+                'product_category' => $r->reviewable?->category ?? 'General',
+            ])->values(),
+            'average_rating' => $productReviews->count() > 0 ? round($productReviews->avg('rating'), 1) : 0,
+            'total' => $productReviews->count(),
+            'rating_counts' => [
+                5 => $productReviews->where('rating', 5)->count(),
+                4 => $productReviews->where('rating', 4)->count(),
+                3 => $productReviews->where('rating', 3)->count(),
+                2 => $productReviews->where('rating', 2)->count(),
+                1 => $productReviews->where('rating', 1)->count(),
+            ],
+        ];
+
+        return [
+            'stall' => $stallSummary,
+            'products' => $productReviewsSummary,
+        ];
+    }
+
     private function summarize(Collection $reviews): array
     {
         $total = $reviews->count();

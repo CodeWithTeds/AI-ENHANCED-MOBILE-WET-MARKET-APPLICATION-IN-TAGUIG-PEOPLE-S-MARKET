@@ -147,3 +147,29 @@ export async function deleteReview(reviewId: number, token: string): Promise<voi
     token,
   });
 }
+
+/* ─── Vendor Reviews Dashboard (vendor role) ─── */
+
+export interface ProductReviewItem extends Review {
+  product_id: number;
+  product_name: string;
+  product_category: string;
+}
+
+export interface VendorReviewsDashboardResponse {
+  stall: ReviewSummary;
+  products: {
+    reviews: ProductReviewItem[];
+    average_rating: number;
+    total: number;
+    rating_counts: Record<number, number>;
+  };
+}
+
+export async function getVendorReviewsDashboard(token: string): Promise<VendorReviewsDashboardResponse> {
+  const response = await api.request<VendorReviewsDashboardResponse>('/vendor/reviews', {
+    method: 'GET',
+    token,
+  });
+  return response.data;
+}

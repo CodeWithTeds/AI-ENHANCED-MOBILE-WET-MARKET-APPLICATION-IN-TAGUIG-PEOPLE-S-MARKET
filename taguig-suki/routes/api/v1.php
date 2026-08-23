@@ -95,6 +95,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);
     Route::patch('/vendor/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::get('/vendor/sales', [OrderController::class, 'vendorSales']);
+    Route::get('/vendor/reviews', [ReviewController::class, 'vendorReviewsDashboard']);
 });
 
 Route::apiResource('tasks', TaskController::class);

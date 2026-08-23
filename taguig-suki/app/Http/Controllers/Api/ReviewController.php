@@ -181,4 +181,17 @@ class ReviewController extends Controller
             'order_id' => 'nullable|integer|exists:orders,id',
         ]));
     }
+
+    /**
+     * Get ratings and feedback for the authenticated vendor's stall and products.
+     *
+     * GET /vendor/reviews
+     */
+    public function vendorReviewsDashboard(Request $request): JsonResponse
+    {
+        return $this->successResponse(
+            $this->reviewService->getVendorReviewsDashboard($request->user()),
+            'Vendor reviews dashboard retrieved'
+        );
+    }
 }
