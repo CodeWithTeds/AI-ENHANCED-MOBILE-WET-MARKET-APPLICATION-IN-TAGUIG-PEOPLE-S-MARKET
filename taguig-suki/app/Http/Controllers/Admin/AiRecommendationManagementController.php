@@ -13,7 +13,6 @@ use Inertia\Response;
 class AiRecommendationManagementController extends Controller
 {
     public function __construct(private readonly AiRecommendationManagementService $recommendationService) {}
-
     public function index(Request $request): Response
     {
         return Inertia::render('admin/recommendations/index', $this->recommendationService->getIndexData(
