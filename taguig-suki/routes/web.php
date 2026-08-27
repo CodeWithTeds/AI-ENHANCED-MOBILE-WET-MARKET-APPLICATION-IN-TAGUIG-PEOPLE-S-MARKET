@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\FeedbackController;
 use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
+use App\Http\Controllers\Admin\ProductManagementController;
 use App\Http\Controllers\Admin\ReportsAnalyticsController;
 use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\StallController;
@@ -44,6 +45,12 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
 
     // Vendor Documents
     Route::get('dashboard/vendors/documents', [VendorApprovalController::class, 'documents'])->name('vendors.documents');
+
+    // Product Management
+    Route::get('dashboard/products', [ProductManagementController::class, 'index'])->name('products.index');
+    Route::put('dashboard/products/{product}', [ProductManagementController::class, 'update'])->name('products.update');
+    Route::delete('dashboard/products/{product}', [ProductManagementController::class, 'destroy'])->name('products.destroy');
+    Route::patch('dashboard/products/{product}/toggle', [ProductManagementController::class, 'toggleAvailability'])->name('products.toggle');
 
     // Inventory Monitoring
     Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');
