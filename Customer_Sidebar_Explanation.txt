@@ -1,0 +1,23 @@
+TAGUIG SUKI - CUSTOMER PANEL EXPLANATION (Mobile App - Bottom Navigation)
+========================================================================
+
+This is the Customer side of the Taguig Suki mobile app. Customers are the buyers / suki who shop from the Taguig People's Market online. Their navigation is also at the bottom of the screen with 5 main tabs.
+
+
+1. HOME
+This is the main shopping front. At the very top, there's a green header that shows the Market Location (Taguig People's Market), a greeting like Good Morning / Good Afternoon, and a headline "What will you cook today?" Below that is a Search Bar where customers can type recipes or ingredients like "adobo" or "sinigang" and tap the flash icon to generate an AI Recipe. If they search for a recipe, an AI Recipe Card appears showing the dish name, description, cook time, prep time, servings, list of ingredients (with checkmarks if the ingredient is available in the market), matching products they can order directly with an Add to Cart button, step-by-step cooking instructions, and cooking tips. Customers can also save or share the recipe. Lower down, there's a Categories section (All, Meat, Fish, Vegetables, Fruits, Spices) where they can filter products, a Featured Products section showing fresh items from vendors with photos, prices, and a heart icon to add to favorites, and at the bottom a Market Hours card (Today's Market Hours: 4:00 AM - 2:00 PM). It's a mix of a grocery store and a recipe helper.
+
+2. FAVORITES (Explore)
+This tab is called Explore in the code but shows as Favorites to the user. It's the wishlist page. All the products and AI recipes that the customer has hearted or saved will appear here. If they liked a product on the Home page but didn't buy it yet, they can find it here later. Same with recipes - if they found a good recipe they want to cook tomorrow, they can save it and it stays here. It's their personal collection of things they like.
+
+3. CART
+This is the shopping basket. Whatever products the customer adds from the Home page or from the AI Recipe's "Order from Market" section goes here. They can see each item, its price per unit, adjust the quantity (add or remove), and see the total amount they need to pay. At the bottom there's a checkout button. If the cart is empty, it just shows that there's nothing yet. This is the final step before placing an order.
+
+4. ORDERS
+This is where customers track all their orders. They can see their order history - whether an order is still Pending, Confirmed, Processing, Completed, or Cancelled. Each order shows the items they bought, the total price, and which vendor it came from. Tapping an order opens the detailed view, and there's also a hidden Track Order page (track/[id]) that shows the live status of a specific order, so they know if it's still being prepared or ready for pickup.
+
+5. PROFILE
+This is the customer's personal account page. It shows their name, contact information, and login details. From here they can edit their profile, manage their address, change their password, view their favorites, and log out. It's their identity and settings page inside the app.
+
+IN SHORT FOR CUSTOMERS:
+Home is where you browse and discover what to cook, Favorites is what you saved for later, Cart is what you want to buy now, Orders is what you already bought and are waiting for, and Profile is who you are.

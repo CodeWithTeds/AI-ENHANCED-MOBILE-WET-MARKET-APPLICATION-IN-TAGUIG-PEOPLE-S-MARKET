@@ -13,7 +13,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
 
-#[Fillable(['name', 'email', 'password', 'is_admin', 'notification_preferences'])]
+#[Fillable(['name', 'email', 'password', 'is_admin', 'is_active', 'notification_preferences'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -31,9 +31,25 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'is_active' => 'boolean',
             'two_factor_confirmed_at' => 'datetime',
             'notification_preferences' => 'array',
         ];
+    }
+
+    public function isActive(): bool
+    {
+        return (bool) ($this->is_active ?? true);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeCustomers($query)
+    {
+        return $query->where('is_admin', false);
     }
 
     public function vendor(): \Illuminate\Database\Eloquent\Relations\HasOne

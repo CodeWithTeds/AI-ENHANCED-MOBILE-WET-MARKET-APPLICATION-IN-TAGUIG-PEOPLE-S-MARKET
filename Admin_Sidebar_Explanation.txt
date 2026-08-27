@@ -1,0 +1,44 @@
+TAGUIG SUKI - ADMIN SIDEBAR EXPLANATION
+=====================================
+
+1. DASHBOARD
+The Dashboard is your main overview and control center. Think of it as the front page where you can see everything happening in the system at a glance. It shows you important numbers like total users, total vendors, total sales, pending approvals, low stock alerts, and recent orders. You don't need to click around to know what's going on, the dashboard summarizes it all for you in one place.
+
+2. USER MANAGEMENT
+User Management is where you handle all the regular users or customers, which are the buyers on the platform. Here you can view their accounts, check their personal details, and activate or deactivate their accounts if needed. If a user has an issue, violates a rule, or needs support, this is where you manage them. It gives you full control over who can access and use the system as a buyer.
+
+3. VENDOR MANAGEMENT
+Vendor Management is the main section for everything related to sellers. This is the parent menu that groups all vendor-related functions together. It covers how vendors register, how their information is handled, and how they operate inside the marketplace. It's basically your main hub for controlling the seller side of the business.
+
+4. ALL VENDORS
+All Vendors is the complete list of every vendor who has registered in the system, whether they are already approved, still pending, or already active. You can view each vendor's profile, see their store information, and monitor their status and performance. This page helps you keep track of all sellers in one organized list.
+
+5. STALL MANAGEMENT
+Stall Management is for handling the stalls in the market, whether they are physical stalls in the palengke or virtual stalls online. Here you can assign which vendor owns which stall, see the stall number and location, and check if a stall is occupied or still vacant. It helps you organize the marketplace layout properly and avoid double assignments.
+
+6. PENDING APPROVAL
+Pending Approval is like your to-do list for approvals. All new vendor registrations, new stall requests, or product listings that need to be reviewed will appear here. You will need to check their details and documents carefully, then decide whether to Approve or Reject them. Nothing goes live on the platform until you approve it here.
+
+7. DOCUMENTS
+Documents is where all the required papers from vendors are stored and verified. This includes business permits, valid IDs, DTI certificates, barangay clearances, and other requirements. You can view each file, check if it is complete, valid, or expired, and confirm if the vendor is legitimate. This section is very important for security and compliance.
+
+8. PRODUCT MANAGEMENT
+Product Management is where you oversee all the products being sold by all vendors in the system. You can see what items are listed, check their prices, descriptions, and categories, and remove or edit any prohibited or incorrect products. This ensures that only proper and allowed products are visible to customers.
+
+9. INVENTORY MONITORING
+Inventory Monitoring keeps track of product stocks and availability. It shows you which products are running low, which are already out of stock, and which are overstocked. This helps prevent customers from ordering items that are no longer available and also sends alerts to vendors so they know when it is time to restock.
+
+10. ORDER MANAGEMENT
+Order Management is where you monitor all orders coming from customers. You can track new orders, ongoing or preparing orders, completed orders, and cancelled ones. This section helps you make sure that vendors are processing orders on time and that deliveries are handled properly from ordering to completion.
+
+11. PAYMENT MANAGEMENT
+Payment Management handles everything related to money transactions. Here you can track payments made by customers, payouts that go to vendors, and the overall transaction history. It also shows the payment method used, like GCash or Cash on Delivery, and whether a payment is successful, pending, or failed. It keeps the financial flow clear and organized.
+
+12. AI RECOMMENDATIONS
+AI Recommendations is the smart and automated feature of the system. The AI studies sales data, product trends, and customer buying behavior to give useful suggestions. For example, it can suggest what products are trending, what a customer might want to buy next, or what a vendor should restock. It helps both admins and vendors make smarter business decisions.
+
+13. REPORTS & ANALYTICS
+Reports & Analytics is where all the data is turned into useful insights and reports. You can view sales reports, best-selling products, vendor performance, and sales charts by day, week, or month. This is very helpful for monitoring the growth of the marketplace and for presenting clear reports to the admin or the LGU.
+
+14. FEEDBACK & COMPLAINTS
+Feedback & Complaints is where you can see all the reviews, ratings, feedback, and complaints sent by customers. It includes comments about vendors, products, and order experiences. This section helps you resolve issues quickly, warn or guide vendors if needed, and maintain trust and good service quality in the marketplace.

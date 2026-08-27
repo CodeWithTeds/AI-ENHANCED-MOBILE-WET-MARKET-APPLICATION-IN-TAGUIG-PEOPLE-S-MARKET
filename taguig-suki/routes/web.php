@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\ReportsAnalyticsController;
 use App\Http\Controllers\Admin\SectionController;
 use App\Http\Controllers\Admin\StallController;
+use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\VendorApprovalController;
 use App\Http\Controllers\Admin\VendorManagementController;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,14 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard/feedback', [FeedbackController::class, 'index'])->name('feedback.index');
     Route::post('dashboard/feedback/{review}/respond', [FeedbackController::class, 'respond'])->name('feedback.respond');
     Route::patch('dashboard/feedback/{review}/status', [FeedbackController::class, 'updateStatus'])->name('feedback.update-status');
+
+    // User Management - Manages customer accounts, including viewing, updating, activating, or deactivating users
+    Route::get('dashboard/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::put('dashboard/users/{user}', [UserManagementController::class, 'update'])->name('users.update');
+    Route::patch('dashboard/users/{user}/toggle', [UserManagementController::class, 'toggleStatus'])->name('users.toggle');
+    Route::patch('dashboard/users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
+    Route::patch('dashboard/users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
+    Route::delete('dashboard/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
 });
 
 require __DIR__.'/settings.php';

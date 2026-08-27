@@ -1,0 +1,31 @@
+TAGUIG SUKI - VENDOR PANEL EXPLANATION (Mobile App - Bottom Navigation)
+=====================================================================
+
+This is the Vendor side of the Taguig Suki mobile app. Vendors are the sellers who own stalls in the Taguig People's Market. Their navigation is at the bottom of the screen with 5 main tabs.
+
+
+1. HOME / DASHBOARD
+This is the vendor's main overview page. As soon as the vendor logs in, they see a greeting, their stall name and location (e.g., Taguig People's Market), and a summary of what's happening today. At the top, there's a big Total Revenue card that shows all-time revenue from completed orders and today's sales - tapping it opens the Sales Analytics page. Below that are four quick metric tiles: Pending (orders awaiting pickup), Ready / Upcoming (confirmed and being prepared), Products (total products and units), and Low Stock (items that need restocking). Further down, there's a Recent Orders section showing the last 3 customer orders with the customer's name, time, amount, and status, plus an Inventory Snapshot that shows how many items are In Stock, Low Stock, and Out of Stock with a visual bar. At the bottom, there's a Market Hours bar showing Open 4:00 AM - 2:00 PM. It also has a shortcut card for Customer Reviews & Feedback. Basically, this page tells the vendor in seconds if they need to prepare orders or restock.
+
+2. PRODUCTS
+This is where the vendor manages their products. They can add new products, upload a photo, set the name, price, unit (per kilo, per piece, etc.), category, and stock quantity. They can also edit or delete existing products. Each product card shows the image, name, price, and which stall it comes from. This is the vendor's online shelf or display case - whatever they list here is what customers will see when they browse the market.
+
+3. INVENTORY
+This is the stock monitoring page. It helps the vendor track the quantity of every product they have. It shows which items are still In Stock, which are running Low, and which are already Out of Stock. Vendors can update the stock numbers here after they sell in the physical market or after receiving new deliveries. It prevents overselling and reminds them what to restock before they run out completely.
+
+4. ORDERS
+This is where all customer orders are managed. Vendors can see new orders that are still Pending, then Confirm them, mark them as Processing/Preparing, and finally as Completed or Ready for Pickup/Delivery. Each order shows the customer's name, the list of items, total amount, and the time it was ordered. This is the most active page during market hours because it controls the flow of sales.
+
+5. PROFILE
+This is the vendor's personal and stall account page. It shows their stall name, stall location, contact details, and login information. From here they can edit their profile, change their password, view their stall details, and log out. It's like their ID and store settings in one place.
+
+--- HIDDEN / SECONDARY PAGES (Accessible from Dashboard) ---
+
+6. SALES / ANALYTICS (Hidden Tab)
+This page is not directly on the bottom bar but is opened by tapping the Total Revenue card on the Home page. It shows detailed sales analytics - total revenue, completed orders count, today's sales, and sales trends over time. It helps the vendor understand their earnings and which days they sell the most.
+
+7. REVIEWS & FEEDBACK (Hidden Tab)
+This page is also opened from the Dashboard via the Customer Reviews & Feedback card. It shows all ratings and feedback that customers have left for the vendor's stall and their individual products. Vendors can read what customers liked or complained about, see their average star rating, and use it to improve their service and product quality.
+
+IN SHORT FOR VENDORS:
+Home tells you how your business is doing, Products is what you sell, Inventory is what you have left, Orders is what you need to prepare, and Profile is who you are.
