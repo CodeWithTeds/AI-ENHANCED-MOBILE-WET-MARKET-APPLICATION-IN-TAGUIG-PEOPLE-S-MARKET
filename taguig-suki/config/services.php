@@ -37,6 +37,7 @@ return [
 
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
+        'ca_bundle' => env('CURL_CA_BUNDLE', 'C:\Users\Admin\Downloads\cacert.pem'),
     ],
 
 ];

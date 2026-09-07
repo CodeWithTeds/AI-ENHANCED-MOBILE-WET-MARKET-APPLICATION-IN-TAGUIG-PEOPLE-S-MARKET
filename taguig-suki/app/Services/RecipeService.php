@@ -106,8 +106,11 @@ PROMPT;
         $apiKey = config('services.gemini.api_key');
         $models = ['gemini-3-flash-preview', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
 
+        $caBundle = config('services.gemini.ca_bundle');
+        $httpOptions = $caBundle && file_exists($caBundle) ? ['verify' => $caBundle] : [];
+
         foreach ($models as $model) {
-            $response = Http::timeout(45)->post(
+            $response = Http::withOptions($httpOptions)->timeout(45)->post(
                 "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
                 [
                     'contents' => [
