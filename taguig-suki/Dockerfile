@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) pdo pdo_mysql pdo_pgsql zip mbstring intl bcmath opcache gd exif pcntl \
+    && a2dismod mpm_event || true \
+    && a2enmod mpm_prefork || true \
     && a2enmod rewrite \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -40,6 +42,6 @@ RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-av
 
 EXPOSE 80
 
-# Railway provides $PORT, Apache listens on 80, so we handle both
-CMD bash -c "php artisan migrate --force --no-interaction || true; php artisan config:cache; php artisan route:cache; php artisan view:cache; apache2-foreground"
+# Railway provides $PORT, make Apache listen on $PORT
+CMD bash -c "sed -ri -e \"s/Listen 80/Listen \${PORT:-80}/g\" /etc/apache2/ports.conf && sed -ri -e \"s/:80/:\\\${PORT:-80}/g\" /etc/apache2/sites-available/*.conf; php artisan migrate --force --no-interaction || true; php artisan config:cache; php artisan route:cache; php artisan view:cache; apache2-foreground"
 
