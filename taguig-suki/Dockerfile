@@ -46,6 +46,6 @@ RUN printf '<VirtualHost *:80>\n    DocumentRoot /var/www/html/public\n    <Dire
 
 EXPOSE 80
 
-# Railway provides $PORT, make Apache listen on $PORT + fix MPM at runtime + debug
-CMD bash -c "a2dismod mpm_event mpm_worker 2>/dev/null || true; rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* 2>/dev/null || true; a2enmod mpm_prefork rewrite 2>/dev/null || true; echo \"PORT=\${PORT:-80}\"; cat /etc/apache2/sites-available/000-default.conf; echo \"---ports.conf before---\"; cat /etc/apache2/ports.conf; sed -ri -e \"s/Listen 80/Listen ${PORT:-80}/g\" /etc/apache2/ports.conf && sed -ri -e \"s/:80/:${PORT:-80}/g\" /etc/apache2/sites-available/*.conf; echo \"---ports.conf after---\"; cat /etc/apache2/ports.conf; echo \"---vhost after---\"; cat /etc/apache2/sites-available/000-default.conf; ls -la /var/www/html/public/index.php; php artisan migrate --force --no-interaction || true; php artisan config:cache; php artisan route:cache; php artisan view:cache; apache2-foreground"
+# Railway provides $PORT, make Apache listen on $PORT + fix MPM at runtime
+CMD bash -c "a2dismod mpm_event mpm_worker 2>/dev/null || true; rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* 2>/dev/null || true; a2enmod mpm_prefork rewrite 2>/dev/null || true; sed -ri -e \"s/Listen 80/Listen ${PORT:-80}/g\" /etc/apache2/ports.conf && sed -ri -e \"s/:80/:${PORT:-80}/g\" /etc/apache2/sites-available/*.conf; php artisan migrate --force --no-interaction || true; php artisan db:seed --force || true; php artisan config:cache; php artisan route:cache; php artisan view:cache; apache2-foreground"
 

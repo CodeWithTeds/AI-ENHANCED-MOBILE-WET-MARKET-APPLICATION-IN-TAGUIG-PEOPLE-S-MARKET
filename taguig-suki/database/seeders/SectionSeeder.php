@@ -16,7 +16,7 @@ class SectionSeeder extends Seeder
         ];
 
         foreach ($sections as $section) {
-            Section::create($section);
+            Section::firstOrCreate(['slug' => $section['slug']], $section);
         }
     }
 }
