@@ -47,7 +47,10 @@ class PaymentManagementService
 
     private function present(Order $order): array
     {
-        $paymentStatus = $this->resolvePaymentStatus($order->status);
+        // Use explicit payment_status if present, else derive from order status for legacy records
+        $paymentStatus = $order->payment_status
+            ? $this->resolvePaymentStatusFromPayment($order->payment_status)
+            : $this->resolvePaymentStatus($order->status);
 
         // Group items by vendor for payout breakdown
         $payouts = $order->items->groupBy('vendor_id')->map(function ($items, $vendorId) {
@@ -72,7 +75,12 @@ class PaymentManagementService
             'order_number' => $order->order_number,
             'status' => $order->status,
             'payment_status' => $paymentStatus,
+            'payment_status_raw' => $order->payment_status ?? 'unpaid',
             'payment_method' => $order->payment_method,
+            'payment_reference_number' => $order->payment_reference_number,
+            'payment_submitted_at' => $order->payment_submitted_at,
+            'payment_verified_at' => $order->payment_verified_at,
+            'payment_verified_by' => $order->payment_verified_by,
             'total_amount' => $order->total_amount,
             'notes' => $order->notes,
             'created_at' => $order->created_at,
@@ -104,6 +112,17 @@ class PaymentManagementService
         };
     }
 
+    private function resolvePaymentStatusFromPayment(string $paymentStatus): string
+    {
+        return match ($paymentStatus) {
+            'paid' => 'successful',
+            'pending_verification' => 'pending_verification',
+            'rejected' => 'failed',
+            'unpaid' => 'pending',
+            default => 'pending',
+        };
+    }
+
     private function applyFilters(Builder $query, array $filters): void
     {
         if (! empty($filters['payment_method'])) {
@@ -111,14 +130,41 @@ class PaymentManagementService
         }
 
         if (! empty($filters['payment_status'])) {
-            $statusMap = [
-                'successful' => ['completed'],
-                'failed' => ['cancelled'],
-                'pending' => ['pending', 'confirmed', 'processing', 'ready'],
-            ];
-            $orderStatuses = $statusMap[$filters['payment_status']] ?? null;
-            if ($orderStatuses) {
-                $query->whereIn('status', $orderStatuses);
+            // Support both legacy order-status mapping and new payment_status
+            if (in_array($filters['payment_status'], ['paid', 'successful'])) {
+                // Check explicit payment_status or completed orders
+                $query->where(function (Builder $q) {
+                    $q->where('payment_status', 'paid')
+                      ->orWhere(function (Builder $qq) {
+                          $qq->whereNull('payment_status')->where('status', 'completed');
+                      });
+                });
+            } elseif (in_array($filters['payment_status'], ['pending_verification'])) {
+                $query->where('payment_status', 'pending_verification');
+            } elseif (in_array($filters['payment_status'], ['failed', 'rejected'])) {
+                $query->where(function (Builder $q) {
+                    $q->where('payment_status', 'rejected')
+                      ->orWhere(function (Builder $qq) {
+                          $qq->whereNull('payment_status')->where('status', 'cancelled');
+                      });
+                });
+            } elseif ($filters['payment_status'] === 'pending') {
+                $query->where(function (Builder $q) {
+                    $q->where('payment_status', 'unpaid')
+                      ->orWhere(function (Builder $qq) {
+                          $qq->whereNull('payment_status')->whereIn('status', ['pending', 'confirmed', 'processing', 'ready']);
+                      });
+                });
+            } else {
+                $statusMap = [
+                    'successful' => ['completed'],
+                    'failed' => ['cancelled'],
+                    'pending' => ['pending', 'confirmed', 'processing', 'ready'],
+                ];
+                $orderStatuses = $statusMap[$filters['payment_status']] ?? null;
+                if ($orderStatuses) {
+                    $query->whereIn('status', $orderStatuses);
+                }
             }
         }
 

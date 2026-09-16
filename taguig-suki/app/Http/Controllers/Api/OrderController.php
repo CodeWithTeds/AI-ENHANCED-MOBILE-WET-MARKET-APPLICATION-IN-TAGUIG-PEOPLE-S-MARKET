@@ -19,7 +19,7 @@ class OrderController extends Controller
      * Place a new order.
      *
      * POST /orders
-     * Body: { items: [{ product_id, product_name, quantity }], payment_method?, notes? }
+     * Body: { items: [{ product_id, product_name, quantity }], payment_method?, payment_reference_number?, notes? }
      */
     public function store(Request $request): JsonResponse
     {
@@ -29,6 +29,7 @@ class OrderController extends Controller
             'items.*.product_name' => 'required|string',
             'items.*.quantity' => 'required|integer|min:1',
             'payment_method' => 'nullable|string|in:cash,gcash,maya',
+            'payment_reference_number' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -38,6 +39,7 @@ class OrderController extends Controller
                 $validated['items'],
                 $validated['payment_method'] ?? 'cash',
                 $validated['notes'] ?? null,
+                $validated['payment_reference_number'] ?? null,
             );
 
             return $this->successResponse($order, 'Order placed successfully', 201);
@@ -47,6 +49,51 @@ class OrderController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    /**
+     * Customer submits payment reference for GCash/Maya (after external transfer).
+     *
+     * POST /orders/{id}/payment-reference
+     * Body: { payment_reference_number: string }
+     */
+    public function submitPaymentReference(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'payment_reference_number' => 'required|string|max:100',
+        ]);
+
+        try {
+            $order = $this->orderService->submitPaymentReference(
+                $request->user(),
+                $id,
+                $validated['payment_reference_number']
+            );
+
+            return $this->successResponse($order, 'Payment proof submitted — pending verification', 200);
+        } catch (UnprocessableEntityHttpException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Get vendors' GCash/Maya details for checkout display.
+     * POST /orders/payment-details  { product_ids: [1,2] }
+     * Or GET with query ?product_ids=1,2
+     */
+    public function vendorsPaymentDetails(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_ids' => 'required|array|min:1|max:50',
+            'product_ids.*' => 'integer|exists:products,id',
+        ]);
+
+        $details = $this->orderService->getVendorsPaymentDetails($validated['product_ids']);
+
+        return $this->successResponse($details, 'Vendors payment details retrieved');
     }
 
     /**
@@ -95,6 +142,52 @@ class OrderController extends Controller
         $orders = $this->orderService->getVendorOrders($request->user());
 
         return $this->successResponse($orders, 'Vendor orders retrieved');
+    }
+
+    /**
+     * Get vendor's pending-verification payments.
+     *
+     * GET /vendor/payments/pending
+     */
+    public function vendorPendingPayments(Request $request): JsonResponse
+    {
+        $orders = $this->orderService->getVendorPendingPayments($request->user());
+
+        return $this->successResponse($orders, 'Pending payments retrieved');
+    }
+
+    /**
+     * Vendor verifies (approve/reject) a customer's GCash/Maya payment.
+     *
+     * PATCH /vendor/orders/{id}/verify-payment
+     * Body: { action: verify|reject }
+     */
+    public function verifyPayment(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'action' => 'required|string|in:verify,approve,reject,decline,reject_payment,approve_payment',
+        ]);
+
+        // Normalize action
+        $action = in_array($validated['action'], ['verify', 'approve', 'approve_payment']) ? 'verify' : 'reject';
+
+        try {
+            $order = $this->orderService->verifyPayment($request->user(), $id, $action);
+
+            $message = $action === 'verify' ? 'Payment verified as Paid' : 'Payment proof rejected';
+
+            return $this->successResponse($order, $message);
+        } catch (UnprocessableEntityHttpException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 403);
+        }
     }
 
     /**

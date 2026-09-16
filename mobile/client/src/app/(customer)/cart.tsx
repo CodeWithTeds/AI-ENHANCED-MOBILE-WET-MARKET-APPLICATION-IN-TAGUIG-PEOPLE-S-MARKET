@@ -4,8 +4,10 @@
  * Features:
  *  - Quantity controls, swipe-to-remove
  *  - Payment method selector (Cash / GCash / Maya)
+ *  - Vendor GCash/Maya account + QR display when e-wallet selected
+ *  - Reference number input for e-wallet (required, goes to pending_verification)
  *  - Place Order → loading indicator → stock validation → DB save → inventory deduction
- *  - Order Confirmation modal with order details
+ *  - Order Confirmation modal with order details + payment status
  *  - All errors shown inline (stock issues, network errors)
  */
 
@@ -14,10 +16,12 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -27,7 +31,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCart, type CartItem } from '@/context/CartContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
-import { placeOrder, ORDER_STATUS_CONFIG, type Order } from '@/services/orders';
+import {
+  placeOrder,
+  getVendorsPaymentDetails,
+  ORDER_STATUS_CONFIG,
+  PAYMENT_STATUS_CONFIG,
+  type Order,
+  type VendorPaymentDetail,
+} from '@/services/orders';
 import { ApiError } from '@/services/api';
 
 type PaymentMethod = 'cash' | 'gcash' | 'maya';
@@ -43,12 +54,49 @@ export default function CartScreen() {
   const { token } = useCustomerAuth();
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [referenceNumber, setReferenceNumber] = useState('');
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
 
+  // Vendor payment details for e-wallet display
+  const [vendorPayments, setVendorPayments] = useState<VendorPaymentDetail[] | null>(null);
+  const [vendorPaymentsLoading, setVendorPaymentsLoading] = useState(false);
+  const [vendorPaymentsError, setVendorPaymentsError] = useState<string | null>(null);
+
+  // Fetch vendor GCash/Maya details when user selects e-wallet
+  useEffect(() => {
+    if (paymentMethod === 'cash' || items.length === 0) {
+      setVendorPayments(null);
+      setVendorPaymentsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchPayments() {
+      setVendorPaymentsLoading(true);
+      setVendorPaymentsError(null);
+      try {
+        const authToken = token ?? await getCustomerToken();
+        if (!authToken) {
+          setVendorPaymentsError('Sign in to load vendor payment details.');
+          return;
+        }
+        const productIds = items.map((i) => i.product_id);
+        const details = await getVendorsPaymentDetails(productIds, authToken);
+        if (!cancelled) setVendorPayments(details);
+      } catch (err: any) {
+        if (!cancelled) setVendorPaymentsError(err.message || 'Failed to load vendor payment details.');
+      } finally {
+        if (!cancelled) setVendorPaymentsLoading(false);
+      }
+    }
+
+    fetchPayments();
+    return () => { cancelled = true; };
+  }, [paymentMethod, items, token]);
+
   async function handlePlaceOrder() {
-    // Read token directly from AsyncStorage — never blocked by context hydration timing
     const authToken = token ?? await getCustomerToken();
 
     if (!authToken) {
@@ -56,6 +104,12 @@ export default function CartScreen() {
       return;
     }
     if (items.length === 0) return;
+
+    // Validate reference for e-wallet
+    if ((paymentMethod === 'gcash' || paymentMethod === 'maya') && !referenceNumber.trim()) {
+      setErrorMsg('Please enter your payment reference number for ' + paymentMethod.toUpperCase() + '. You can find it in your GCash/Maya app after sending payment.');
+      return;
+    }
 
     setPlacing(true);
     setErrorMsg(null);
@@ -69,11 +123,13 @@ export default function CartScreen() {
             quantity:     i.quantity,
           })),
           payment_method: paymentMethod,
+          payment_reference_number: (paymentMethod === 'gcash' || paymentMethod === 'maya') ? referenceNumber.trim() : undefined,
         },
         authToken,
       );
 
       clearCart();
+      setReferenceNumber('');
       setConfirmedOrder(order);
     } catch (err) {
       const msg =
@@ -180,6 +236,121 @@ export default function CartScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Cash hint */}
+          {paymentMethod === 'cash' && (
+            <View style={styles.cashHint}>
+              <Ionicons name="information-circle-outline" size={16} color="#16A34A" />
+              <Text style={styles.cashHintText}>Pay with cash when you pick up your order at the market.</Text>
+            </View>
+          )}
+
+          {/* E-Wallet vendor details */}
+          {(paymentMethod === 'gcash' || paymentMethod === 'maya') && (
+            <View style={styles.ewalletSection}>
+              <View style={styles.ewalletHeader}>
+                <Ionicons name={paymentMethod === 'gcash' ? 'phone-portrait-outline' as any : 'card-outline' as any} size={16} color={paymentMethod === 'gcash' ? '#2563EB' : '#7C3AED'} />
+                <Text style={styles.ewalletTitle}>
+                  {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} Payment Details
+                </Text>
+              </View>
+              <Text style={styles.ewalletHint}>
+                Send payment using the vendor's {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} account below, then enter your reference number.
+              </Text>
+
+              {vendorPaymentsLoading ? (
+                <View style={styles.ewalletLoading}>
+                  <ActivityIndicator size="small" color={paymentMethod === 'gcash' ? '#2563EB' : '#7C3AED'} />
+                  <Text style={styles.ewalletLoadingText}>Loading vendor payment details…</Text>
+                </View>
+              ) : vendorPaymentsError ? (
+                <View style={styles.ewalletError}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+                  <Text style={styles.ewalletErrorText}>{vendorPaymentsError}</Text>
+                </View>
+              ) : vendorPayments && vendorPayments.length > 0 ? (
+                <View style={styles.vendorPaymentList}>
+                  {vendorPayments.map((vendor) => {
+                    const methodData = paymentMethod === 'gcash' ? vendor.gcash ?? { number: vendor.gcash_number, qr_url: vendor.gcash_qr_url, has_qr: !!vendor.gcash_qr_url } : vendor.maya ?? { number: vendor.maya_number, qr_url: vendor.maya_qr_url, has_qr: !!vendor.maya_qr_url };
+                    const hasNumber = !!methodData?.number;
+                    const hasQr = !!methodData?.qr_url;
+                    const hasAny = hasNumber || hasQr;
+
+                    return (
+                      <View key={vendor.vendor_id} style={styles.vendorPaymentCard}>
+                        <View style={styles.vendorPaymentHeader}>
+                          <Ionicons name="storefront-outline" size={14} color="#6B7280" />
+                          <Text style={styles.vendorPaymentName} numberOfLines={1}>{vendor.stall_name}</Text>
+                          {vendor.stall_location ? (
+                            <Text style={styles.vendorPaymentLocation} numberOfLines={1}>· {vendor.stall_location}</Text>
+                          ) : null}
+                        </View>
+                        {!hasAny ? (
+                          <View style={styles.noEwalletBox}>
+                            <Ionicons name="warning-outline" size={14} color="#D97706" />
+                            <Text style={styles.noEwalletText}>This vendor hasn't set up {paymentMethod.toUpperCase()} yet. Please contact them or use Cash.</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.ewalletDetailRow}>
+                            <View style={styles.ewalletDetailText}>
+                              {hasNumber && (
+                                <View style={styles.accountRow}>
+                                  <Text style={styles.accountLabel}>{paymentMethod === 'gcash' ? 'GCash' : 'Maya'} Number</Text>
+                                  <Text style={styles.accountNumber}>{methodData.number}</Text>
+                                </View>
+                              )}
+                              {!hasNumber && hasQr && (
+                                <View style={styles.accountRow}>
+                                  <Text style={styles.accountLabel}>Scan QR to pay</Text>
+                                  <Text style={styles.accountHint}>Use your {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} app</Text>
+                                </View>
+                              )}
+                            </View>
+                            {hasQr && (
+                              <View style={styles.qrWrap}>
+                                <Image source={{ uri: methodData.qr_url! }} style={styles.qrImage} resizeMode="contain" />
+                                <Text style={styles.qrCaption}>Scan QR</Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.ewalletError}>
+                  <Ionicons name="storefront-outline" size={16} color="#9CA3AF" />
+                  <Text style={styles.ewalletErrorText}>No vendor payment details found.</Text>
+                </View>
+              )}
+
+              {/* Reference Number Input */}
+              <View style={styles.referenceBox}>
+                <Text style={styles.referenceLabel}>
+                  Payment Reference Number <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <Text style={styles.referenceHint}>
+                  Find this in your {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} app after sending payment (e.g., 1234567890123)
+                </Text>
+                <TextInput
+                  style={styles.referenceInput}
+                  value={referenceNumber}
+                  onChangeText={setReferenceNumber}
+                  placeholder={`Enter ${paymentMethod.toUpperCase()} reference number`}
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <View style={styles.pendingNotice}>
+                  <Ionicons name="hourglass-outline" size={14} color="#D97706" />
+                  <Text style={styles.pendingNoticeText}>
+                    Your payment will be <Text style={{ fontWeight: '700' }}>Pending Verification</Text> until the vendor confirms it. Status becomes <Text style={{ fontWeight: '700' }}>Paid</Text> only after verification — not automatically.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Spacer for the fixed summary card */}
@@ -220,6 +391,11 @@ export default function CartScreen() {
             </>
           )}
         </TouchableOpacity>
+        {(paymentMethod === 'gcash' || paymentMethod === 'maya') && (
+          <Text style={styles.summaryPaymentHint}>
+            By placing order you confirm you have sent ₱{totalPrice.toFixed(2)} via {paymentMethod.toUpperCase()}
+          </Text>
+        )}
       </View>
 
       {/* Order Confirmation Modal */}
@@ -308,7 +484,11 @@ function OrderConfirmationModal({
     ]).start();
   }, []);
 
-  const statusCfg = ORDER_STATUS_CONFIG[order.status];
+  const statusCfg = ORDER_STATUS_CONFIG[order.status as keyof typeof ORDER_STATUS_CONFIG] ?? ORDER_STATUS_CONFIG.pending;
+  const paymentCfg = order.payment_status ? PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG] : null;
+  const isEwallet = order.payment_method === 'gcash' || order.payment_method === 'maya';
+  const isPendingVerification = order.payment_status === 'pending_verification';
+
   const estimatedDate = new Date();
   estimatedDate.setDate(estimatedDate.getDate() + 1);
   const estimatedStr = estimatedDate.toLocaleDateString('en-PH', {
@@ -322,12 +502,32 @@ function OrderConfirmationModal({
           style={[confirmStyles.card, { transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}
         >
           {/* Success Icon */}
-          <View style={confirmStyles.successIcon}>
-            <Ionicons name="checkmark-circle" size={56} color="#16A34A" />
+          <View style={[confirmStyles.successIcon, isPendingVerification && { backgroundColor: '#FEF3C7' }]}>
+            <Ionicons name={isPendingVerification ? 'hourglass-outline' as any : 'checkmark-circle'} size={56} color={isPendingVerification ? '#D97706' : '#16A34A'} />
           </View>
 
-          <Text style={confirmStyles.title}>Order Placed!</Text>
-          <Text style={confirmStyles.subtitle}>Your order is being prepared by the vendor.</Text>
+          <Text style={confirmStyles.title}>{isPendingVerification ? 'Order Placed!' : 'Order Placed!'}</Text>
+          <Text style={confirmStyles.subtitle}>
+            {isPendingVerification
+              ? `Your ${order.payment_method.toUpperCase()} payment is awaiting vendor verification.`
+              : 'Your order is being prepared by the vendor.'}
+          </Text>
+
+          {/* Payment Status Badge for e-wallet */}
+          {isEwallet && (
+            <View style={[confirmStyles.paymentStatusBanner, { backgroundColor: paymentCfg?.bg ?? '#FEF3C7', borderColor: paymentCfg?.color ? paymentCfg.color + '30' : '#FDE68A' }]}>
+              <Ionicons name={paymentCfg?.icon as any ?? 'hourglass-outline'} size={16} color={paymentCfg?.color ?? '#D97706'} />
+              <View style={{ flex: 1 }}>
+                <Text style={[confirmStyles.paymentStatusLabel, { color: paymentCfg?.color ?? '#92400E' }]}>
+                  {paymentCfg?.label ?? 'Pending Verification'}
+                </Text>
+                <Text style={confirmStyles.paymentStatusHint}>
+                  {order.payment_reference_number ? `Ref: ${order.payment_reference_number}` : 'Reference submitted'}
+                  {isPendingVerification ? ' · Vendor will verify shortly' : ''}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Order Number */}
           <View style={confirmStyles.orderNumBox}>
@@ -365,14 +565,30 @@ function OrderConfirmationModal({
                   {order.payment_method.toUpperCase()}
                 </Text>
               </View>
+              {order.payment_reference_number && (
+                <View style={confirmStyles.summaryRow}>
+                  <Text style={confirmStyles.summaryLabel}>Reference</Text>
+                  <Text style={confirmStyles.summaryValue}>{order.payment_reference_number}</Text>
+                </View>
+              )}
               <View style={confirmStyles.summaryRow}>
-                <Text style={confirmStyles.summaryLabel}>Status</Text>
+                <Text style={confirmStyles.summaryLabel}>Order Status</Text>
                 <View style={[confirmStyles.statusBadge, { backgroundColor: statusCfg.bg }]}>
                   <Text style={[confirmStyles.statusText, { color: statusCfg.color }]}>
                     {statusCfg.label}
                   </Text>
                 </View>
               </View>
+              {paymentCfg && (
+                <View style={confirmStyles.summaryRow}>
+                  <Text style={confirmStyles.summaryLabel}>Payment Status</Text>
+                  <View style={[confirmStyles.statusBadge, { backgroundColor: paymentCfg.bg }]}>
+                    <Text style={[confirmStyles.statusText, { color: paymentCfg.color }]}>
+                      {paymentCfg.label}
+                    </Text>
+                  </View>
+                </View>
+              )}
               <View style={confirmStyles.summaryRow}>
                 <Text style={confirmStyles.summaryLabel}>Est. Ready By</Text>
                 <Text style={confirmStyles.summaryValue}>{estimatedStr}</Text>
@@ -482,6 +698,68 @@ const styles = StyleSheet.create({
   paymentCheck: {
     width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
   },
+  cashHint: {
+    flexDirection: 'row', gap: 8, backgroundColor: '#F0FDF4', borderRadius: 10,
+    padding: 10, marginTop: 12, borderWidth: 1, borderColor: '#DCFCE7',
+  },
+  cashHintText: { flex: 1, fontSize: 12, color: '#15803D', lineHeight: 16 },
+
+  ewalletSection: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  ewalletHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  ewalletTitle: { fontSize: 14, fontWeight: '800', color: '#111827' },
+  ewalletHint: { fontSize: 12, color: '#6B7280', lineHeight: 16, marginBottom: 12 },
+  ewalletLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, backgroundColor: '#F9FAFB', borderRadius: 10 },
+  ewalletLoadingText: { fontSize: 12, color: '#6B7280' },
+  ewalletError: {
+    flexDirection: 'row', gap: 8, backgroundColor: '#FEF2F2',
+    borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#FECACA',
+  },
+  ewalletErrorText: { flex: 1, fontSize: 12, color: '#DC2626', lineHeight: 16 },
+  vendorPaymentList: { gap: 10 },
+  vendorPaymentCard: {
+    backgroundColor: '#F9FAFB', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: '#F3F4F6',
+  },
+  vendorPaymentHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  vendorPaymentName: { fontSize: 13, fontWeight: '700', color: '#111827' },
+  vendorPaymentLocation: { fontSize: 11, color: '#9CA3AF', flexShrink: 1 },
+  noEwalletBox: {
+    flexDirection: 'row', gap: 6, backgroundColor: '#FFFBEB',
+    borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#FDE68A',
+  },
+  noEwalletText: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 15 },
+  ewalletDetailRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  ewalletDetailText: { flex: 1 },
+  accountRow: { marginBottom: 4 },
+  accountLabel: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  accountNumber: { fontSize: 15, fontWeight: '800', color: '#111827', letterSpacing: 0.5, marginTop: 2 },
+  accountHint: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  qrWrap: {
+    width: 86, height: 86, borderRadius: 10, overflow: 'hidden',
+    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB',
+    alignItems: 'center', justifyContent: 'center', padding: 4,
+  },
+  qrImage: { width: 78, height: 78 },
+  qrCaption: { fontSize: 9, color: '#6B7280', fontWeight: '600', marginTop: 2, position: 'absolute', bottom: 2 },
+
+  referenceBox: {
+    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: '#FDE68A', marginTop: 12,
+  },
+  referenceLabel: { fontSize: 13, fontWeight: '700', color: '#92400E', marginBottom: 4 },
+  requiredStar: { color: '#DC2626' },
+  referenceHint: { fontSize: 11, color: '#92400E', marginBottom: 8, lineHeight: 15 },
+  referenceInput: {
+    backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#FDE68A',
+    paddingHorizontal: 12, paddingVertical: 11, fontSize: 14, color: '#111827',
+    fontWeight: '600',
+  },
+  pendingNotice: {
+    flexDirection: 'row', gap: 6, marginTop: 10,
+    backgroundColor: 'rgba(251,191,36,0.15)', borderRadius: 8, padding: 8,
+    alignItems: 'flex-start',
+  },
+  pendingNoticeText: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 14 },
 
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
   emptyIconWrap: {
@@ -505,6 +783,7 @@ const styles = StyleSheet.create({
   summaryDivider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 8 },
   summaryTotal: { fontSize: 16, fontWeight: '800', color: '#111827' },
   summaryTotalValue: { fontSize: 18, fontWeight: '800', color: '#1B6B45' },
+  summaryPaymentHint: { fontSize: 10, color: '#9CA3AF', textAlign: 'center', marginTop: 8 },
 
   checkoutBtn: {
     backgroundColor: '#1B6B45', borderRadius: 14, height: 52,
@@ -537,6 +816,14 @@ const confirmStyles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 4 },
   subtitle: { fontSize: 13, color: '#6B7280', textAlign: 'center', marginBottom: 16 },
+
+  paymentStatusBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 12, padding: 12, width: '100%', marginBottom: 12,
+    borderWidth: 1,
+  },
+  paymentStatusLabel: { fontSize: 13, fontWeight: '800' },
+  paymentStatusHint: { fontSize: 11, color: '#6B7280', marginTop: 2 },
 
   orderNumBox: {
     backgroundColor: '#F0FDF4', borderRadius: 12,

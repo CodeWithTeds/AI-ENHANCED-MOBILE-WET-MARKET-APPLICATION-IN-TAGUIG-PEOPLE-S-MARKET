@@ -34,9 +34,11 @@ import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrderTracking,
   ORDER_STATUS_CONFIG,
+  PAYMENT_STATUS_CONFIG,
   type Order,
   type OrderItem,
   type OrderStatus,
+  type PaymentStatus,
 } from '@/services/orders';
 import {
   getEligibleReviews,
@@ -167,6 +169,47 @@ export default function OrderTrackingScreen() {
       >
         {/* Current status banner */}
         <StatusBanner order={order} />
+
+        {/* Payment verification status for GCash/Maya */}
+        {(order.payment_method === 'gcash' || order.payment_method === 'maya') && order.payment_status && (
+          <View style={[styles.card, { borderColor: (PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.color ?? '#9CA3AF') + '30', borderWidth: 1.5 }]}>
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name={(PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.icon as any) ?? 'card-outline'} size={16} color={PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.color ?? '#6B7280'} />
+              <Text style={styles.cardTitle}>Payment — {PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.label ?? order.payment_status}</Text>
+              <View style={[styles.liveBadge, { backgroundColor: PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.bg ?? '#F3F4F6' }]}>
+                <Text style={[styles.liveText, { color: PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.color ?? '#6B7280' }]}>{order.payment_method.toUpperCase()}</Text>
+              </View>
+            </View>
+            {order.payment_reference_number ? (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentLabel}>Reference</Text>
+                <Text style={styles.paymentValue}>{order.payment_reference_number}</Text>
+              </View>
+            ) : null}
+            <View style={styles.paymentRow}>
+              <Text style={styles.paymentLabel}>Status</Text>
+              <Text style={[styles.paymentValue, { color: PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.color }]}>{PAYMENT_STATUS_CONFIG[order.payment_status as PaymentStatus]?.label}</Text>
+            </View>
+            {order.payment_status === 'pending_verification' && (
+              <View style={styles.paymentHintBox}>
+                <Ionicons name="hourglass-outline" size={14} color="#D97706" />
+                <Text style={styles.paymentHintText}>Payment is pending vendor verification. It will become Paid only after the vendor confirms in their GCash/Maya app — not automatically.</Text>
+              </View>
+            )}
+            {order.payment_status === 'paid' && order.payment_verified_at && (
+              <View style={styles.paymentHintBoxSuccess}>
+                <Ionicons name="checkmark-done-circle" size={14} color="#16A34A" />
+                <Text style={styles.paymentHintTextSuccess}>Verified as Paid on {formatDateTime(order.payment_verified_at)}</Text>
+              </View>
+            )}
+            {order.payment_status === 'rejected' && (
+              <View style={styles.paymentHintBoxError}>
+                <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+                <Text style={styles.paymentHintTextError}>Payment rejected — please contact the vendor or resubmit a valid reference via Orders.</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Timeline */}
         <View style={styles.card}>
@@ -743,6 +786,16 @@ const styles = StyleSheet.create({
   },
   rateBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
   rateBtnSub: { marginLeft: 'auto', fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+
+  paymentRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  paymentLabel: { fontSize: 12, color: '#6B7280', fontWeight: '500' },
+  paymentValue: { fontSize: 13, fontWeight: '700', color: '#111827' },
+  paymentHintBox: { flexDirection: 'row', gap: 6, backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FDE68A', marginTop: 8, alignItems: 'flex-start' },
+  paymentHintText: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 14 },
+  paymentHintBoxSuccess: { flexDirection: 'row', gap: 6, backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#DCFCE7', marginTop: 8, alignItems: 'center' },
+  paymentHintTextSuccess: { flex: 1, fontSize: 11, color: '#15803D', fontWeight: '600' },
+  paymentHintBoxError: { flexDirection: 'row', gap: 6, backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FECACA', marginTop: 8, alignItems: 'center' },
+  paymentHintTextError: { flex: 1, fontSize: 11, color: '#B91C1C', lineHeight: 14 },
 
   cancelledNote: {
     flexDirection: 'row',

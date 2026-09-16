@@ -31,8 +31,12 @@ type Payment = {
     id: number;
     order_number: string;
     status: string;
-    payment_status: 'pending' | 'successful' | 'failed';
+    payment_status: 'pending' | 'successful' | 'failed' | 'pending_verification';
+    payment_status_raw: 'unpaid' | 'pending_verification' | 'paid' | 'rejected';
     payment_method: string;
+    payment_reference_number: string | null;
+    payment_submitted_at: string | null;
+    payment_verified_at: string | null;
     total_amount: string;
     notes: string | null;
     created_at: string;
@@ -444,6 +448,66 @@ export default function PaymentManagementIndex({
                                 </div>
                             </div>
 
+                            {/* E-wallet reference + verification */}
+                            {(viewPayment.payment_method === 'gcash' || viewPayment.payment_method === 'maya') && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+                                        <Wallet className="h-4 w-4" />
+                                        {viewPayment.payment_method.toUpperCase()} Payment
+                                        <PaymentStatusBadge status={viewPayment.payment_status} />
+                                    </div>
+                                    <div className="mt-2 space-y-1 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-500">Reference</span>
+                                            <span className="font-mono font-bold text-gray-900">{viewPayment.payment_reference_number ?? '— No reference yet'}</span>
+                                        </div>
+                                        {viewPayment.payment_submitted_at && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Submitted</span>
+                                                <span className="text-gray-700">{formatDate(viewPayment.payment_submitted_at)}</span>
+                                            </div>
+                                        )}
+                                        {viewPayment.payment_verified_at && viewPayment.payment_status_raw === 'paid' && (
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Verified</span>
+                                                <span className="font-medium text-green-700">{formatDate(viewPayment.payment_verified_at)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {viewPayment.payment_status_raw === 'pending_verification' && (
+                                        <div className="mt-3 flex gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    router.patch(
+                                                        `/admin/dashboard/payments/${viewPayment.id}/verify`,
+                                                        { action: 'reject' },
+                                                        { preserveScroll: true, onSuccess: () => setViewPayment(null) },
+                                                    );
+                                                }}
+                                                className="flex-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50"
+                                            >
+                                                Reject
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    router.patch(
+                                                        `/admin/dashboard/payments/${viewPayment.id}/verify`,
+                                                        { action: 'verify' },
+                                                        { preserveScroll: true, onSuccess: () => setViewPayment(null) },
+                                                    );
+                                                }}
+                                                className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white hover:bg-green-700"
+                                            >
+                                                Verify as Paid
+                                            </button>
+                                        </div>
+                                    )}
+                                    {viewPayment.payment_status_raw === 'pending_verification' && (
+                                        <p className="mt-2 text-[11px] italic text-amber-700">Verify only after confirming in your GCash/Maya app — not automatic.</p>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Payout breakdown */}
                             <div>
                                 <div className="mb-2 flex items-center gap-2 text-xs font-bold text-gray-900">
@@ -604,7 +668,8 @@ function PaymentBadge({ method }: { method: string }) {
 function PaymentStatusBadge({ status }: { status: string }) {
     const config: Record<string, { bg: string; text: string; label: string; Icon: LucideIcon }> = {
         pending: { bg: 'bg-[#ee600e]/10', text: 'text-[#ee600e]', label: 'Pending', Icon: Clock },
-        successful: { bg: 'bg-[#488562]/10', text: 'text-[#488562]', label: 'Successful', Icon: CheckCircle2 },
+        pending_verification: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Pending Verification', Icon: Clock },
+        successful: { bg: 'bg-[#488562]/10', text: 'text-[#488562]', label: 'Paid', Icon: CheckCircle2 },
         failed: { bg: 'bg-red-50', text: 'text-red-500', label: 'Failed', Icon: XCircle },
     };
     const c = config[status] ?? { bg: 'bg-gray-100', text: 'text-gray-600', label: status, Icon: Wallet };

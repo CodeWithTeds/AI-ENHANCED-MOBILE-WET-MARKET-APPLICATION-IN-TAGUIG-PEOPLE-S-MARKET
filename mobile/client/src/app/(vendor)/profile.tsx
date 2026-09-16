@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Switch,
@@ -18,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -29,12 +31,17 @@ import {
   type NotificationPreferences,
   type VendorBusinessProfile,
 } from '@/services/vendor-profile';
+import {
+  getPaymentSettings,
+  updatePaymentSettings,
+  type VendorPaymentSettings,
+} from '@/services/vendor-payment';
 
 export default function ProfileScreen() {
   const { user, vendor, token, logout } = useAuth();
   const [profile, setProfile] = useState<VendorBusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'main' | 'editBusiness' | 'changePassword' | 'notifications'>('main');
+  const [activeSection, setActiveSection] = useState<'main' | 'editBusiness' | 'changePassword' | 'notifications' | 'paymentSettings'>('main');
 
   const fetchProfile = useCallback(async () => {
     if (!token) return;
@@ -88,6 +95,10 @@ export default function ProfileScreen() {
     return <NotificationsSection profile={profile} token={token!} onBack={() => { setActiveSection('main'); fetchProfile(); }} />;
   }
 
+  if (activeSection === 'paymentSettings') {
+    return <PaymentSettingsSection token={token!} onBack={() => setActiveSection('main')} />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -125,6 +136,23 @@ export default function ProfileScreen() {
           <MenuItem icon="storefront-outline" label="Business Info" subtitle={profile?.vendor?.stall_name} onPress={() => setActiveSection('editBusiness')} />
           <MenuItem icon="pricetags-outline" label="Product Categories" subtitle={profile?.vendor?.product_categories?.join(', ') || 'None set'} />
           <MenuItem icon="location-outline" label="Stall Location" subtitle={profile?.vendor?.stall_location ?? 'Not set'} />
+        </View>
+
+        {/* Payments Section */}
+        <View style={styles.menuSection}>
+          <Text style={styles.menuSectionTitle}>Payments</Text>
+          <MenuItem
+            icon="wallet-outline"
+            label="GCash & Maya Settings"
+            subtitle="Manage account numbers & QR codes"
+            onPress={() => setActiveSection('paymentSettings')}
+          />
+          <View style={styles.paymentHintBox}>
+            <Ionicons name="information-circle-outline" size={14} color={Colors.textSecondary} />
+            <Text style={styles.paymentHintText}>
+              Set up your GCash/Maya so customers can pay you directly. QR code is optional but recommended.
+            </Text>
+          </View>
         </View>
 
         {/* Account Section */}
@@ -290,6 +318,263 @@ function NotificationsSection({ profile, token, onBack }: {
           {saving ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.saveButtonText}>Save Preferences</Text>}
         </TouchableOpacity>
       </View>
+    </SafeAreaView>
+  );
+}
+
+/* ─── Payment Settings Sub-screen ─── */
+
+function PaymentSettingsSection({ token, onBack }: { token: string; onBack: () => void }) {
+  const [settings, setSettings] = useState<VendorPaymentSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [gcashNumber, setGcashNumber] = useState('');
+  const [mayaNumber, setMayaNumber] = useState('');
+  const [gcashQrUri, setGcashQrUri] = useState<string | null>(null);
+  const [mayaQrUri, setMayaQrUri] = useState<string | null>(null);
+  const [removeGcashQr, setRemoveGcashQr] = useState(false);
+  const [removeMayaQr, setRemoveMayaQr] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const data = await getPaymentSettings(token);
+      setSettings(data);
+      setGcashNumber(data.gcash_number ?? '');
+      setMayaNumber(data.maya_number ?? '');
+    } catch (err) {
+      console.error('[PaymentSettings] fetch failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  async function pickImage(target: 'gcash' | 'maya') {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const uri = result.assets[0].uri;
+      if (target === 'gcash') {
+        setGcashQrUri(uri);
+        setRemoveGcashQr(false);
+      } else {
+        setMayaQrUri(uri);
+        setRemoveMayaQr(false);
+      }
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await updatePaymentSettings(token, {
+        gcash_number: gcashNumber.trim() || null,
+        maya_number: mayaNumber.trim() || null,
+        gcash_qr_uri: gcashQrUri,
+        maya_qr_uri: mayaQrUri,
+        remove_gcash_qr: removeGcashQr,
+        remove_maya_qr: removeMayaQr,
+      });
+      setSettings(updated);
+      setGcashQrUri(null);
+      setMayaQrUri(null);
+      setRemoveGcashQr(false);
+      setRemoveMayaQr(false);
+      Alert.alert('Success', 'Payment settings updated.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update payment settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.subHeader}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.subTitle}>Payment Settings</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.subHeader}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={22} color={Colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.subTitle}>Payment Settings</Text>
+        <View style={{ width: 36 }} />
+      </View>
+      <ScrollView contentContainerStyle={styles.paymentContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.paymentIntroBox}>
+          <Ionicons name="wallet-outline" size={20} color={Colors.primary} />
+          <Text style={styles.paymentIntroText}>
+            Add your GCash or Maya account numbers and optional QR codes. Customers choosing GCash/Maya will see these details at checkout.
+          </Text>
+        </View>
+
+        {/* GCash Card */}
+        <View style={[styles.paymentCard, { borderColor: '#2563EB20' }]}>
+          <View style={styles.paymentCardHeader}>
+            <View style={[styles.paymentCardIcon, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="phone-portrait-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={styles.paymentCardTitle}>GCash</Text>
+            {settings?.has_gcash && (
+              <View style={[styles.configBadge, { backgroundColor: '#DCFCE7' }]}>
+                <Text style={[styles.configBadgeText, { color: '#16A34A' }]}>Configured</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.inputLabel}>GCash Number</Text>
+          <TextInput
+            style={styles.input}
+            value={gcashNumber}
+            onChangeText={setGcashNumber}
+            placeholder="09XX XXX XXXX"
+            keyboardType="phone-pad"
+            placeholderTextColor={Colors.textMuted}
+          />
+
+          <Text style={styles.inputLabel}>GCash QR Code (optional)</Text>
+          <View style={styles.qrPreviewRow}>
+            <View style={styles.qrPreviewBox}>
+              {gcashQrUri ? (
+                <Image source={{ uri: gcashQrUri }} style={styles.qrImage} />
+              ) : !removeGcashQr && settings?.gcash_qr_url ? (
+                <Image source={{ uri: settings.gcash_qr_url }} style={styles.qrImage} />
+              ) : (
+                <View style={styles.qrPlaceholder}>
+                  <Ionicons name="qr-code-outline" size={28} color={Colors.textMuted} />
+                  <Text style={styles.qrPlaceholderText}>No QR uploaded</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.qrActions}>
+              <TouchableOpacity style={styles.qrBtn} onPress={() => pickImage('gcash')}>
+                <Ionicons name="image-outline" size={16} color={Colors.primary} />
+                <Text style={styles.qrBtnText}>{gcashQrUri || settings?.gcash_qr_url ? 'Change' : 'Upload'} QR</Text>
+              </TouchableOpacity>
+              {(gcashQrUri || settings?.gcash_qr_url) && !removeGcashQr ? (
+                <TouchableOpacity
+                  style={[styles.qrBtn, styles.qrBtnRemove]}
+                  onPress={() => {
+                    if (gcashQrUri) setGcashQrUri(null);
+                    else setRemoveGcashQr(true);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={16} color={Colors.destructive} />
+                  <Text style={[styles.qrBtnText, { color: Colors.destructive }]}>Remove</Text>
+                </TouchableOpacity>
+              ) : removeGcashQr ? (
+                <TouchableOpacity style={styles.qrBtn} onPress={() => setRemoveGcashQr(false)}>
+                  <Ionicons name="refresh-outline" size={16} color={Colors.textSecondary} />
+                  <Text style={styles.qrBtnText}>Undo Remove</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {/* Maya Card */}
+        <View style={[styles.paymentCard, { borderColor: '#7C3AED20' }]}>
+          <View style={styles.paymentCardHeader}>
+            <View style={[styles.paymentCardIcon, { backgroundColor: '#F5F3FF' }]}>
+              <Ionicons name="card-outline" size={18} color="#7C3AED" />
+            </View>
+            <Text style={styles.paymentCardTitle}>Maya</Text>
+            {settings?.has_maya && (
+              <View style={[styles.configBadge, { backgroundColor: '#DCFCE7' }]}>
+                <Text style={[styles.configBadgeText, { color: '#16A34A' }]}>Configured</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.inputLabel}>Maya Number</Text>
+          <TextInput
+            style={styles.input}
+            value={mayaNumber}
+            onChangeText={setMayaNumber}
+            placeholder="09XX XXX XXXX"
+            keyboardType="phone-pad"
+            placeholderTextColor={Colors.textMuted}
+          />
+
+          <Text style={styles.inputLabel}>Maya QR Code (optional)</Text>
+          <View style={styles.qrPreviewRow}>
+            <View style={styles.qrPreviewBox}>
+              {mayaQrUri ? (
+                <Image source={{ uri: mayaQrUri }} style={styles.qrImage} />
+              ) : !removeMayaQr && settings?.maya_qr_url ? (
+                <Image source={{ uri: settings.maya_qr_url }} style={styles.qrImage} />
+              ) : (
+                <View style={styles.qrPlaceholder}>
+                  <Ionicons name="qr-code-outline" size={28} color={Colors.textMuted} />
+                  <Text style={styles.qrPlaceholderText}>No QR uploaded</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.qrActions}>
+              <TouchableOpacity style={styles.qrBtn} onPress={() => pickImage('maya')}>
+                <Ionicons name="image-outline" size={16} color={Colors.primary} />
+                <Text style={styles.qrBtnText}>{mayaQrUri || settings?.maya_qr_url ? 'Change' : 'Upload'} QR</Text>
+              </TouchableOpacity>
+              {(mayaQrUri || settings?.maya_qr_url) && !removeMayaQr ? (
+                <TouchableOpacity
+                  style={[styles.qrBtn, styles.qrBtnRemove]}
+                  onPress={() => {
+                    if (mayaQrUri) setMayaQrUri(null);
+                    else setRemoveMayaQr(true);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={16} color={Colors.destructive} />
+                  <Text style={[styles.qrBtnText, { color: Colors.destructive }]}>Remove</Text>
+                </TouchableOpacity>
+              ) : removeMayaQr ? (
+                <TouchableOpacity style={styles.qrBtn} onPress={() => setRemoveMayaQr(false)}>
+                  <Ionicons name="refresh-outline" size={16} color={Colors.textSecondary} />
+                  <Text style={styles.qrBtnText}>Undo Remove</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {(removeGcashQr || removeMayaQr) && (
+          <View style={styles.removeNotice}>
+            <Ionicons name="warning-outline" size={14} color="#D97706" />
+            <Text style={styles.removeNoticeText}>QR marked for removal. Save to confirm.</Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.saveButtonText}>Save Payment Settings</Text>}
+        </TouchableOpacity>
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -482,4 +767,67 @@ const styles = StyleSheet.create({
   notifText: { flex: 1 },
   notifLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
   notifSubtitle: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+
+  // Payments
+  paymentHintBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    alignItems: 'flex-start',
+  },
+  paymentHintText: { flex: 1, fontSize: 11, color: '#475569', lineHeight: 16 },
+
+  paymentContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
+  paymentIntroBox: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  paymentIntroText: { flex: 1, fontSize: 12, color: '#374151', lineHeight: 18 },
+  paymentCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
+  },
+  paymentCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  paymentCardIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  paymentCardTitle: { fontSize: 16, fontWeight: '800', color: Colors.text, flex: 1 },
+  configBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  configBadgeText: { fontSize: 10, fontWeight: '800' },
+  qrPreviewRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  qrPreviewBox: {
+    width: 110, height: 110, borderRadius: 12, overflow: 'hidden',
+    backgroundColor: Colors.inputBackground, borderWidth: 1, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  qrImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  qrPlaceholder: { alignItems: 'center', gap: 6, padding: 10 },
+  qrPlaceholderText: { fontSize: 11, color: Colors.textMuted, textAlign: 'center' },
+  qrActions: { flex: 1, gap: 8, justifyContent: 'center' },
+  qrBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  qrBtnRemove: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  qrBtnText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  removeNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12,
+  },
+  removeNoticeText: { fontSize: 11, color: '#92400E', fontWeight: '600' },
 });

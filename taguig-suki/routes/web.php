@@ -55,6 +55,7 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
 
     // Payment Management
     Route::get('dashboard/payments', [PaymentManagementController::class, 'index'])->name('payments.index');
+    Route::patch('dashboard/payments/{order}/verify', [PaymentManagementController::class, 'verify'])->name('payments.verify');
 
     // Inventory Monitoring
     Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');

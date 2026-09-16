@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\RecipeController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\StallController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\VendorPaymentSettingsController;
 use App\Http\Controllers\Api\VendorProfileController;
 use App\Http\Controllers\Api\VendorRegistrationController;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +44,10 @@ Route::get('/reviews/vendor/{vendor}', [ReviewController::class, 'vendorReviews'
 Route::get('/reviews/product/{product}', [ReviewController::class, 'productReviews']);
 Route::get('/reviews/recipe', [ReviewController::class, 'recipeReviews']);
 
+// Public vendor payment details (for checkout display — shows GCash/Maya number + QR if configured)
+Route::get('/vendors/{vendor}/payment-details', [VendorPaymentSettingsController::class, 'publicShow']);
+Route::post('/vendors/payment-details/batch', [VendorPaymentSettingsController::class, 'batchShow']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'profile']);
@@ -66,6 +71,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/vendor/profile/password', [VendorProfileController::class, 'changePassword']);
     Route::put('/vendor/profile/notifications', [VendorProfileController::class, 'updateNotifications']);
 
+    // Vendor Payment Settings (GCash / Maya)
+    Route::get('/vendor/payment-settings', [VendorPaymentSettingsController::class, 'show']);
+    Route::post('/vendor/payment-settings', [VendorPaymentSettingsController::class, 'update']);
+    Route::put('/vendor/payment-settings', [VendorPaymentSettingsController::class, 'update']);
+
     // Vendor Inventory Management
     Route::get('/inventory', [InventoryController::class, 'index']);
     Route::get('/inventory/summary', [InventoryController::class, 'summary']);
@@ -80,8 +90,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Customer Orders
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders/payment-details', [OrderController::class, 'vendorsPaymentDetails']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/track', [OrderController::class, 'track']);
+    Route::post('/orders/{id}/payment-reference', [OrderController::class, 'submitPaymentReference']);
 
     // Customer Reviews (only from completed orders)
     Route::get('/reviews/eligible', [ReviewController::class, 'eligible']);
@@ -94,6 +106,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Vendor Orders & Sales (orders that contain this vendor's products)
     Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);
     Route::patch('/vendor/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::get('/vendor/payments/pending', [OrderController::class, 'vendorPendingPayments']);
+    Route::patch('/vendor/orders/{id}/verify-payment', [OrderController::class, 'verifyPayment']);
     Route::get('/vendor/sales', [OrderController::class, 'vendorSales']);
     Route::get('/vendor/reviews', [ReviewController::class, 'vendorReviewsDashboard']);
 });

@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
@@ -23,10 +24,15 @@ class OrderService
      *  4. Deduct inventory + log each sale.
      *
      * If any step fails the whole transaction rolls back.
+     *
+     * Payment logic:
+     *  - cash => payment_status = paid (no verification needed)
+     *  - gcash/maya with reference => pending_verification
+     *  - gcash/maya without reference => unpaid (customer must submit later)
      */
-    public function placeOrder(User $user, array $items, string $paymentMethod = 'cash', ?string $notes = null): Order
+    public function placeOrder(User $user, array $items, string $paymentMethod = 'cash', ?string $notes = null, ?string $paymentReference = null): Order
     {
-        return DB::transaction(function () use ($user, $items, $paymentMethod, $notes) {
+        return DB::transaction(function () use ($user, $items, $paymentMethod, $notes, $paymentReference) {
 
             // ── 1. Load & lock all products in one query ──────────────────
             $productIds = array_column($items, 'product_id');
@@ -75,24 +81,72 @@ class OrderService
                 $totalAmount += $product->price * $qty;
             }
 
-            // ── 4. Create Order ────────────────────────────────────────────
+            // ── 3b. Validate e-wallet availability for gcash/maya ──────────
+            if (in_array($paymentMethod, ['gcash', 'maya'])) {
+                // Check that at least one vendor in the order has configured the selected method
+                // This prevents customers from selecting GCash when no vendor supports it
+                $vendorIds = Product::whereIn('id', $productIds)->pluck('vendor_id')->unique();
+                $vendors = \App\Models\Vendor::whereIn('id', $vendorIds)->get();
+                $hasMethod = $vendors->contains(function ($vendor) use ($paymentMethod) {
+                    if ($paymentMethod === 'gcash') {
+                        return !empty($vendor->gcash_number) || !empty($vendor->gcash_qr_path);
+                    }
+                    return !empty($vendor->maya_number) || !empty($vendor->maya_qr_path);
+                });
+
+                // We do not hard-fail here; just allow but payment_status will be unpaid if not configured
+                // Uncomment to enforce:
+                // if (!$hasMethod) {
+                //     throw new UnprocessableEntityHttpException("No vendor has configured {$paymentMethod} payment. Please choose another method.");
+                // }
+            }
+
+            // ── 4. Determine payment status ────────────────────────────────
+            $paymentStatus = 'unpaid';
+            $paymentSubmittedAt = null;
+            $reference = null;
+
+            if ($paymentMethod === 'cash') {
+                $paymentStatus = 'paid';
+            } elseif (in_array($paymentMethod, ['gcash', 'maya'])) {
+                if (!empty($paymentReference)) {
+                    $reference = trim($paymentReference);
+                    $paymentStatus = 'pending_verification';
+                    $paymentSubmittedAt = now();
+                } else {
+                    $paymentStatus = 'unpaid';
+                }
+            }
+
+            // ── 5. Create Order ────────────────────────────────────────────
             $order = Order::create([
                 'user_id' => $user->id,
                 'order_number' => Order::generateOrderNumber(),
                 'status' => 'pending',
                 'total_amount' => round($totalAmount, 2),
                 'payment_method' => $paymentMethod,
+                'payment_reference_number' => $reference,
+                'payment_status' => $paymentStatus,
+                'payment_submitted_at' => $paymentSubmittedAt,
                 'notes' => $notes,
             ]);
 
-            // ── 4b. Start the status timeline ──────────────────────────────
+            // ── 5b. Start the status timeline ──────────────────────────────
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'pending',
                 'note' => 'Order placed',
             ]);
 
-            // ── 5. Create Order Items + Deduct Inventory ───────────────────
+            if ($paymentStatus === 'pending_verification') {
+                OrderStatusHistory::create([
+                    'order_id' => $order->id,
+                    'status' => 'pending',
+                    'note' => 'Payment proof submitted — awaiting verification ('.strtoupper($paymentMethod).' Ref: '.$reference.')',
+                ]);
+            }
+
+            // ── 6. Create Order Items + Deduct Inventory ───────────────────
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $inventory = $inventories->get($item['product_id']);
@@ -139,12 +193,102 @@ class OrderService
     }
 
     /**
+     * Customer submits payment reference after order creation (e.g., after GCash transfer).
+     */
+    public function submitPaymentReference(User $user, int $orderId, string $reference): Order
+    {
+        $order = Order::where('user_id', $user->id)->findOrFail($orderId);
+
+        if (!in_array($order->payment_method, ['gcash', 'maya'])) {
+            throw new UnprocessableEntityHttpException('Payment reference is only required for GCash or Maya payments.');
+        }
+
+        if ($order->payment_status === 'paid') {
+            throw new UnprocessableEntityHttpException('This payment has already been verified as paid.');
+        }
+
+        if ($order->payment_status === 'pending_verification') {
+            throw new UnprocessableEntityHttpException('Payment proof already submitted. Awaiting vendor verification.');
+        }
+
+        $order->update([
+            'payment_reference_number' => trim($reference),
+            'payment_status' => 'pending_verification',
+            'payment_submitted_at' => now(),
+        ]);
+
+        OrderStatusHistory::create([
+            'order_id' => $order->id,
+            'status' => $order->status,
+            'note' => 'Payment proof submitted — awaiting verification ('.strtoupper($order->payment_method).' Ref: '.trim($reference).')',
+        ]);
+
+        return $order->load(['items.vendor:id,stall_name,stall_location']);
+    }
+
+    /**
+     * Vendor verifies a pending payment (approve -> paid, reject -> rejected).
+     */
+    public function verifyPayment(User $user, int $orderId, string $action = 'verify'): Order
+    {
+        $vendor = $user->vendor ?? null;
+
+        if (!$vendor) {
+            throw new AccessDeniedHttpException('Vendor profile not found');
+        }
+
+        // Admins may verify any order; vendors only those containing their products
+        $isAdmin = $user->is_admin ?? false;
+
+        $query = Order::query();
+        if (!$isAdmin) {
+            $query->whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id));
+        }
+
+        $order = $query->findOrFail($orderId);
+
+        if ($order->payment_status !== 'pending_verification') {
+            throw new UnprocessableEntityHttpException('No pending verification for this order. Current status: '.$order->payment_status);
+        }
+
+        if ($action === 'verify' || $action === 'approve') {
+            $order->update([
+                'payment_status' => 'paid',
+                'payment_verified_at' => now(),
+                'payment_verified_by' => $user->id,
+            ]);
+
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'note' => 'Payment verified as Paid by '.($isAdmin ? 'admin' : 'vendor').' ('.strtoupper($order->payment_method).' Ref: '.($order->payment_reference_number ?? '—').')',
+            ]);
+        } elseif ($action === 'reject' || $action === 'decline') {
+            $order->update([
+                'payment_status' => 'rejected',
+                'payment_verified_at' => now(),
+                'payment_verified_by' => $user->id,
+            ]);
+
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'note' => 'Payment proof rejected by '.($isAdmin ? 'admin' : 'vendor').'. Please resubmit a valid reference.',
+            ]);
+        } else {
+            throw new UnprocessableEntityHttpException('Invalid verification action. Use verify or reject.');
+        }
+
+        return $order->load(['items' => fn ($q) => $isAdmin ? $q : $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+    }
+
+    /**
      * Get paginated order history for a customer.
      */
     public function getCustomerOrders(User $user, int $perPage = 20)
     {
         return Order::where('user_id', $user->id)
-            ->with(['items.vendor:id,stall_name,stall_location'])
+            ->with(['items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path'])
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }
@@ -155,7 +299,7 @@ class OrderService
     public function getOrder(User $user, int $orderId): Order
     {
         return Order::where('user_id', $user->id)
-            ->with(['items.vendor:id,stall_name,stall_location'])
+            ->with(['items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path'])
             ->findOrFail($orderId);
     }
 
@@ -167,7 +311,7 @@ class OrderService
     {
         return Order::where('user_id', $user->id)
             ->with([
-                'items.vendor:id,stall_name,stall_location',
+                'items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path',
                 'statusHistory',
             ])
             ->findOrFail($orderId);
@@ -196,6 +340,25 @@ class OrderService
     }
 
     /**
+     * Get pending-verification orders for vendor.
+     */
+    public function getVendorPendingPayments(User $user): Collection
+    {
+        $vendor = $user->vendor ?? null;
+
+        if (!$vendor) {
+            return collect();
+        }
+
+        return Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
+            ->where('payment_status', 'pending_verification')
+            ->whereIn('payment_method', ['gcash', 'maya'])
+            ->with(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email'])
+            ->orderByDesc('payment_submitted_at')
+            ->get();
+    }
+
+    /**
      * Vendor updates the status of an order they own items in.
      */
     public function updateOrderStatus(User $user, int $orderId, string $status): Order
@@ -219,6 +382,30 @@ class OrderService
         ]);
 
         return $order->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+    }
+
+    /**
+     * Build vendor-specific payment details for checkout display.
+     * Given product IDs, return each vendor's GCash/Maya numbers + QR URLs.
+     */
+    public function getVendorsPaymentDetails(array $productIds): array
+    {
+        $vendorIds = Product::whereIn('id', $productIds)->pluck('vendor_id')->unique()->filter()->values();
+        $vendors = \App\Models\Vendor::whereIn('id', $vendorIds)->get();
+
+        return $vendors->map(function ($vendor) {
+            return [
+                'vendor_id' => $vendor->id,
+                'stall_name' => $vendor->stall_name,
+                'stall_location' => $vendor->stall_location,
+                'gcash_number' => $vendor->gcash_number,
+                'gcash_qr_url' => $vendor->gcash_qr_path ? Storage::disk('public')->url($vendor->gcash_qr_path) : null,
+                'maya_number' => $vendor->maya_number,
+                'maya_qr_url' => $vendor->maya_qr_path ? Storage::disk('public')->url($vendor->maya_qr_path) : null,
+                'has_gcash' => !empty($vendor->gcash_number) || !empty($vendor->gcash_qr_path),
+                'has_maya' => !empty($vendor->maya_number) || !empty($vendor->maya_qr_path),
+            ];
+        })->all();
     }
 
     /**

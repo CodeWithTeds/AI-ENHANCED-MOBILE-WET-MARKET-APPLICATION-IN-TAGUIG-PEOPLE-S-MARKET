@@ -5,6 +5,7 @@
  *  - Shows only orders that contain this vendor's items
  *  - Segmented status filter (All / Pending / Confirmed / Processing / Ready / Completed) — fits one row, no scrolling
  *  - Expandable order cards with customer avatar, items, subtotal
+ *  - Payment verification for GCash/Maya (Pending Verification → Paid / Rejected)
  *  - One-tap status update (Confirm → Processing → Ready → Completed)
  *  - Pull-to-refresh
  */
@@ -28,9 +29,12 @@ import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
   updateOrderStatus,
+  verifyPayment,
   ORDER_STATUS_CONFIG,
+  PAYMENT_STATUS_CONFIG,
   type Order,
   type OrderStatus,
+  type PaymentStatus,
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
 
@@ -60,6 +64,7 @@ export default function VendorOrdersScreen() {
   const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [verifyingId, setVerifyingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
@@ -85,6 +90,7 @@ export default function VendorOrdersScreen() {
   }
 
   const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const pendingVerificationCount = orders.filter((o) => (o.payment_status as string) === 'pending_verification').length;
   const completedOrders = orders.filter((o) => o.status === 'completed');
   const completedCount = completedOrders.length;
   const completedRevenue = completedOrders.reduce(
@@ -134,6 +140,41 @@ export default function VendorOrdersScreen() {
     );
   }
 
+  async function handleVerifyPayment(order: Order, action: 'verify' | 'reject') {
+    const authToken = token ?? await getToken();
+    if (!authToken) return;
+
+    const isVerify = action === 'verify';
+    Alert.alert(
+      isVerify ? 'Verify Payment' : 'Reject Payment',
+      isVerify
+        ? `Confirm that ${order.payment_method.toUpperCase()} payment Ref: ${order.payment_reference_number} is valid? This will mark it as Paid.`
+        : `Reject payment Ref: ${order.payment_reference_number}? Customer will need to resubmit.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isVerify ? 'Verify as Paid' : 'Reject',
+          style: isVerify ? 'default' : 'destructive',
+          onPress: async () => {
+            setVerifyingId(order.id);
+            try {
+              const updated = await verifyPayment(order.id, action, authToken);
+              setOrders((prev) =>
+                prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)),
+              );
+              Alert.alert('Success', isVerify ? 'Payment verified as Paid.' : 'Payment rejected.');
+            } catch (err) {
+              const msg = err instanceof ApiError ? err.message : 'Failed to verify payment';
+              Alert.alert('Error', msg);
+            } finally {
+              setVerifyingId(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -160,6 +201,7 @@ export default function VendorOrdersScreen() {
               <Text style={styles.headerTitle}>Orders</Text>
               <Text style={styles.headerSub}>
                 {orders.length} total · {pendingCount} waiting
+                {pendingVerificationCount > 0 ? ` · ${pendingVerificationCount} verify` : ''}
               </Text>
             </View>
           </View>
@@ -173,6 +215,19 @@ export default function VendorOrdersScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Pending Verification Banner */}
+      {pendingVerificationCount > 0 && (
+        <View style={styles.pendingVerifyBanner}>
+          <View style={styles.pendingVerifyIcon}>
+            <Ionicons name="hourglass-outline" size={16} color="#D97706" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pendingVerifyTitle}>{pendingVerificationCount} payment{pendingVerificationCount !== 1 ? 's' : ''} awaiting verification</Text>
+            <Text style={styles.pendingVerifySub}>GCash/Maya payments need your confirmation before becoming Paid</Text>
+          </View>
+        </View>
+      )}
 
       {/* Status Tabs */}
       <View style={styles.tabsRow}>
@@ -258,8 +313,10 @@ export default function VendorOrdersScreen() {
               order={order}
               expanded={expandedId === order.id}
               updating={updatingId === order.id}
+              verifying={verifyingId === order.id}
               onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
               onStatusUpdate={() => handleStatusUpdate(order)}
+              onVerify={(action) => handleVerifyPayment(order, action)}
             />
           ))
         )}
@@ -274,18 +331,27 @@ function VendorOrderCard({
   order,
   expanded,
   updating,
+  verifying,
   onToggle,
   onStatusUpdate,
+  onVerify,
 }: {
   order: Order;
   expanded: boolean;
   updating: boolean;
+  verifying: boolean;
   onToggle: () => void;
   onStatusUpdate: () => void;
+  onVerify: (action: 'verify' | 'reject') => void;
 }) {
   const statusCfg = ORDER_STATUS_CONFIG[order.status as OrderStatus];
   const nextStatus = NEXT_STATUS[order.status as OrderStatus];
   const nextCfg = nextStatus ? ORDER_STATUS_CONFIG[nextStatus] : null;
+
+  const paymentStatus = (order.payment_status as PaymentStatus) ?? 'unpaid';
+  const paymentCfg = PAYMENT_STATUS_CONFIG[paymentStatus] ?? PAYMENT_STATUS_CONFIG.unpaid;
+  const isEwallet = order.payment_method === 'gcash' || order.payment_method === 'maya';
+  const needsVerification = isEwallet && paymentStatus === 'pending_verification';
 
   const customerName = order.user?.name ?? 'Customer';
   const date = new Date(order.created_at).toLocaleDateString('en-PH', {
@@ -296,7 +362,7 @@ function VendorOrderCard({
   });
 
   return (
-    <View style={[styles.card, { borderLeftColor: statusCfg.color }]}>
+    <View style={[styles.card, { borderLeftColor: needsVerification ? '#D97706' : statusCfg.color }]}>
       {/* Compact Single-Line Header (collapsed) */}
       <TouchableOpacity style={styles.cardHeader} onPress={onToggle} activeOpacity={0.7}>
         {/* Avatar */}
@@ -310,6 +376,7 @@ function VendorOrderCard({
           <View style={styles.nameRow}>
             <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
             {order.status === 'pending' && <View style={styles.newDot} />}
+            {needsVerification && <View style={[styles.newDot, { backgroundColor: '#D97706' }]} />}
           </View>
         </View>
 
@@ -321,6 +388,12 @@ function VendorOrderCard({
               {statusCfg.label}
             </Text>
           </View>
+          {needsVerification && (
+            <View style={[styles.statusPill, { backgroundColor: paymentCfg.bg }]}>
+              <Ionicons name={paymentCfg.icon as any} size={11} color={paymentCfg.color} />
+              <Text style={[styles.statusText, { color: paymentCfg.color }]}>{paymentCfg.label}</Text>
+            </View>
+          )}
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color="#9CA3AF" />
         </View>
       </TouchableOpacity>
@@ -348,7 +421,88 @@ function VendorOrderCard({
               <Ionicons name={paymentIcon(order.payment_method) as any} size={13} color="#9CA3AF" />
               <Text style={styles.metaText}>{order.payment_method.toUpperCase()}</Text>
             </View>
+            {isEwallet && (
+              <View style={[styles.metaPill, { backgroundColor: paymentCfg.bg }]}>
+                <Ionicons name={paymentCfg.icon as any} size={11} color={paymentCfg.color} />
+                <Text style={[styles.metaPillText, { color: paymentCfg.color }]}>{paymentCfg.label}</Text>
+              </View>
+            )}
           </View>
+
+          {/* Payment verification block for e-wallet */}
+          {isEwallet && (
+            <View style={[styles.paymentBox, { borderColor: paymentCfg.color + '20', backgroundColor: paymentCfg.bg + '60' }]}>
+              <View style={styles.paymentBoxHeader}>
+                <Ionicons name={paymentIcon(order.payment_method) as any} size={16} color={paymentCfg.color} />
+                <Text style={[styles.paymentBoxTitle, { color: paymentCfg.color }]}>
+                  {order.payment_method.toUpperCase()} Payment
+                </Text>
+                <View style={[styles.paymentStatusPill, { backgroundColor: paymentCfg.color }]}>
+                  <Text style={styles.paymentStatusPillText}>{paymentCfg.label}</Text>
+                </View>
+              </View>
+              <View style={styles.paymentBoxRow}>
+                <Text style={styles.paymentBoxLabel}>Reference</Text>
+                <Text style={styles.paymentBoxValue}>{order.payment_reference_number ?? '— No reference yet'}</Text>
+              </View>
+              {order.payment_submitted_at && (
+                <View style={styles.paymentBoxRow}>
+                  <Text style={styles.paymentBoxLabel}>Submitted</Text>
+                  <Text style={styles.paymentBoxValue}>{new Date(order.payment_submitted_at).toLocaleString('en-PH')}</Text>
+                </View>
+              )}
+              {paymentStatus === 'paid' && order.payment_verified_at && (
+                <View style={styles.paymentBoxRow}>
+                  <Text style={styles.paymentBoxLabel}>Verified</Text>
+                  <Text style={[styles.paymentBoxValue, { color: '#16A34A' }]}>{new Date(order.payment_verified_at).toLocaleString('en-PH')}</Text>
+                </View>
+              )}
+              {paymentStatus === 'rejected' && (
+                <Text style={styles.rejectedHint}>This payment was rejected. Customer must resubmit a valid reference.</Text>
+              )}
+              {paymentStatus === 'pending_verification' && (
+                <Text style={styles.pendingHint}>
+                  Verify only after you have confirmed the payment in your {order.payment_method === 'gcash' ? 'GCash' : 'Maya'} app. Not automatic.
+                </Text>
+              )}
+
+              {/* Verify / Reject buttons */}
+              {needsVerification && (
+                <View style={styles.verifyRow}>
+                  <TouchableOpacity
+                    style={[styles.verifyBtn, styles.rejectBtn]}
+                    onPress={() => onVerify('reject')}
+                    disabled={verifying}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
+                    <Text style={styles.rejectText}>Reject</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.verifyBtn, styles.approveBtn]}
+                    onPress={() => onVerify('verify')}
+                    disabled={verifying}
+                    activeOpacity={0.85}
+                  >
+                    {verifying ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-done-outline" size={16} color="#FFF" />
+                        <Text style={styles.approveText}>Verify as Paid</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+              {paymentStatus === 'paid' && (
+                <View style={[styles.statusRow, { backgroundColor: '#F0FDF4', marginTop: 8 }]}>
+                  <Ionicons name="checkmark-done-circle" size={16} color="#16A34A" />
+                  <Text style={[styles.statusRowText, { color: '#15803D' }]}>Payment verified — Paid</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Items */}
           {order.items.map((item) => (
@@ -466,6 +620,15 @@ const styles = StyleSheet.create({
   },
   salesBtnText: { fontSize: 11, fontWeight: '700', color: '#1B6B45' },
 
+  pendingVerifyBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FFFBEB', borderRadius: 14, padding: 12,
+    marginHorizontal: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FDE68A',
+  },
+  pendingVerifyIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' },
+  pendingVerifyTitle: { fontSize: 13, fontWeight: '800', color: '#92400E' },
+  pendingVerifySub: { fontSize: 11, color: '#B45309', marginTop: 1 },
+
   /* Completed revenue banner */
   completedRevenueBanner: {
     flexDirection: 'row',
@@ -563,7 +726,7 @@ const styles = StyleSheet.create({
     fontSize: 11, color: '#9CA3AF',
     fontVariant: ['tabular-nums'],
   },
-  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 180 },
   cardTotal: { fontSize: 14, fontWeight: '800', color: '#15803D' },
   statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -577,11 +740,32 @@ const styles = StyleSheet.create({
 
   /* Expanded: meta */
   metaRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 8, flexWrap: 'wrap',
   },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
+  metaPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  metaPillText: { fontSize: 10, fontWeight: '800' },
+
+  paymentBox: {
+    borderRadius: 12, padding: 12, borderWidth: 1.5, marginBottom: 12,
+  },
+  paymentBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  paymentBoxTitle: { fontSize: 13, fontWeight: '800', flex: 1 },
+  paymentStatusPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  paymentStatusPillText: { fontSize: 10, fontWeight: '800', color: '#FFF' },
+  paymentBoxRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  paymentBoxLabel: { fontSize: 12, color: '#6B7280', fontWeight: '500' },
+  paymentBoxValue: { fontSize: 13, fontWeight: '700', color: '#111827', maxWidth: 180, textAlign: 'right' },
+  pendingHint: { fontSize: 11, color: '#92400E', lineHeight: 14, marginTop: 6, fontStyle: 'italic' },
+  rejectedHint: { fontSize: 11, color: '#B91C1C', marginTop: 6 },
+  verifyRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  verifyBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 11, borderWidth: 1 },
+  rejectBtn: { backgroundColor: '#FFFFFF', borderColor: '#FECACA' },
+  rejectText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
+  approveBtn: { backgroundColor: '#16A34A', borderColor: '#16A34A' },
+  approveText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
 
   /* Expanded */
   expandedSection: { paddingHorizontal: 14, paddingBottom: 14 },

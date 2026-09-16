@@ -13,6 +13,10 @@ class Vendor extends Model
         'user_id',
         'stall_name',
         'stall_location',
+        'gcash_number',
+        'gcash_qr_path',
+        'maya_number',
+        'maya_qr_path',
         'product_categories',
         'status',
         'rejection_reason',
@@ -57,5 +61,29 @@ class Vendor extends Model
     public function isPending(): bool
     {
         return $this->status === VendorStatus::Pending->value;
+    }
+
+    /**
+     * Return public URL for GCash QR if set.
+     */
+    public function gcashQrUrl(): ?string
+    {
+        return $this->gcash_qr_path ? asset('storage/'.$this->gcash_qr_path) : null;
+    }
+
+    /**
+     * Return public URL for Maya QR if set.
+     */
+    public function mayaQrUrl(): ?string
+    {
+        return $this->maya_qr_path ? asset('storage/'.$this->maya_qr_path) : null;
+    }
+
+    /**
+     * Whether vendor has any e-wallet configured.
+     */
+    public function hasEwalletConfigured(): bool
+    {
+        return !empty($this->gcash_number) || !empty($this->gcash_qr_path) || !empty($this->maya_number) || !empty($this->maya_qr_path);
     }
 }

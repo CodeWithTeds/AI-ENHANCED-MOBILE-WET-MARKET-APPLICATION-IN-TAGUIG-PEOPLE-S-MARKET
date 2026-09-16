@@ -14,6 +14,11 @@ class Order extends Model
         'status',
         'total_amount',
         'payment_method',
+        'payment_reference_number',
+        'payment_status',
+        'payment_submitted_at',
+        'payment_verified_at',
+        'payment_verified_by',
         'notes',
     ];
 
@@ -21,6 +26,8 @@ class Order extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'payment_submitted_at' => 'datetime',
+            'payment_verified_at' => 'datetime',
         ];
     }
 
@@ -37,6 +44,11 @@ class Order extends Model
     public function statusHistory(): HasMany
     {
         return $this->hasMany(OrderStatusHistory::class)->orderBy('created_at');
+    }
+
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'payment_verified_by');
     }
 
     /**

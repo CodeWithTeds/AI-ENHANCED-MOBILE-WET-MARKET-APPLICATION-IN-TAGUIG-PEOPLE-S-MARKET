@@ -1,14 +1,16 @@
 /**
- * Orders — customer order history with live status badges.
+ * Orders — customer order history with live status badges + payment verification.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,15 +21,18 @@ import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrders,
+  submitPaymentReference,
   ORDER_STATUS_CONFIG,
+  PAYMENT_STATUS_CONFIG,
   type Order,
   type OrderStatus,
+  type PaymentStatus,
 } from '@/services/orders';
+import { ApiError } from '@/services/api';
 
 export default function OrdersScreen() {
   const { token } = useCustomerAuth();
 
-  // useCustomerAuth may not have loaded yet — fall back to the stored customer token
   const getAuthToken = async () => token ?? await getCustomerToken();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +60,10 @@ export default function OrdersScreen() {
   function onRefresh() {
     setRefreshing(true);
     fetchOrders();
+  }
+
+  function handleUpdated(updated: Order) {
+    setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
   }
 
   if (loading) {
@@ -106,6 +115,8 @@ export default function OrdersScreen() {
               order={order}
               expanded={expandedId === order.id}
               onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
+              onUpdated={handleUpdated}
+              getToken={getAuthToken}
             />
           ))
         )}
@@ -117,21 +128,60 @@ export default function OrdersScreen() {
 /* ─── Order Card ─── */
 
 function OrderCard({
-  order,
+  order: initialOrder,
   expanded,
   onToggle,
+  onUpdated,
+  getToken,
 }: {
   order: Order;
   expanded: boolean;
   onToggle: () => void;
+  onUpdated: (o: Order) => void;
+  getToken: () => Promise<string | null>;
 }) {
+  const [order, setOrder] = useState(initialOrder);
+  const [refInput, setRefInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Keep local order in sync if parent updates
+  useEffect(() => setOrder(initialOrder), [initialOrder]);
+
   const statusCfg = ORDER_STATUS_CONFIG[order.status as OrderStatus];
+  const paymentStatus = (order.payment_status as PaymentStatus) ?? 'unpaid';
+  const paymentCfg = PAYMENT_STATUS_CONFIG[paymentStatus] ?? PAYMENT_STATUS_CONFIG.unpaid;
+  const isEwallet = order.payment_method === 'gcash' || order.payment_method === 'maya';
+
   const date = new Date(order.created_at).toLocaleDateString('en-PH', {
     month: 'short', day: 'numeric', year: 'numeric',
   });
   const time = new Date(order.created_at).toLocaleTimeString('en-PH', {
     hour: '2-digit', minute: '2-digit',
   });
+
+  async function handleSubmitReference() {
+    if (!refInput.trim()) {
+      setSubmitError('Enter your GCash/Maya reference number.');
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      const updated = await submitPaymentReference(order.id, refInput.trim(), token);
+      setOrder(updated);
+      onUpdated(updated);
+      setRefInput('');
+      Alert.alert('Submitted', 'Payment proof submitted — pending vendor verification.');
+    } catch (err: any) {
+      const msg = err instanceof ApiError ? err.message : err.message || 'Failed to submit reference';
+      setSubmitError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <View style={styles.card}>
@@ -166,16 +216,85 @@ function OrderCard({
           </Text>
         </View>
         <View style={styles.summaryChip}>
-          <Ionicons name="cash-outline" size={13} color="#6B7280" />
+          <Ionicons name={isEwallet ? (order.payment_method === 'gcash' ? 'phone-portrait-outline' as any : 'card-outline' as any) : 'cash-outline' as any} size={13} color="#6B7280" />
           <Text style={styles.summaryChipText}>{order.payment_method.toUpperCase()}</Text>
         </View>
+        {isEwallet && (
+          <View style={[styles.paymentBadge, { backgroundColor: paymentCfg.bg }]}>
+            <Ionicons name={paymentCfg.icon as any} size={11} color={paymentCfg.color} />
+            <Text style={[styles.paymentBadgeText, { color: paymentCfg.color }]}>{paymentCfg.label}</Text>
+          </View>
+        )}
         <Text style={styles.cardTotal}>₱{Number(order.total_amount).toFixed(2)}</Text>
       </View>
 
-      {/* Expanded Items */}
+      {/* Expanded */}
       {expanded && (
         <View style={styles.itemsSection}>
           <View style={styles.itemsDivider} />
+
+          {/* Payment Status Banner for e-wallet */}
+          {isEwallet && (
+            <View style={[styles.paymentBanner, { backgroundColor: paymentCfg.bg, borderColor: paymentCfg.color + '25' }]}>
+              <View style={[styles.paymentBannerIcon, { backgroundColor: paymentCfg.color + '15' }]}>
+                <Ionicons name={paymentCfg.icon as any} size={18} color={paymentCfg.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.paymentBannerLabel, { color: paymentCfg.color }]}>{paymentCfg.label}</Text>
+                {order.payment_reference_number ? (
+                  <Text style={styles.paymentBannerSub}>Ref: {order.payment_reference_number}</Text>
+                ) : paymentStatus === 'unpaid' ? (
+                  <Text style={styles.paymentBannerSub}>No reference submitted yet</Text>
+                ) : null}
+                {paymentStatus === 'pending_verification' && (
+                  <Text style={styles.paymentBannerHint}>Awaiting vendor verification — will become Paid only after approval.</Text>
+                )}
+                {paymentStatus === 'paid' && order.payment_verified_at && (
+                  <Text style={styles.paymentBannerHint}>Verified on {new Date(order.payment_verified_at).toLocaleDateString('en-PH')}</Text>
+                )}
+                {paymentStatus === 'rejected' && (
+                  <Text style={[styles.paymentBannerHint, { color: '#B91C1C' }]}>Rejected — please resubmit a valid reference.</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Submit reference form when unpaid or rejected */}
+          {isEwallet && (paymentStatus === 'unpaid' || paymentStatus === 'rejected') && (
+            <View style={styles.submitRefBox}>
+              <Text style={styles.submitRefTitle}>
+                {paymentStatus === 'rejected' ? 'Resubmit Reference Number' : 'Submit Payment Reference'}
+              </Text>
+              <Text style={styles.submitRefHint}>
+                Enter the reference/transaction ID from your {order.payment_method.toUpperCase()} app after sending ₱{Number(order.total_amount).toFixed(2)}.
+              </Text>
+              <TextInput
+                style={styles.submitRefInput}
+                value={refInput}
+                onChangeText={setRefInput}
+                placeholder={`e.g., 1234567890123`}
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+              {submitError && (
+                <View style={styles.submitError}>
+                  <Ionicons name="alert-circle-outline" size={13} color="#DC2626" />
+                  <Text style={styles.submitErrorText}>{submitError}</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+                onPress={handleSubmitReference}
+                disabled={submitting}
+                activeOpacity={0.85}
+              >
+                {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send-outline" size={14} color="#FFF" />}
+                <Text style={styles.submitBtnText}>{submitting ? 'Submitting…' : 'Submit Reference'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {order.items.map((item) => (
             <View key={item.id} style={styles.itemRow}>
               <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
@@ -215,7 +334,7 @@ function OrderCard({
             onPress={() => router.push(`/track/${order.id}`)}
           >
             <Ionicons
-              name={order.status === 'completed' ? 'pulse-outline' : 'pulse-outline'}
+              name="pulse-outline"
               size={16}
               color={order.status === 'completed' ? '#1B6B45' : '#FFFFFF'}
             />
@@ -295,18 +414,51 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 11, fontWeight: '700' },
 
   cardSummary: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingBottom: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingBottom: 12, flexWrap: 'wrap',
   },
   summaryChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
   },
   summaryChipText: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  paymentBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  paymentBadgeText: { fontSize: 10, fontWeight: '800' },
   cardTotal: { marginLeft: 'auto', fontSize: 16, fontWeight: '800', color: '#1B6B45' },
 
   itemsSection: { paddingHorizontal: 14, paddingBottom: 14 },
   itemsDivider: { height: 1, backgroundColor: '#F3F4F6', marginBottom: 12 },
+
+  paymentBanner: {
+    flexDirection: 'row', gap: 10, borderRadius: 12, padding: 12,
+    borderWidth: 1, marginBottom: 12, alignItems: 'flex-start',
+  },
+  paymentBannerIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  paymentBannerLabel: { fontSize: 13, fontWeight: '800' },
+  paymentBannerSub: { fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '600' },
+  paymentBannerHint: { fontSize: 11, color: '#6B7280', marginTop: 4, lineHeight: 14 },
+
+  submitRefBox: {
+    backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12,
+  },
+  submitRefTitle: { fontSize: 13, fontWeight: '800', color: '#92400E', marginBottom: 4 },
+  submitRefHint: { fontSize: 11, color: '#92400E', lineHeight: 15, marginBottom: 8 },
+  submitRefInput: {
+    backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#FDE68A',
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: '#111827', fontWeight: '600',
+  },
+  submitError: { flexDirection: 'row', gap: 6, marginTop: 8, alignItems: 'center' },
+  submitErrorText: { fontSize: 11, color: '#DC2626', flex: 1 },
+  submitBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#1B6B45', borderRadius: 10, paddingVertical: 11, marginTop: 10,
+  },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 
   itemRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7,
