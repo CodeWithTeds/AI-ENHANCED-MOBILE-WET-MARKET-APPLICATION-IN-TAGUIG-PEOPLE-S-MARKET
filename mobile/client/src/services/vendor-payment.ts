@@ -2,7 +2,8 @@
  * Vendor Payment Settings Service — GCash / Maya numbers + QR codes.
  */
 
-import { api } from './api';
+import { api, ApiError } from './api';
+import { API_BASE_URL } from '@/config/api';
 
 export interface VendorPaymentSettings {
   vendor_id: number;
@@ -17,12 +18,34 @@ export interface VendorPaymentSettings {
   has_maya: boolean;
 }
 
+function fixQrUrl(url: string | null, path: string | null): string | null {
+  // Prefer building from path using API host (works for LAN IP 192.168.x.x)
+  if (path) {
+    const base = API_BASE_URL.replace('/api/v1', '');
+    return `${base}/storage/${path.replace(/^\//, '')}`;
+  }
+  if (url && url.includes('localhost')) {
+    const base = API_BASE_URL.replace('/api/v1', '');
+    const idx = url.indexOf('/storage/');
+    if (idx !== -1) return base + url.substring(idx);
+  }
+  return url;
+}
+
+function fixSettingsUrls(data: VendorPaymentSettings): VendorPaymentSettings {
+  return {
+    ...data,
+    gcash_qr_url: fixQrUrl(data.gcash_qr_url, data.gcash_qr_path),
+    maya_qr_url: fixQrUrl(data.maya_qr_url, data.maya_qr_path),
+  };
+}
+
 export async function getPaymentSettings(token: string): Promise<VendorPaymentSettings> {
   const response = await api.request<VendorPaymentSettings>('/vendor/payment-settings', {
     method: 'GET',
     token,
   });
-  return response.data;
+  return fixSettingsUrls(response.data);
 }
 
 export interface UpdatePaymentSettingsParams {
@@ -59,20 +82,51 @@ export async function updatePaymentSettings(
       const match = /\.(\w+)$/.exec(filename);
       const ext = match ? match[1].toLowerCase() : 'jpg';
       const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      // @ts-ignore — React Native FormData file shape
-      formData.append(field, { uri, name: filename, type } as any);
+      // React Native FormData file shape — must be cast as Blob for XHR
+      formData.append(field, {
+        uri,
+        name: filename,
+        type,
+      } as unknown as Blob);
     }
 
     if (params.gcash_qr_uri) appendImage(params.gcash_qr_uri, 'gcash_qr');
     if (params.maya_qr_uri) appendImage(params.maya_qr_uri, 'maya_qr');
 
-    const response = await api.request<VendorPaymentSettings>('/vendor/payment-settings', {
-      method: 'POST',
-      body: formData,
-      token,
-      isFormData: true,
+    // Use XMLHttpRequest for reliable multipart upload on Android (fetch + FormData with file object fails with undici)
+    return new Promise<VendorPaymentSettings>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/vendor/payment-settings`);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.timeout = 30000;
+
+      xhr.onload = () => {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            // api returns {status, message, data}
+            resolve(fixSettingsUrls(res.data as VendorPaymentSettings));
+          } else {
+            const message = res.message || 'Failed to update payment settings';
+            // Include validation errors if present
+            let fullMessage = message;
+            if (res.errors && typeof res.errors === 'object') {
+              const errs = Object.values(res.errors as Record<string, string[]>).flat().join('\n');
+              if (errs) fullMessage = errs;
+            }
+            reject(new ApiError(fullMessage, xhr.status, res));
+          }
+        } catch {
+          reject(new ApiError(`Invalid response: ${xhr.responseText.substring(0, 100)}`, xhr.status));
+        }
+      };
+
+      xhr.onerror = () => reject(new ApiError('Network request failed. Check your connection.', 0));
+      xhr.ontimeout = () => reject(new ApiError('Request timed out. Try again.', 0));
+
+      xhr.send(formData);
     });
-    return response.data;
   }
 
   // JSON path — numbers only
@@ -87,5 +141,5 @@ export async function updatePaymentSettings(
     body,
     token,
   });
-  return response.data;
+  return fixSettingsUrls(response.data);
 }

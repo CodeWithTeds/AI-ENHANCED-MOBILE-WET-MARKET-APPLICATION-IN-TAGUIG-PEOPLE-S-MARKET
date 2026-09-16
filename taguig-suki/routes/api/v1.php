@@ -6,6 +6,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CustomerProfileController;
+use App\Http\Controllers\Api\CustomerReportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\OrderController;
@@ -94,6 +95,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/track', [OrderController::class, 'track']);
     Route::post('/orders/{id}/payment-reference', [OrderController::class, 'submitPaymentReference']);
+
+    // Customer Reports — purchases & spending
+    Route::get('/customer/reports', [CustomerReportController::class, 'index']);
+    Route::get('/customer/reports/export', [CustomerReportController::class, 'export']);
 
     // Customer Reviews (only from completed orders)
     Route::get('/reviews/eligible', [ReviewController::class, 'eligible']);

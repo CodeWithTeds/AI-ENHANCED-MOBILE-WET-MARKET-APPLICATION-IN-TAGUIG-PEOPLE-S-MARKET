@@ -94,6 +94,8 @@ export default function CustomerLayout() {
             />
             {/* Order tracking screen — opened from the Orders tab, not a tab itself */}
             <Tabs.Screen name="track/[id]" options={{ href: null }} />
+            {/* Reports screen — navigated from Profile/Orders, not a tab */}
+            <Tabs.Screen name="reports" options={{ href: null }} />
           </Tabs>
         </CartProvider>
       </FavoritesProvider>

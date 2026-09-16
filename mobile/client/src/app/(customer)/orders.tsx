@@ -82,10 +82,21 @@ export default function OrdersScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Orders</Text>
-        <Text style={styles.headerSub}>
-          {orders.length} order{orders.length !== 1 ? 's' : ''}
-        </Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>My Orders</Text>
+          <Text style={styles.headerSub}>
+            {orders.length} order{orders.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.reportsBtn}
+          onPress={() => router.push('/(customer)/reports' as any)}
+          activeOpacity={0.8}
+          accessibilityLabel="View Reports"
+        >
+          <Ionicons name="bar-chart-outline" size={16} color="#1B6B45" />
+          <Text style={styles.reportsBtnText}>Reports</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -363,9 +374,22 @@ function getCategoryEmoji(category: string): string {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
 
-  header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 8 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 8 },
+  headerLeft: { flex: 1 },
   headerTitle: { fontSize: 24, fontWeight: '800', color: '#111827' },
   headerSub: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
+  reportsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E7F7EF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#B8F0D4',
+  },
+  reportsBtnText: { fontSize: 12, fontWeight: '800', color: '#1B6B45' },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
 

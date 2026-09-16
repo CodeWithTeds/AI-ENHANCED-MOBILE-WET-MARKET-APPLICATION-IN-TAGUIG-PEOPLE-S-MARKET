@@ -9,7 +9,6 @@ import { api } from './api';
 export type OrderStatus =
   | 'pending'
   | 'confirmed'
-  | 'processing'
   | 'ready'
   | 'completed'
   | 'cancelled';
@@ -242,7 +241,6 @@ export const ORDER_STATUS_CONFIG: Record<
 > = {
   pending:    { label: 'Pending',    color: '#D97706', bg: '#FEF3C7', icon: 'time-outline' },
   confirmed:  { label: 'Confirmed',  color: '#2563EB', bg: '#EFF6FF', icon: 'checkmark-circle-outline' },
-  processing: { label: 'Processing', color: '#7C3AED', bg: '#F5F3FF', icon: 'refresh-outline' },
   ready:      { label: 'Ready',      color: '#059669', bg: '#ECFDF5', icon: 'bag-check-outline' },
   completed:  { label: 'Completed',  color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-done-outline' },
   cancelled:  { label: 'Cancelled',  color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },

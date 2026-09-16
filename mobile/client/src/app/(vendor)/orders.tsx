@@ -3,10 +3,10 @@
  *
  * Features:
  *  - Shows only orders that contain this vendor's items
- *  - Segmented status filter (All / Pending / Confirmed / Processing / Ready / Completed) — fits one row, no scrolling
+ *  - Segmented status filter (All / Pending / Confirmed / Ready / Completed) — no Processing
  *  - Expandable order cards with customer avatar, items, subtotal
  *  - Payment verification for GCash/Maya (Pending Verification → Paid / Rejected)
- *  - One-tap status update (Confirm → Processing → Ready → Completed)
+ *  - One-tap status update: Pending → Confirm (auto → Ready) → Completed — vendor confirms once and order becomes Ready
  *  - Pull-to-refresh
  */
 
@@ -42,16 +42,14 @@ const STATUS_TABS: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'all',        label: 'All' },
   { value: 'pending',    label: 'Pending' },
   { value: 'confirmed',  label: 'Confirmed' },
-  { value: 'processing', label: 'Processing' },
   { value: 'ready',      label: 'Ready' },
   { value: 'completed',  label: 'Completed' },
 ];
 
-/** Next logical status a vendor can set */
+/** Next logical status a vendor can set — Processing removed; pending→confirmed auto-advances to Ready on server */
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   pending:    'confirmed',
-  confirmed:  'processing',
-  processing: 'ready',
+  confirmed:  'ready',
   ready:      'completed',
 };
 
@@ -112,15 +110,22 @@ export default function VendorOrdersScreen() {
     const authToken = token ?? await getToken();
     if (!next || !authToken) return;
 
-    const cfg = ORDER_STATUS_CONFIG[next];
+    // Pending → Confirmed automatically becomes Ready (processing removed)
+    const isConfirmToReady = order.status === 'pending' && next === 'confirmed';
+    const cfg = ORDER_STATUS_CONFIG[isConfirmToReady ? 'ready' : next];
+    const title = isConfirmToReady ? 'Confirm Order' : 'Update Order Status';
+    const message = isConfirmToReady
+      ? `"${order.order_number}" will be confirmed and automatically marked as Ready for pickup.`
+      : `Mark "${order.order_number}" as ${cfg.label}?`;
+    const confirmLabel = isConfirmToReady ? 'Confirm & Ready' : cfg.label;
 
     Alert.alert(
-      'Update Order Status',
-      `Mark "${order.order_number}" as ${cfg.label}?`,
+      title,
+      message,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: cfg.label,
+          text: confirmLabel,
           onPress: async () => {
             setUpdatingId(order.id);
             try {

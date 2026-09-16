@@ -176,7 +176,7 @@ export default function CartScreen() {
       <View style={styles.itemCountRow}>
         <Ionicons name="bag-outline" size={15} color="#6B7280" />
         <Text style={styles.itemCountText}>
-          {totalItems} item{totalItems !== 1 ? 's' : ''} · Taguig People's Market
+          {Number.isInteger(totalItems) ? totalItems : totalItems.toFixed(1).replace(/\.0$/, '')} item{totalItems !== 1 ? 's' : ''} · Taguig People's Market
         </Text>
       </View>
 
@@ -420,6 +420,13 @@ export default function CartScreen() {
 function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean }) {
   const { updateQuantity, removeItem } = useCart();
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const isWeight = item.unit.toLowerCase() === 'kg';
+  const step = isWeight ? 0.5 : 1;
+  const minQty = isWeight ? 0.5 : 1;
+
+  function formatQty(q: number): string {
+    return Number.isInteger(q) ? String(q) : q.toFixed(1).replace(/\.0$/, '');
+  }
 
   function handleRemove() {
     Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(
@@ -428,9 +435,17 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
   }
 
   function handleDecrement() {
-    if (item.quantity === 1) handleRemove();
-    else updateQuantity(item.product_id, item.quantity - 1);
+    const next = Math.round((item.quantity - step) * 100) / 100;
+    if (next < minQty - 0.001) handleRemove();
+    else updateQuantity(item.product_id, next);
   }
+
+  function handleIncrement() {
+    const next = Math.round((item.quantity + step) * 100) / 100;
+    updateQuantity(item.product_id, next);
+  }
+
+  const isAtMin = item.quantity <= minQty + 0.001;
 
   return (
     <Animated.View style={[styles.itemCard, { opacity: fadeAnim }]}>
@@ -441,19 +456,20 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
         <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
         <Text style={styles.itemMeta}>{item.category} · per {item.unit}</Text>
         <Text style={styles.itemPrice}>₱{(item.price * item.quantity).toFixed(2)}</Text>
+        {isWeight && <Text style={styles.weightHint}>{formatQty(item.quantity)} kg</Text>}
       </View>
       <View style={styles.qtyRow}>
         <TouchableOpacity style={styles.qtyBtn} onPress={handleDecrement} disabled={disabled}>
           <Ionicons
-            name={item.quantity === 1 ? 'trash-outline' : 'remove'}
+            name={isAtMin ? 'trash-outline' : 'remove'}
             size={14}
-            color={item.quantity === 1 ? '#DC2626' : '#374151'}
+            color={isAtMin ? '#DC2626' : '#374151'}
           />
         </TouchableOpacity>
-        <Text style={styles.qtyText}>{item.quantity}</Text>
+        <Text style={styles.qtyText}>{formatQty(item.quantity)} {isWeight ? 'kg' : ''}</Text>
         <TouchableOpacity
           style={[styles.qtyBtn, styles.qtyBtnAdd]}
-          onPress={() => updateQuantity(item.product_id, item.quantity + 1)}
+          onPress={handleIncrement}
           disabled={disabled}
         >
           <Ionicons name="add" size={14} color="#FFFFFF" />
@@ -547,7 +563,7 @@ function OrderConfirmationModal({
                 <Text style={confirmStyles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
                 <View style={confirmStyles.itemInfo}>
                   <Text style={confirmStyles.itemName} numberOfLines={1}>{item.product_name}</Text>
-                  <Text style={confirmStyles.itemMeta}>×{item.quantity} {item.unit}</Text>
+                  <Text style={confirmStyles.itemMeta}>×{Number.isInteger(Number(item.quantity)) ? item.quantity : Number(item.quantity).toFixed(1).replace(/\.0$/, '')} {item.unit}</Text>
                 </View>
                 <Text style={confirmStyles.itemSubtotal}>₱{Number(item.subtotal).toFixed(2)}</Text>
               </View>
@@ -672,6 +688,7 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: '700', color: '#111827' },
   itemMeta: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   itemPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45', marginTop: 4 },
+  weightHint: { fontSize: 11, color: '#6B7280', fontWeight: '600', marginTop: 2 },
 
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   qtyBtn: {
@@ -680,7 +697,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   qtyBtnAdd: { backgroundColor: '#1B6B45', borderColor: '#1B6B45' },
-  qtyText: { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 22, textAlign: 'center' },
+  qtyText: { fontSize: 13, fontWeight: '700', color: '#111827', minWidth: 48, textAlign: 'center' },
 
   sectionBox: {
     backgroundColor: '#FFFFFF', borderRadius: 16,

@@ -109,7 +109,7 @@ export default function VendorDashboard() {
   const todaysSales = round2(todayOrders.reduce((sum, o) => sum + vendorTotal(o), 0));
 
   const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const confirmedCount = orders.filter((o) => o.status === 'confirmed' || o.status === 'processing').length;
+  const confirmedCount = orders.filter((o) => o.status === 'confirmed' || o.status === 'ready').length;
 
   const completedOrders = orders.filter((o) => o.status === 'completed');
   const completedCount = completedOrders.length;
@@ -228,11 +228,11 @@ export default function VendorDashboard() {
           />
           <Tile
             icon="bag-check"
-            label="Ready upcoming"
+            label="Ready"
             value={confirmedCount}
             tint={TINTS.blue}
             onPress={() => router.push('/(vendor)/orders')}
-            sub="confirmed & prep"
+            sub="ready for pickup"
           />
           <Tile
             icon="cube-outline"

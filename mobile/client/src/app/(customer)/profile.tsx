@@ -105,6 +105,20 @@ export default function CustomerProfileScreen() {
           <Text style={styles.email}>{profile?.user.email ?? user?.email ?? 'No email'}</Text>
         </View>
 
+        {/* Reports Section */}
+        <View style={styles.menuSection}>
+          <Text style={styles.menuSectionTitle}>Insights</Text>
+          <MenuItem
+            icon="bar-chart-outline"
+            label="Reports"
+            onPress={() => router.push('/(customer)/reports' as any)}
+          />
+          <View style={styles.reportHintBox}>
+            <Ionicons name="document-text-outline" size={14} color={Colors.textSecondary} />
+            <Text style={styles.reportHintText}>View purchases, items, and total spending by date range. Share or generate reports.</Text>
+          </View>
+        </View>
+
         {/* Account Section */}
         <View style={styles.menuSection}>
           <Text style={styles.menuSectionTitle}>Account</Text>
@@ -418,4 +432,17 @@ const styles = StyleSheet.create({
   notifText: { flex: 1 },
   notifLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
   notifSubtitle: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+
+  reportHintBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    marginTop: 4,
+    alignItems: 'flex-start',
+  },
+  reportHintText: { flex: 1, fontSize: 11, color: '#475569', lineHeight: 15 },
 });

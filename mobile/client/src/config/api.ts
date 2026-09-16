@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  host: '192.168.1.4',
+  host: '192.168.1.2',
   port: '8080',
 } as const;
 

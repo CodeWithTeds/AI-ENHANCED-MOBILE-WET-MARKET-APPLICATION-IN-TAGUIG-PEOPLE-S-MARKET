@@ -278,7 +278,6 @@ function OrderStatusBadge({ status }: { status: string }) {
     const config: Record<string, { bg: string; text: string; label: string; Icon: React.ComponentType<{ className?: string }> }> = {
         pending: { bg: 'bg-[#ee600e]/10', text: 'text-[#ee600e]', label: 'Pending', Icon: Clock },
         confirmed: { bg: 'bg-[#0867ff]/10', text: 'text-[#0867ff]', label: 'Confirmed', Icon: CheckCircle2 },
-        processing: { bg: 'bg-[#0867ff]/10', text: 'text-[#0867ff]', label: 'Processing', Icon: Package },
         ready: { bg: 'bg-purple-50', text: 'text-purple-700', label: 'Ready', Icon: Store },
         completed: { bg: 'bg-[#488562]/10', text: 'text-[#488562]', label: 'Completed', Icon: CheckCircle2 },
         cancelled: { bg: 'bg-red-50', text: 'text-red-500', label: 'Cancelled', Icon: X },

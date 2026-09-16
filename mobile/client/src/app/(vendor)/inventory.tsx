@@ -30,6 +30,12 @@ import {
 import { type Product, fetchProducts } from '@/services/products';
 import { ApiError } from '@/services/api';
 
+function formatStockQty(q: number | string): string {
+  const n = Number(q);
+  if (isNaN(n)) return String(q);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+}
+
 /* ─── Types ─── */
 
 type StockView = 'all' | 'in_stock' | 'low_stock' | 'out_of_stock';
@@ -72,12 +78,12 @@ export default function InventoryScreen() {
   // Stock summary stats
   const stockSummary = useMemo(() => {
     const total = inventoryItems.length;
-    const inStock = inventoryItems.filter((i) => i.stock_quantity > i.reorder_level).length;
+    const inStock = inventoryItems.filter((i) => Number(i.stock_quantity) > Number(i.reorder_level)).length;
     const lowStock = inventoryItems.filter(
-      (i) => i.stock_quantity > 0 && i.stock_quantity <= i.reorder_level
+      (i) => Number(i.stock_quantity) > 0 && Number(i.stock_quantity) <= Number(i.reorder_level)
     ).length;
-    const outOfStock = inventoryItems.filter((i) => i.stock_quantity === 0).length;
-    const totalUnits = inventoryItems.reduce((sum, i) => sum + i.stock_quantity, 0);
+    const outOfStock = inventoryItems.filter((i) => Number(i.stock_quantity) === 0).length;
+    const totalUnits = inventoryItems.reduce((sum, i) => sum + Number(i.stock_quantity), 0);
     return { total, inStock, lowStock, outOfStock, totalUnits };
   }, [inventoryItems]);
 
@@ -95,18 +101,18 @@ export default function InventoryScreen() {
     }
 
     if (activeView === 'in_stock') {
-      result = result.filter((i) => i.stock_quantity > i.reorder_level);
+      result = result.filter((i) => Number(i.stock_quantity) > Number(i.reorder_level));
     } else if (activeView === 'low_stock') {
-      result = result.filter((i) => i.stock_quantity > 0 && i.stock_quantity <= i.reorder_level);
+      result = result.filter((i) => Number(i.stock_quantity) > 0 && Number(i.stock_quantity) <= Number(i.reorder_level));
     } else if (activeView === 'out_of_stock') {
-      result = result.filter((i) => i.stock_quantity === 0);
+      result = result.filter((i) => Number(i.stock_quantity) === 0);
     }
 
     result.sort((a, b) => {
-      if (a.stock_quantity === 0 && b.stock_quantity !== 0) return -1;
-      if (b.stock_quantity === 0 && a.stock_quantity !== 0) return 1;
-      if (a.stock_quantity <= a.reorder_level && b.stock_quantity > b.reorder_level) return -1;
-      if (b.stock_quantity <= b.reorder_level && a.stock_quantity > a.reorder_level) return 1;
+      if (Number(a.stock_quantity) === 0 && Number(b.stock_quantity) !== 0) return -1;
+      if (Number(b.stock_quantity) === 0 && Number(a.stock_quantity) !== 0) return 1;
+      if (Number(a.stock_quantity) <= Number(a.reorder_level) && Number(b.stock_quantity) > Number(b.reorder_level)) return -1;
+      if (Number(b.stock_quantity) <= Number(a.reorder_level) && Number(a.stock_quantity) > Number(b.reorder_level)) return 1;
       return a.product.name.localeCompare(b.product.name);
     });
 
@@ -190,7 +196,7 @@ export default function InventoryScreen() {
         <View style={styles.headerRight}>
           <View style={styles.totalUnitsBadge}>
             <Feather name="package" size={14} color="#1B6B45" />
-            <Text style={styles.totalUnitsText}>{stockSummary.totalUnits} units</Text>
+            <Text style={styles.totalUnitsText}>{formatStockQty(stockSummary.totalUnits)} units</Text>
           </View>
           <TouchableOpacity
             style={styles.addBtn}
@@ -344,17 +350,19 @@ function InventoryItemRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const stockQty = Number(item.stock_quantity);
+  const reorder = Number(item.reorder_level);
   const stockColor =
-    item.stock_quantity === 0
+    stockQty === 0
       ? '#DC2626'
-      : item.stock_quantity <= item.reorder_level
+      : stockQty <= reorder
       ? '#F97316'
       : '#1B6B45';
 
   const stockLabel =
-    item.stock_quantity === 0
+    stockQty === 0
       ? 'OUT'
-      : item.stock_quantity <= item.reorder_level
+      : stockQty <= reorder
       ? 'LOW'
       : 'OK';
 
@@ -393,7 +401,7 @@ function InventoryItemRow({
       <View style={styles.itemRight}>
         <View style={styles.stockDisplay}>
           <Text style={[styles.stockValue, { color: stockColor }]}>
-            {item.stock_quantity}
+            {formatStockQty(item.stock_quantity)} {item.product.unit}
           </Text>
           <Text style={[styles.stockTag, { color: stockColor, backgroundColor: `${stockColor}15` }]}>
             {stockLabel}
@@ -491,14 +499,14 @@ function CreateInventoryModal({
     setSaving(true);
     const data: CreateInventoryData = {
       product_id: selectedProduct.id,
-      stock_quantity: parseInt(stockQuantity, 10),
+      stock_quantity: Math.round(parseFloat(stockQuantity) * 100) / 100,
       selling_price: parseFloat(sellingPrice),
-      reorder_level: parseInt(reorderLevel, 10) || 5,
+      reorder_level: Math.round(parseFloat(reorderLevel) * 100) / 100 || 5,
       status,
     };
     if (costPrice) data.cost_price = parseFloat(costPrice);
     if (markupPercentage) data.markup_percentage = parseFloat(markupPercentage);
-    if (maxStockLevel) data.max_stock_level = parseInt(maxStockLevel, 10);
+    if (maxStockLevel) data.max_stock_level = Math.round(parseFloat(maxStockLevel) * 100) / 100;
 
     await onSave(data);
     setSaving(false);
@@ -560,15 +568,24 @@ function CreateInventoryModal({
           )}
 
           {/* Stock Quantity */}
-          <Text style={styles.fieldLabel}>Stock Quantity</Text>
+          <Text style={styles.fieldLabel}>Stock Quantity{selectedProduct?.unit?.toLowerCase() === 'kg' ? ' (kg, supports 0.5)' : ''}</Text>
           <TextInput
             style={styles.input}
-            placeholder="0"
+            placeholder={selectedProduct?.unit?.toLowerCase() === 'kg' ? 'e.g., 10.5' : '0'}
             placeholderTextColor="#9CA3AF"
             value={stockQuantity}
             onChangeText={setStockQuantity}
-            keyboardType="number-pad"
+            keyboardType="decimal-pad"
           />
+          {selectedProduct?.unit?.toLowerCase() === 'kg' && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              {[0.5, 1, 5, 10].map((n) => (
+                <TouchableOpacity key={n} style={styles.presetChip} onPress={() => setStockQuantity(String(n))}>
+                  <Text style={styles.presetChipText}>{n} kg</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Pricing Section */}
           <Text style={styles.sectionTitle}>Pricing</Text>
@@ -617,7 +634,7 @@ function CreateInventoryModal({
                 placeholderTextColor="#9CA3AF"
                 value={reorderLevel}
                 onChangeText={setReorderLevel}
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
               />
             </View>
             <View style={styles.halfInput}>
@@ -628,7 +645,7 @@ function CreateInventoryModal({
                 placeholderTextColor="#9CA3AF"
                 value={maxStockLevel}
                 onChangeText={setMaxStockLevel}
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
               />
             </View>
           </View>
@@ -719,12 +736,12 @@ function EditInventoryModal({
     setSaving(true);
     const data: UpdateInventoryData = {
       selling_price: parseFloat(sellingPrice),
-      reorder_level: parseInt(reorderLevel, 10) || 5,
+      reorder_level: Math.round(parseFloat(reorderLevel) * 100) / 100 || 5,
       status,
     };
     if (costPrice) data.cost_price = parseFloat(costPrice);
     if (markupPercentage) data.markup_percentage = parseFloat(markupPercentage);
-    if (maxStockLevel) data.max_stock_level = parseInt(maxStockLevel, 10);
+    if (maxStockLevel) data.max_stock_level = Math.round(parseFloat(maxStockLevel) * 100) / 100;
 
     await onSave(item.id, data);
     setSaving(false);
@@ -750,7 +767,7 @@ function EditInventoryModal({
           <View style={styles.detailProductCard}>
             <Text style={styles.detailProductName}>{item.product.name}</Text>
             <Text style={styles.detailProductMeta}>
-              {item.product.category} · Current stock: {item.stock_quantity}
+              {item.product.category} · Current stock: {formatStockQty(item.stock_quantity)} {item.product.unit}
             </Text>
           </View>
 
@@ -797,7 +814,7 @@ function EditInventoryModal({
                 style={styles.input}
                 value={reorderLevel}
                 onChangeText={setReorderLevel}
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
               />
             </View>
             <View style={styles.halfInput}>
@@ -808,7 +825,7 @@ function EditInventoryModal({
                 placeholderTextColor="#9CA3AF"
                 value={maxStockLevel}
                 onChangeText={setMaxStockLevel}
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
               />
             </View>
           </View>
@@ -877,7 +894,7 @@ function AdjustStockModal({
   async function handleSubmit() {
     if (!item || !quantity) return;
     setSaving(true);
-    await onAdjust(item.id, parseInt(quantity, 10), type, reason || undefined);
+    await onAdjust(item.id, Math.round(parseFloat(quantity) * 100) / 100, type, reason || undefined);
     setSaving(false);
   }
 
@@ -907,7 +924,7 @@ function AdjustStockModal({
           <View style={styles.detailProductCard}>
             <Text style={styles.detailProductName}>{item.product.name}</Text>
             <Text style={styles.detailProductMeta}>
-              Current stock: {item.stock_quantity} · Reorder at: {item.reorder_level}
+              Current stock: {formatStockQty(item.stock_quantity)} {item.product.unit} · Reorder at: {formatStockQty(item.reorder_level)} {item.product.unit}
             </Text>
           </View>
 
@@ -941,25 +958,25 @@ function AdjustStockModal({
           </View>
 
           {/* Quantity */}
-          <Text style={styles.fieldLabel}>Quantity</Text>
+          <Text style={styles.fieldLabel}>Quantity{item?.product.unit?.toLowerCase() === 'kg' ? ' (kg — supports 0.5)' : ''}</Text>
           <TextInput
             style={styles.input}
             placeholder="Enter quantity"
             placeholderTextColor="#9CA3AF"
             value={quantity}
             onChangeText={setQuantity}
-            keyboardType="number-pad"
+            keyboardType="decimal-pad"
           />
 
           {/* Quick presets */}
           <View style={styles.presetsRow}>
-            {[1, 5, 10, 25, 50].map((n) => (
+            {(item?.product.unit?.toLowerCase() === 'kg' ? [0.5, 1, 5, 10, 25] : [1, 5, 10, 25, 50]).map((n) => (
               <TouchableOpacity
                 key={n}
                 style={styles.presetChip}
                 onPress={() => setQuantity(String(n))}
               >
-                <Text style={styles.presetChipText}>{n}</Text>
+                <Text style={styles.presetChipText}>{n}{item?.product.unit?.toLowerCase() === 'kg' ? ' kg' : ''}</Text>
               </TouchableOpacity>
             ))}
           </View>

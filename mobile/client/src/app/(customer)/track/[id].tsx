@@ -49,7 +49,7 @@ import {
 import { StarRating } from '@/components/customer/StarRating';
 import { ApiError } from '@/services/api';
 
-const STATUS_STEPS: OrderStatus[] = ['pending', 'confirmed', 'processing', 'ready', 'completed'];
+const STATUS_STEPS: OrderStatus[] = ['pending', 'confirmed', 'ready', 'completed'];
 const POLL_INTERVAL_MS = 5000;
 
 export default function OrderTrackingScreen() {

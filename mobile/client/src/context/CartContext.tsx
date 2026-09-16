@@ -62,10 +62,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
   function addItem(product: Omit<CartItem, 'quantity'>, quantity = 1) {
     const next = [...items];
     const idx = next.findIndex((i) => i.product_id === product.product_id);
+    // Round to 2 decimals to avoid floating point artifacts (0.30000004)
+    const normalizedQty = Math.round(quantity * 100) / 100;
     if (idx >= 0) {
-      next[idx] = { ...next[idx], quantity: next[idx].quantity + quantity };
+      const newQty = Math.round((next[idx].quantity + normalizedQty) * 100) / 100;
+      next[idx] = { ...next[idx], quantity: newQty };
     } else {
-      next.push({ ...product, quantity });
+      next.push({ ...product, quantity: normalizedQty });
     }
     persist(next);
   }
@@ -75,11 +78,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function updateQuantity(productId: number, quantity: number) {
-    if (quantity <= 0) {
+    const normalized = Math.round(quantity * 100) / 100;
+    if (normalized <= 0) {
       removeItem(productId);
       return;
     }
-    persist(items.map((i) => (i.product_id === productId ? { ...i, quantity } : i)));
+    persist(items.map((i) => (i.product_id === productId ? { ...i, quantity: normalized } : i)));
   }
 
   function clearCart() {

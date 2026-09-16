@@ -201,6 +201,13 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
   const inCart = product ? isInCart(product.id) : false;
   const cartItem = product ? items.find((i) => i.product_id === product.id) : null;
   const isFav = product ? isProductFavorited(product.id) : false;
+  const isWeightProduct = product ? product.unit.toLowerCase() === 'kg' : false;
+  const step = isWeightProduct ? 0.5 : 1;
+  const minQty = isWeightProduct ? 0.5 : 1;
+
+  function formatQty(q: number): string {
+    return Number.isInteger(q) ? String(q) : q.toFixed(1).replace(/\.0$/, '');
+  }
 
   /* Load the product's public rating summary when opened */
   useEffect(() => {
@@ -414,7 +421,7 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
             {inCart && cartItem ? (
               <View style={styles.inCartBadge}>
                 <Ionicons name="cart" size={13} color="#1B6B45" />
-                <Text style={styles.inCartText}>{cartItem.quantity} in cart</Text>
+                <Text style={styles.inCartText}>{formatQty(cartItem.quantity)} {cartItem.unit} in cart</Text>
               </View>
             ) : null}
           </View>
@@ -472,19 +479,19 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
 
           {/* Quantity Selector */}
           <View style={styles.qtySection}>
-            <Text style={styles.qtyLabel}>Quantity</Text>
+            <Text style={styles.qtyLabel}>Quantity{isWeightProduct ? ' (kg)' : ''}</Text>
             <View style={styles.qtyControls}>
               <TouchableOpacity
-                style={[styles.qtyBtn, quantity <= 1 && styles.qtyBtnDisabled]}
-                onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+                style={[styles.qtyBtn, quantity <= minQty && styles.qtyBtnDisabled]}
+                onPress={() => setQuantity((q) => Math.max(minQty, Math.round((q - step) * 100) / 100))}
                 accessibilityLabel="Decrease quantity"
               >
-                <Ionicons name="remove" size={18} color={quantity <= 1 ? '#D1D5DB' : '#374151'} />
+                <Ionicons name="remove" size={18} color={quantity <= minQty ? '#D1D5DB' : '#374151'} />
               </TouchableOpacity>
-              <Text style={styles.qtyValue}>{quantity}</Text>
+              <Text style={styles.qtyValue}>{formatQty(quantity)} {isWeightProduct ? 'kg' : product.unit}</Text>
               <TouchableOpacity
                 style={styles.qtyBtn}
-                onPress={() => setQuantity((q) => q + 1)}
+                onPress={() => setQuantity((q) => Math.round((q + step) * 100) / 100)}
                 accessibilityLabel="Increase quantity"
               >
                 <Ionicons name="add" size={18} color="#374151" />
@@ -492,9 +499,34 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
             </View>
           </View>
 
+          {isWeightProduct && (
+            <View style={styles.weightChipsRow}>
+              <TouchableOpacity
+                style={[styles.weightChip, quantity === 0.5 && styles.weightChipActive]}
+                onPress={() => setQuantity(0.5)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.weightChipText, quantity === 0.5 && styles.weightChipTextActive]}>0.5 kg</Text>
+                <Text style={styles.weightChipSub}>½ kilo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.weightChip, quantity === 1 && styles.weightChipActive]}
+                onPress={() => setQuantity(1)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.weightChipText, quantity === 1 && styles.weightChipTextActive]}>1 kg</Text>
+                <Text style={styles.weightChipSub}>1 kilo</Text>
+              </TouchableOpacity>
+              <View style={styles.weightHint}>
+                <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
+                <Text style={styles.weightHintText}>Tap to select half or whole kilo</Text>
+              </View>
+            </View>
+          )}
+
           {/* Subtotal */}
           <View style={styles.subtotalRow}>
-            <Text style={styles.subtotalLabel}>Subtotal</Text>
+            <Text style={styles.subtotalLabel}>Subtotal ({formatQty(quantity)} × ₱{Number(product.price).toFixed(2)})</Text>
             <Text style={styles.subtotalValue}>₱{subtotal.toFixed(2)}</Text>
           </View>
 
@@ -793,9 +825,45 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#111827',
-    minWidth: 34,
+    minWidth: 80,
     textAlign: 'center',
   },
+  weightChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+    flexWrap: 'wrap',
+  },
+  weightChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  weightChipActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#1B6B45',
+  },
+  weightChipText: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  weightChipTextActive: { color: '#1B6B45' },
+  weightChipSub: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
+  weightHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    flex: 1,
+  },
+  weightHintText: { fontSize: 11, color: '#6B7280', fontWeight: '500' },
 
   /* ── Subtotal ── */
   subtotalRow: {

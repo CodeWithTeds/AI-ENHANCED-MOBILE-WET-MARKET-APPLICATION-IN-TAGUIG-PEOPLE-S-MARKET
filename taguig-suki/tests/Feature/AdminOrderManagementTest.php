@@ -78,7 +78,7 @@ test('admin order management lists customer orders with details and stats', func
             ->where('orders.data.0.item_count', 1)
             ->where('orders.data.0.vendors.0', 'Aling Rosa Fresh Fish')
             ->where('orders.data.0.items.0.product_name', 'Bangus')
-            ->where('orders.data.0.items.0.quantity', 2)
+            ->where('orders.data.0.items.0.quantity', fn ($v) => (float) $v === 2.0)
             ->where('orders.data.0.status_history.0.status', 'pending')
         );
 });

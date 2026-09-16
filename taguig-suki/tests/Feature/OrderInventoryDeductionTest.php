@@ -56,7 +56,7 @@ function makeFishSetup(): array
     return [$admin, $customer, $vendorUser, $vendor, $product, $inventory];
 }
 
-function placeFishOrder(User $customer, Product $product, int $qty = 3): Order
+function placeFishOrder(User $customer, Product $product, float $qty = 3): Order
 {
     return app(OrderService::class)->placeOrder($customer, [
         ['product_id' => $product->id, 'product_name' => $product->name, 'quantity' => $qty],
@@ -73,16 +73,16 @@ test('placing an order deducts the vendor inventory and logs the sale', function
     expect($order->total_amount)->toBe('540.00');
     expect($order->items)->toHaveCount(1);
 
-    // Stock deducted: 25 - 3 = 22
+    // Stock deducted: 25 - 3 = 22 (decimal cast returns string)
     $inventory->refresh();
-    expect($inventory->stock_quantity)->toBe(22);
+    expect((float) $inventory->stock_quantity)->toBe(22.0);
 
     // Sale is logged
     $log = InventoryLog::where('inventory_id', $inventory->id)->latest()->first();
     expect($log->type)->toBe('sold');
-    expect($log->quantity_before)->toBe(25);
-    expect($log->quantity_change)->toBe(-3);
-    expect($log->quantity_after)->toBe(22);
+    expect((float) $log->quantity_before)->toBe(25.0);
+    expect((float) $log->quantity_change)->toBe(-3.0);
+    expect((float) $log->quantity_after)->toBe(22.0);
     expect($log->reference_number)->toBe($order->order_number);
 });
 
@@ -92,19 +92,23 @@ test('vendor can progress an order to completed and every status is recorded', f
     $order = placeFishOrder($customer, $product, 2);
     $service = app(OrderService::class);
 
-    foreach (['confirmed', 'processing', 'ready', 'completed'] as $status) {
-        $service->updateOrderStatus($vendorUser, $order->id, $status);
-    }
+    // Processing removed: pending → confirmed (auto → ready) → completed
+    $service->updateOrderStatus($vendorUser, $order->id, 'confirmed');
+    $order->refresh();
+    // Confirm automatically advances to Ready (one-click vendor flow)
+    expect($order->status)->toBe('ready');
+
+    $service->updateOrderStatus($vendorUser, $order->id, 'completed');
 
     $order->refresh();
     expect($order->status)->toBe('completed');
 
     $timeline = OrderStatusHistory::where('order_id', $order->id)->orderBy('id')->pluck('status')->all();
-    expect($timeline)->toBe(['pending', 'confirmed', 'processing', 'ready', 'completed']);
+    expect($timeline)->toBe(['pending', 'confirmed', 'ready', 'completed']);
 
     // Stock stays deducted: 25 - 2 = 23
     $inventory->refresh();
-    expect($inventory->stock_quantity)->toBe(23);
+    expect((float) $inventory->stock_quantity)->toBe(23.0);
 });
 
 test('admin inventory monitoring shows the deducted stock after a completed order', function () {
@@ -124,7 +128,7 @@ test('admin inventory monitoring shows the deducted stock after a completed orde
             ->where('stats.out_of_stock', 0)
             ->where('inventories.data.0.product.name', 'Bangus')
             ->where('inventories.data.0.product.category', 'Fish')
-            ->where('inventories.data.0.stock_quantity', 22)
+            ->where('inventories.data.0.stock_quantity', fn ($v) => (float) $v === 22.0)
             ->where('inventories.data.0.stock_status', 'in')
             ->where('inventories.data.0.vendor.stall_name', 'Aling Rosa Fresh Fish')
         );
@@ -139,5 +143,5 @@ test('ordering more than available stock is rejected without touching inventory'
 
     // Never allow negative stock
     $inventory->refresh();
-    expect($inventory->stock_quantity)->toBe(25);
+    expect((float) $inventory->stock_quantity)->toBe(25.0);
 });
