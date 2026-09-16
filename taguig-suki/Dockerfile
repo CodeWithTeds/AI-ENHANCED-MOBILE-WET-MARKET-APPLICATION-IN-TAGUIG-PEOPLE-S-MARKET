@@ -37,9 +37,10 @@ RUN chown -R www-data:www-data storage bootstrap/cache \
 
 # Apache config: point to public + allow .htaccess
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
+RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
     && printf '<Directory /var/www/html/public>\n    AllowOverride All\n    Require all granted\n</Directory>\n' > /etc/apache2/conf-available/laravel.conf \
-    && a2enconf laravel || true
+    && a2enconf laravel || true \
+    && cat /etc/apache2/sites-available/000-default.conf; echo "---"; ls -la /var/www/html/public/ | head -20
 
 EXPOSE 80
 
