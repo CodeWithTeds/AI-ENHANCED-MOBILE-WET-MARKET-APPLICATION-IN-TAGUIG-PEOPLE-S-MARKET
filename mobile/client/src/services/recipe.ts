@@ -46,7 +46,8 @@ export interface RecipeResult {
 export async function searchRecipe(query: string): Promise<RecipeResult> {
   const response = await api.request<RecipeResult>(
     `/recipes/search?q=${encodeURIComponent(query)}`,
-    { method: 'GET' }
+    // Groq is fast but give 30 s of headroom for cold starts and queue delays.
+    { method: 'GET', timeout: 30000 }
   );
   return response.data;
 }

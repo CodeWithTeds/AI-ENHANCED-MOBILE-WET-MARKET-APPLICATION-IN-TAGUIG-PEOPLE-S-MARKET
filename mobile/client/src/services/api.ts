@@ -11,6 +11,8 @@ interface ApiOptions {
   body?: FormData | Record<string, unknown>;
   token?: string;
   isFormData?: boolean;
+  /** Request timeout in milliseconds. Defaults to 15 000 ms. */
+  timeout?: number;
 }
 
 interface ApiResponse<T = unknown> {
@@ -27,7 +29,7 @@ class ApiService {
   }
 
   async request<T>(endpoint: string, options: ApiOptions = {}): Promise<ApiResponse<T>> {
-    const { method = 'GET', body, token, isFormData = false } = options;
+    const { method = 'GET', body, token, isFormData = false, timeout = 15000 } = options;
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -55,9 +57,9 @@ class ApiService {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
       const response = await fetch(url, { ...config, signal: controller.signal });
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
       const text = await response.text();
 
       let data: unknown;

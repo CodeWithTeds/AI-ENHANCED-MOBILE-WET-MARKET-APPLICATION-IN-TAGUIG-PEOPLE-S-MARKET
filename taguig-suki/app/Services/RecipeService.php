@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Http;
 class RecipeService
 {
     /**
-     * Generate a standard local recipe using Gemini AI.
+     * Generate a standard local recipe using NVIDIA AI (OpenAI-compatible API).
      * Only returns standard Metro Manila recipes — no regional variations.
      * Matches ingredients against available marketplace products.
      */
@@ -26,7 +26,7 @@ class RecipeService
                 ->implode(', ');
 
             $prompt = $this->buildPrompt($query, $productList);
-            $response = $this->callGemini($prompt);
+            $response = $this->callNvidia($prompt);
 
             $recipe = $this->parseResponse($response, $availableProducts);
 
@@ -101,44 +101,30 @@ If the search is not a valid Filipino dish, respond with:
 PROMPT;
     }
 
-    private function callGemini(string $prompt): string
+    private function callNvidia(string $prompt): string
     {
-        $apiKey = config('services.gemini.api_key');
-        $models = ['gemini-3-flash-preview', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+        $apiKey = config('services.groq.api_key');
+        $model = config('services.groq.model', 'openai/gpt-oss-20b');
+        $baseUrl = config('services.groq.base_url', 'https://api.groq.com/openai/v1');
 
-        $caBundle = config('services.gemini.ca_bundle');
-        $httpOptions = $caBundle && file_exists($caBundle) ? ['verify' => $caBundle] : [];
+        $response = Http::withToken($apiKey)
+            ->timeout(30)
+            ->post("{$baseUrl}/chat/completions", [
+                'model' => $model,
+                'messages' => [
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 4096,
+            ]);
 
-        foreach ($models as $model) {
-            $response = Http::withOptions($httpOptions)->timeout(45)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-                [
-                    'contents' => [
-                        ['parts' => [['text' => $prompt]]],
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.3,
-                        'responseMimeType' => 'application/json',
-                    ],
-                ]
-            );
+        if ($response->successful()) {
+            $data = $response->json();
+            $message = $data['choices'][0]['message'] ?? [];
 
-            if ($response->successful()) {
-                $data = $response->json();
-
-                return $data['candidates'][0]['content']['parts'][0]['text'] ?? '{"found": false, "message": "Could not generate recipe."}';
-            }
-
-            // If rate limited (429), try next model
-            if ($response->status() === 429) {
-                continue;
-            }
-
-            // Other errors — break
-            break;
+            return $message['content'] ?? '{"found": false, "message": "Could not generate recipe."}';
         }
 
-        // If all models failed with 429, extract retry time
         if ($response->status() === 429) {
             throw new \RuntimeException('AI quota exceeded. Please wait a moment and try again.');
         }
