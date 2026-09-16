@@ -35,12 +35,14 @@ RUN chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache \
     && php artisan storage:link || true
 
-# Apache config: point to public + allow .htaccess
+# Apache config: point to public + allow .htaccess (overwrite vhost to avoid sed bugs)
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf \
+RUN printf '<VirtualHost *:80>\n    DocumentRoot /var/www/html/public\n    <Directory /var/www/html/public>\n        AllowOverride All\n        Require all granted\n        Options Indexes FollowSymLinks\n    </Directory>\n    ErrorLog ${APACHE_LOG_DIR}/error.log\n    CustomLog ${APACHE_LOG_DIR}/access.log combined\n</VirtualHost>\n' > /etc/apache2/sites-available/000-default.conf \
     && printf '<Directory /var/www/html/public>\n    AllowOverride All\n    Require all granted\n</Directory>\n' > /etc/apache2/conf-available/laravel.conf \
     && a2enconf laravel || true \
-    && cat /etc/apache2/sites-available/000-default.conf; echo "---"; ls -la /var/www/html/public/ | head -20
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/public \
+    && cat /etc/apache2/sites-available/000-default.conf; echo "---VHOST OK---"; ls -la /var/www/html/public/ | head -20; echo "---"; ls -la /var/www/html/public/index.php 2>&1 | head
 
 EXPOSE 80
 
