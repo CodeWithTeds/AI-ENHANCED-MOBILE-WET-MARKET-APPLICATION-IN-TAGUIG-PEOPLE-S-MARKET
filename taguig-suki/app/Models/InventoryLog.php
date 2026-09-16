@@ -24,9 +24,9 @@ class InventoryLog extends Model
     protected function casts(): array
     {
         return [
-            'quantity_before' => 'integer',
-            'quantity_change' => 'integer',
-            'quantity_after' => 'integer',
+            'quantity_before' => 'decimal:2',
+            'quantity_change' => 'decimal:2',
+            'quantity_after' => 'decimal:2',
             'unit_cost' => 'decimal:2',
         ];
     }

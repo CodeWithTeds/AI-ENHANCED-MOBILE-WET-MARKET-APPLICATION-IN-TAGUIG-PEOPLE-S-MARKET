@@ -16,7 +16,7 @@ class AdjustStockRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'quantity' => ['required', 'integer', 'not_in:0'],
+            'quantity' => ['required', 'numeric', 'not_in:0'],
             'type' => ['required', new Enum(StockAdjustmentType::class)],
             'reason' => ['nullable', 'string', 'max:255'],
         ];

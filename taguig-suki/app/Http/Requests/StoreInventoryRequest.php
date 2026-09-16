@@ -15,9 +15,9 @@ class StoreInventoryRequest extends FormRequest
     {
         return [
             'product_id' => ['required', 'exists:products,id'],
-            'stock_quantity' => ['required', 'integer', 'min:0'],
-            'reorder_level' => ['nullable', 'integer', 'min:0'],
-            'max_stock_level' => ['nullable', 'integer', 'min:0'],
+            'stock_quantity' => ['required', 'numeric', 'min:0'],
+            'reorder_level' => ['nullable', 'numeric', 'min:0'],
+            'max_stock_level' => ['nullable', 'numeric', 'min:0'],
             'cost_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => ['required', 'numeric', 'min:0'],
             'markup_percentage' => ['nullable', 'numeric', 'min:0', 'max:999'],

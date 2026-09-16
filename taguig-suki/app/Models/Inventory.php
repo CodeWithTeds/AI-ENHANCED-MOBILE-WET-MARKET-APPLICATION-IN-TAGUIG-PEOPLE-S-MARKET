@@ -23,9 +23,9 @@ class Inventory extends Model
     protected function casts(): array
     {
         return [
-            'stock_quantity' => 'integer',
-            'reorder_level' => 'integer',
-            'max_stock_level' => 'integer',
+            'stock_quantity' => 'decimal:2',
+            'reorder_level' => 'decimal:2',
+            'max_stock_level' => 'decimal:2',
             'cost_price' => 'decimal:2',
             'selling_price' => 'decimal:2',
             'markup_percentage' => 'decimal:2',

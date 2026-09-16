@@ -27,7 +27,7 @@ class OrderManagementService
             'stats' => $this->getStats(),
             'filters' => $filters,
             'statuses' => collect([
-                'pending', 'confirmed', 'processing', 'ready', 'completed', 'cancelled',
+                'pending', 'confirmed', 'ready', 'completed', 'cancelled',
             ])->map(fn (string $status) => ['value' => $status, 'label' => ucfirst($status)]),
             'payment_methods' => collect([
                 ['cash', 'Cash'], ['gcash', 'GCash'], ['maya', 'Maya'],
@@ -111,7 +111,7 @@ class OrderManagementService
         return [
             'total' => Order::count(),
             'pending' => Order::where('status', 'pending')->count(),
-            'in_progress' => Order::whereIn('status', ['confirmed', 'processing', 'ready'])->count(),
+            'in_progress' => Order::whereIn('status', ['confirmed', 'ready'])->count(),
             'completed' => Order::where('status', 'completed')->count(),
             'cancelled' => Order::where('status', 'cancelled')->count(),
         ];

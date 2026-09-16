@@ -128,7 +128,6 @@ class ReportsAnalyticsService
         $statusLabels = [
             'pending' => 'Pending',
             'confirmed' => 'Confirmed',
-            'processing' => 'Processing',
             'ready' => 'Ready',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',

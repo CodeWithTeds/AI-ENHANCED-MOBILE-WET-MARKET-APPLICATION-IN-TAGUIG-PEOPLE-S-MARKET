@@ -132,7 +132,7 @@ class InventoryService
     {
         $this->authorizeInventory($user, $inventory);
 
-        $quantity = (int) $data['quantity'];
+        $quantity = (float) $data['quantity'];
         $type = StockAdjustmentType::from($data['type']);
 
         if ($type->isOutgoing() && $quantity > 0) {
@@ -143,14 +143,18 @@ class InventoryService
             $quantity = abs($quantity);
         }
 
-        if ($quantity < 0 && abs($quantity) > $inventory->stock_quantity) {
-            throw new UnprocessableEntityHttpException('Insufficient stock. Current: ' . $inventory->stock_quantity);
+        // Allow half-kilo increments; use epsilon for float comparison
+        $currentStock = (float) $inventory->stock_quantity;
+        if ($quantity < 0 && abs($quantity) - $currentStock > 0.0001) {
+            $display = rtrim(rtrim(number_format($currentStock, 2, '.', ''), '0'), '.');
+            throw new UnprocessableEntityHttpException('Insufficient stock. Current: ' . $display);
         }
 
         return DB::transaction(function () use ($inventory, $quantity, $type, $data) {
             $this->createLog($inventory, $type->value, $quantity, $data['reason'] ?? null);
 
-            $inventory->update(['stock_quantity' => max(0, $inventory->stock_quantity + $quantity)]);
+            $newStock = round((float) $inventory->stock_quantity + $quantity, 2);
+            $inventory->update(['stock_quantity' => max(0, $newStock)]);
 
             return $inventory->fresh(['product']);
         });
@@ -209,7 +213,7 @@ class InventoryService
         }
     }
 
-    private function createLog(Inventory $inventory, string $type, int $quantityChange, ?string $reason = null): InventoryLog
+    private function createLog(Inventory $inventory, string $type, float $quantityChange, ?string $reason = null): InventoryLog
     {
         return InventoryLog::create([
             'inventory_id' => $inventory->id,
@@ -218,7 +222,7 @@ class InventoryService
             'type' => $type,
             'quantity_before' => $inventory->stock_quantity,
             'quantity_change' => $quantityChange,
-            'quantity_after' => max(0, $inventory->stock_quantity + $quantityChange),
+            'quantity_after' => max(0, round((float) $inventory->stock_quantity + $quantityChange, 2)),
             'reason' => $reason,
             'reference_number' => null,
             'unit_cost' => $inventory->cost_price,

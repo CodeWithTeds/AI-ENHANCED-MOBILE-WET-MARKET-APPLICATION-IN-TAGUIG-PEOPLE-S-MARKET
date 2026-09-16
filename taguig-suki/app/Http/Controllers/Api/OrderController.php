@@ -27,7 +27,7 @@ class OrderController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer|exists:products,id',
             'items.*.product_name' => 'required|string',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|numeric|min:0.5',
             'payment_method' => 'nullable|string|in:cash,gcash,maya',
             'payment_reference_number' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:500',
@@ -198,7 +198,7 @@ class OrderController extends Controller
     public function updateStatus(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'status' => 'required|string|in:confirmed,processing,ready,completed,cancelled',
+            'status' => 'required|string|in:confirmed,ready,completed,cancelled',
         ]);
 
         $order = $this->orderService->updateOrderStatus($request->user(), $id, $validated['status']);

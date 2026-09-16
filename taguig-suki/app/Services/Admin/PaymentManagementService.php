@@ -38,7 +38,7 @@ class PaymentManagementService
                 ['value' => 'failed', 'label' => 'Failed'],
             ]),
             'order_statuses' => collect([
-                'pending', 'confirmed', 'processing', 'ready', 'completed', 'cancelled',
+                'pending', 'confirmed', 'ready', 'completed', 'cancelled',
             ])->map(fn (string $status) => ['value' => $status, 'label' => ucfirst($status)]),
             'method_breakdown' => $this->getMethodBreakdown(),
             'vendor_payouts' => $this->getVendorPayouts(),
@@ -152,14 +152,14 @@ class PaymentManagementService
                 $query->where(function (Builder $q) {
                     $q->where('payment_status', 'unpaid')
                       ->orWhere(function (Builder $qq) {
-                          $qq->whereNull('payment_status')->whereIn('status', ['pending', 'confirmed', 'processing', 'ready']);
+                          $qq->whereNull('payment_status')->whereIn('status', ['pending', 'confirmed', 'ready']);
                       });
                 });
             } else {
                 $statusMap = [
                     'successful' => ['completed'],
                     'failed' => ['cancelled'],
-                    'pending' => ['pending', 'confirmed', 'processing', 'ready'],
+                    'pending' => ['pending', 'confirmed', 'ready'],
                 ];
                 $orderStatuses = $statusMap[$filters['payment_status']] ?? null;
                 if ($orderStatuses) {
@@ -195,16 +195,16 @@ class PaymentManagementService
 
         $totalRevenue = (float) Order::where('status', '!=', 'cancelled')->sum('total_amount');
         $successfulRevenue = (float) Order::where('status', 'completed')->sum('total_amount');
-        $pendingRevenue = (float) Order::whereIn('status', ['pending', 'confirmed', 'processing', 'ready'])->sum('total_amount');
+        $pendingRevenue = (float) Order::whereIn('status', ['pending', 'confirmed', 'ready'])->sum('total_amount');
         $failedRevenue = (float) Order::where('status', 'cancelled')->sum('total_amount');
 
-        $pendingCount = Order::whereIn('status', ['pending', 'confirmed', 'processing', 'ready'])->count();
+        $pendingCount = Order::whereIn('status', ['pending', 'confirmed', 'ready'])->count();
         $successfulCount = Order::where('status', 'completed')->count();
         $failedCount = Order::where('status', 'cancelled')->count();
 
         // Payout to vendors = sum of order_items for completed orders (actual money vendors receive)
         $totalPayout = (float) OrderItem::whereHas('order', fn (Builder $q) => $q->where('status', 'completed'))->sum('subtotal');
-        $pendingPayout = (float) OrderItem::whereHas('order', fn (Builder $q) => $q->whereIn('status', ['pending', 'confirmed', 'processing', 'ready']))->sum('subtotal');
+        $pendingPayout = (float) OrderItem::whereHas('order', fn (Builder $q) => $q->whereIn('status', ['pending', 'confirmed', 'ready']))->sum('subtotal');
 
         return [
             'total_transactions' => $totalTransactions,

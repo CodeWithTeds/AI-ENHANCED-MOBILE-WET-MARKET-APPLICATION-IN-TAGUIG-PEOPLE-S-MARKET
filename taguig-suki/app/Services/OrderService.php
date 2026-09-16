@@ -55,7 +55,7 @@ class OrderService
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $inventory = $inventories->get($item['product_id']);
-                $qty = (int) $item['quantity'];
+                $qty = (float) $item['quantity'];
 
                 if (! $product) {
                     throw new UnprocessableEntityHttpException(
@@ -63,22 +63,46 @@ class OrderService
                     );
                 }
 
+                // Validate quantity granularity: 0.5 kg increments for weight, integer otherwise
+                $isWeight = strtolower($product->unit) === 'kg';
+                if ($qty < 0.5) {
+                    throw new UnprocessableEntityHttpException(
+                        "Quantity for \"{$product->name}\" must be at least 0.5."
+                    );
+                }
+                if ($isWeight) {
+                    // Must be multiple of 0.5: 0.5, 1, 1.5, 2 ...
+                    if (abs($qty * 2 - round($qty * 2)) > 0.0001) {
+                        throw new UnprocessableEntityHttpException(
+                            "For \"{$product->name}\" (per kg), quantity must be in 0.5 kg increments (e.g., 0.5, 1, 1.5)."
+                        );
+                    }
+                } else {
+                    if (abs($qty - round($qty)) > 0.0001) {
+                        throw new UnprocessableEntityHttpException(
+                            "Quantity for \"{$product->name}\" must be a whole number."
+                        );
+                    }
+                }
+
                 // If vendor has no inventory record, skip stock check (allow legacy products)
                 if ($inventory) {
-                    if ($inventory->stock_quantity <= 0) {
+                    $stock = (float) $inventory->stock_quantity;
+                    if ($stock <= 0.0001) {
                         throw new UnprocessableEntityHttpException(
                             "\"$product->name\" is currently out of stock."
                         );
                     }
 
-                    if ($inventory->stock_quantity < $qty) {
+                    if ($stock + 1e-9 < $qty) {
+                        $stockDisplay = rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.');
                         throw new UnprocessableEntityHttpException(
-                            "Only {$inventory->stock_quantity} item(s) of \"$product->name\" remaining in stock."
+                            "Only {$stockDisplay} {$product->unit}(s) of \"$product->name\" remaining in stock."
                         );
                     }
                 }
 
-                $totalAmount += $product->price * $qty;
+                $totalAmount += (float) $product->price * $qty;
             }
 
             // ── 3b. Validate e-wallet availability for gcash/maya ──────────
@@ -150,7 +174,7 @@ class OrderService
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $inventory = $inventories->get($item['product_id']);
-                $qty = (int) $item['quantity'];
+                $qty = (float) $item['quantity'];
                 $unitPrice = (float) $product->price;
 
                 // Create order item (snapshot of product data at purchase time)
@@ -167,8 +191,8 @@ class OrderService
 
                 // Deduct stock and log the sale
                 if ($inventory) {
-                    $before = $inventory->stock_quantity;
-                    $after = max(0, $before - $qty);
+                    $before = (float) $inventory->stock_quantity;
+                    $after = max(0.0, round($before - $qty, 2));
 
                     $inventory->update(['stock_quantity' => $after]);
 
@@ -360,6 +384,8 @@ class OrderService
 
     /**
      * Vendor updates the status of an order they own items in.
+     * Processing status removed: pending → confirmed → ready → completed.
+     * When vendor confirms a pending order, it automatically moves to Ready to reduce actions.
      */
     public function updateOrderStatus(User $user, int $orderId, string $status): Order
     {
@@ -369,9 +395,31 @@ class OrderService
             throw new AccessDeniedHttpException('Vendor profile not found');
         }
 
+        if ($status === 'processing') {
+            throw new UnprocessableEntityHttpException('Processing status has been removed. Use Ready instead.');
+        }
+
         // Confirm this vendor has items in this order
         $order = Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
             ->findOrFail($orderId);
+
+        // Auto-advance: pending + confirm => directly to Ready (one-click confirm)
+        if ($order->status === 'pending' && $status === 'confirmed') {
+            $order->update(['status' => 'ready']);
+
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => 'confirmed',
+                'note' => 'Order confirmed by vendor',
+            ]);
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => 'ready',
+                'note' => 'Automatically marked as Ready after confirmation (processing step removed)',
+            ]);
+
+            return $order->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+        }
 
         $order->update(['status' => $status]);
 
@@ -394,14 +442,32 @@ class OrderService
         $vendors = \App\Models\Vendor::whereIn('id', $vendorIds)->get();
 
         return $vendors->map(function ($vendor) {
+            $gcashUrl = null;
+            $mayaUrl = null;
+            if ($vendor->gcash_qr_path) {
+                try {
+                    $host = request()->getSchemeAndHttpHost();
+                    $gcashUrl = rtrim($host, '/') . '/storage/' . ltrim($vendor->gcash_qr_path, '/');
+                } catch (\Throwable $e) {
+                    $gcashUrl = Storage::disk('public')->url($vendor->gcash_qr_path);
+                }
+            }
+            if ($vendor->maya_qr_path) {
+                try {
+                    $host = request()->getSchemeAndHttpHost();
+                    $mayaUrl = rtrim($host, '/') . '/storage/' . ltrim($vendor->maya_qr_path, '/');
+                } catch (\Throwable $e) {
+                    $mayaUrl = Storage::disk('public')->url($vendor->maya_qr_path);
+                }
+            }
             return [
                 'vendor_id' => $vendor->id,
                 'stall_name' => $vendor->stall_name,
                 'stall_location' => $vendor->stall_location,
                 'gcash_number' => $vendor->gcash_number,
-                'gcash_qr_url' => $vendor->gcash_qr_path ? Storage::disk('public')->url($vendor->gcash_qr_path) : null,
+                'gcash_qr_url' => $gcashUrl,
                 'maya_number' => $vendor->maya_number,
-                'maya_qr_url' => $vendor->maya_qr_path ? Storage::disk('public')->url($vendor->maya_qr_path) : null,
+                'maya_qr_url' => $mayaUrl,
                 'has_gcash' => !empty($vendor->gcash_number) || !empty($vendor->gcash_qr_path),
                 'has_maya' => !empty($vendor->maya_number) || !empty($vendor->maya_qr_path),
             ];
@@ -466,12 +532,12 @@ class OrderService
 
         foreach ($completedOrders as $order) {
             $orderVendorSubtotal = 0.0;
-            $orderUnits = 0;
+            $orderUnits = 0.0;
             $itemsSummary = [];
 
             foreach ($order->items as $item) {
                 $subtotal = (float) $item->subtotal;
-                $qty = (int) $item->quantity;
+                $qty = (float) $item->quantity;
                 $orderVendorSubtotal += $subtotal;
                 $orderUnits += $qty;
 
@@ -483,11 +549,11 @@ class OrderService
                         'product_name' => $item->product_name,
                         'category' => $item->category,
                         'unit' => $item->unit,
-                        'quantity_sold' => 0,
+                        'quantity_sold' => 0.0,
                         'revenue' => 0.0,
                     ];
                 }
-                $topProductsMap[$pid]['quantity_sold'] += $qty;
+                $topProductsMap[$pid]['quantity_sold'] = round($topProductsMap[$pid]['quantity_sold'] + $qty, 2);
                 $topProductsMap[$pid]['revenue'] = round($topProductsMap[$pid]['revenue'] + $subtotal, 2);
 
                 // Category breakdown
@@ -496,7 +562,7 @@ class OrderService
                     $categoryMap[$cat] = [
                         'category' => $cat,
                         'revenue' => 0.0,
-                        'quantity' => 0,
+                        'quantity' => 0.0,
                     ];
                 }
                 $categoryMap[$cat]['revenue'] = round($categoryMap[$cat]['revenue'] + $subtotal, 2);
