@@ -26,6 +26,9 @@ class RegisterRequest extends FormRequest
             'name' => ['required', 'max:255', 'regex:/^[A-Za-z\s]+$/'],
             'email' => ['required', 'email', 'ends_with:@gmail.com,@yahoo.com', 'unique:users,email'],
             'password' => ['required', 'min:8', 'confirmed'],
+            // Optional ID verification during registration
+            'id_type' => ['nullable', 'string', 'in:national_id,drivers_license,passport,umid,philhealth,sss,voters_id,postal_id,student_id,other'],
+            'id_image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
         ];
     }
 }

@@ -3,10 +3,13 @@
 namespace App\Services;
 
 use App\Enums\VendorStatus;
+use App\Models\CustomerVerification;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Repositories\VendorRepositoryInterface;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AuthService
@@ -17,13 +20,44 @@ class AuthService
 
     public function register(array $data): array
     {
+        // Handle optional ID verification upload during registration
+        $idType = $data['id_type'] ?? null;
+        $idImage = $data['id_image'] ?? null;
+
+        // Remove ID fields so they don't hit User::create mass assignment
+        unset($data['id_type'], $data['id_image']);
+
         $user = User::create($data);
         $token = $user->createToken('auth_token')->plainTextToken;
+
+        $verification = null;
+        // If ID provided at registration, store as pending
+        if ($idType && $idImage instanceof UploadedFile) {
+            try {
+                $path = $idImage->store('customer_ids/' . $user->id, 'public');
+                if ($path) {
+                    $verification = CustomerVerification::create([
+                        'user_id' => $user->id,
+                        'id_type' => $idType,
+                        'id_image_path' => $path,
+                        'status' => CustomerVerification::STATUS_PENDING,
+                        'submitted_at' => now(),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[AuthService] ID upload at registration failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+                // Don't fail registration if ID storage fails — user can re-upload in profile
+            }
+        } else {
+            // Ensure an unverified record exists for consistency
+            CustomerVerification::firstOrCreate(['user_id' => $user->id], ['status' => CustomerVerification::STATUS_UNVERIFIED]);
+        }
 
         return [
             'access_token' => $token,
             'token_type' => 'Bearer',
             'user' => $user,
+            'verification' => $verification,
         ];
     }
 

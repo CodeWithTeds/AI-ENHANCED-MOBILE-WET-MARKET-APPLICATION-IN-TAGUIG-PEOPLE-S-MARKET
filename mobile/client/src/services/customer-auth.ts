@@ -4,7 +4,8 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from './api';
+import { api, ApiError } from './api';
+import { API_BASE_URL } from '@/config/api';
 
 const CUSTOMER_TOKEN_KEY = '@taguigsuki_customer_token';
 const CUSTOMER_USER_KEY = '@taguigsuki_customer_user';
@@ -30,6 +31,9 @@ export interface CustomerRegisterData {
   email: string;
   password: string;
   password_confirmation: string;
+  /** Optional ID verification at registration */
+  id_type?: string;
+  id_image_uri?: string | null;
 }
 
 interface CustomerAuthResponse {
@@ -40,12 +44,66 @@ interface CustomerAuthResponse {
 
 /**
  * Register a new customer account.
+ * Supports optional ID verification upload via multipart (image).
  */
 export async function registerCustomer(data: CustomerRegisterData): Promise<CustomerAuthResponse> {
-  const response = await api.request<CustomerAuthResponse>('/register', {
-    method: 'POST',
-    body: data as unknown as Record<string, unknown>,
-  });
+  const hasIdImage = !!data.id_image_uri;
+
+  let response: { data: CustomerAuthResponse };
+
+  if (hasIdImage) {
+    // Use XHR for multipart (reliable on Android)
+    const formData = new FormData();
+    formData.append('name', data.name);
+    formData.append('email', data.email);
+    formData.append('password', data.password);
+    formData.append('password_confirmation', data.password_confirmation);
+    if (data.id_type) formData.append('id_type', data.id_type);
+
+    const uri = data.id_image_uri as string;
+    const filename = uri.split('/').pop() ?? 'id_image.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const ext = match ? match[1].toLowerCase() : 'jpg';
+    const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    formData.append('id_image', { uri, name: filename, type } as unknown as Blob);
+
+    response = await new Promise<{ data: CustomerAuthResponse }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/register`);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.timeout = 30000;
+      xhr.onload = () => {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            // API wraps in {status,message,data}
+            resolve({ data: res.data as CustomerAuthResponse });
+          } else {
+            const msg = res.message || 'Registration failed';
+            let full = msg;
+            if (res.errors && typeof res.errors === 'object') {
+              const errs = Object.values(res.errors as Record<string, string[]>).flat().join('\n');
+              if (errs) full = errs;
+            }
+            reject(new ApiError(full, xhr.status, res));
+          }
+        } catch {
+          reject(new ApiError(`Invalid response: ${xhr.responseText.substring(0,150)}`, xhr.status));
+        }
+      };
+      xhr.onerror = () => reject(new ApiError('Network request failed', 0));
+      xhr.ontimeout = () => reject(new ApiError('Request timed out', 0));
+      xhr.send(formData);
+    });
+  } else {
+    // JSON path — no ID
+    const { id_image_uri, id_type, ...jsonData } = data as any;
+    const apiRes = await api.request<CustomerAuthResponse>('/register', {
+      method: 'POST',
+      body: jsonData as unknown as Record<string, unknown>,
+    });
+    response = { data: apiRes.data };
+  }
 
   const result = response.data;
 

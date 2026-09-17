@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,10 +18,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { CustomerAuthProvider, useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ApiError } from '@/services/api';
+import { ID_TYPES, type IdType } from '@/services/customer-verification';
 
 type Tab = 'sign-in' | 'create-account';
 
@@ -168,7 +171,49 @@ function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [idType, setIdType] = useState<IdType>('national_id');
+  const [idImageUri, setIdImageUri] = useState<string | null>(null);
+  const [showIdPicker, setShowIdPicker] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const selectedIdLabel = ID_TYPES.find((t) => t.value === idType)?.label ?? idType;
+
+  async function pickImage() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo access to upload ID.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    if (!res.canceled && res.assets[0]) setIdImageUri(res.assets[0].uri);
+  }
+
+  async function takePhoto() {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow camera access to take ID photo.');
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    if (!res.canceled && res.assets[0]) setIdImageUri(res.assets[0].uri);
+  }
+
+  function showPickerOptions() {
+    Alert.alert('Select ID Photo', 'Choose source', [
+      { text: 'Camera', onPress: takePhoto },
+      { text: 'Gallery', onPress: pickImage },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
 
   async function handleRegister() {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -183,6 +228,11 @@ function RegisterForm() {
       Alert.alert('Error', 'Password must be at least 8 characters.');
       return;
     }
+    // If user picked a photo, require id_type; else allow skip
+    if (idImageUri && !idType) {
+      Alert.alert('Missing ID Type', 'Please select your ID type.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -191,11 +241,19 @@ function RegisterForm() {
         email: email.trim(),
         password,
         password_confirmation: confirmPassword,
+        id_type: idImageUri ? idType : undefined,
+        id_image_uri: idImageUri ?? undefined,
       });
-      router.replace('/(customer)/home');
+      if (idImageUri) {
+        Alert.alert('Account Created', 'ID submitted for verification (pending review). You can also update it later in Profile → ID Verification.', [
+          { text: 'OK', onPress: () => router.replace('/(customer)/home') },
+        ]);
+      } else {
+        router.replace('/(customer)/home');
+      }
     } catch (error) {
-      const msg = error instanceof ApiError ? error.message : 'Registration failed.';
-      Alert.alert('Error', msg);
+      const msg = error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Registration failed.';
+      Alert.alert('Registration Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -225,6 +283,63 @@ function RegisterForm() {
       <View style={styles.inputWrapper}>
         <Ionicons name="lock-closed-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
         <TextInput style={styles.input} placeholder="Repeat password" placeholderTextColor={Colors.textMuted} value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
+      </View>
+
+      {/* ── Optional ID Verification at Registration ── */}
+      <View style={styles.idSection}>
+        <View style={styles.idHeaderRow}>
+          <View style={styles.idIconWrap}>
+            <Ionicons name="card-outline" size={16} color={Colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.idSectionTitle}>ID Verification (Optional)</Text>
+            <Text style={styles.idSectionSubtitle}>Upload now to get verified faster. You can also do this later in Profile.</Text>
+          </View>
+        </View>
+
+        <Text style={styles.fieldLabel}>ID Type</Text>
+        <TouchableOpacity style={styles.pickerButton} onPress={() => setShowIdPicker(!showIdPicker)} accessibilityRole="button">
+          <Text style={styles.pickerText}>{selectedIdLabel}</Text>
+          <Ionicons name={showIdPicker ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textMuted} />
+        </TouchableOpacity>
+        {showIdPicker ? (
+          <View style={styles.pickerDropdown}>
+            <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+              {ID_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[styles.pickerOption, idType === t.value && styles.pickerOptionSelected]}
+                  onPress={() => {
+                    setIdType(t.value as IdType);
+                    setShowIdPicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerOptionText, idType === t.value && styles.pickerOptionTextSelected]}>{t.label}</Text>
+                  {idType === t.value ? <Ionicons name="checkmark" size={14} color={Colors.primary} /> : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        <Text style={styles.fieldLabel}>ID Photo</Text>
+        {idImageUri ? (
+          <View>
+            <Image source={{ uri: idImageUri }} style={styles.idImage} resizeMode="cover" />
+            <TouchableOpacity style={styles.changePhotoBtn} onPress={showPickerOptions}>
+              <Text style={styles.changePhotoText}>Change photo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.uploadBox} onPress={showPickerOptions} activeOpacity={0.75}>
+            <View style={styles.uploadIconWrap}>
+              <Ionicons name="cloud-upload-outline" size={22} color={Colors.primary} />
+            </View>
+            <Text style={styles.uploadTitle}>Tap to upload ID picture</Text>
+            <Text style={styles.uploadSubtitle}>Camera or Gallery • JPG/PNG/WEBP • max 5MB</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.idHint}>Skip if you don't have ID now — add it anytime in Profile → ID Verification.</Text>
       </View>
 
       <TouchableOpacity
@@ -279,4 +394,26 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: '#1B6B45', borderRadius: 14, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 20, marginBottom: 24 },
   buttonDisabled: { opacity: 0.7 },
   primaryButtonText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+
+  // ID Verification at registration
+  idSection: { backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, marginTop: 14 },
+  idHeaderRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 6 },
+  idIconWrap: { width: 30, height: 30, borderRadius: 8, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
+  idSectionTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  idSectionSubtitle: { fontSize: 11, color: Colors.textMuted, marginTop: 2, lineHeight: 14 },
+  pickerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12 },
+  pickerText: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  pickerDropdown: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginTop: 6, overflow: 'hidden' },
+  pickerOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  pickerOptionSelected: { backgroundColor: '#DCFCE7' },
+  pickerOptionText: { fontSize: 14, color: Colors.text },
+  pickerOptionTextSelected: { fontWeight: '700', color: '#1B6B45' },
+  idImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#E5E7EB', marginTop: 4 },
+  changePhotoBtn: { alignItems: 'center', paddingVertical: 8 },
+  changePhotoText: { fontSize: 13, fontWeight: '600', color: '#1B6B45' },
+  uploadBox: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  uploadIconWrap: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  uploadTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  uploadSubtitle: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
+  idHint: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', marginTop: 8, lineHeight: 14 },
 });

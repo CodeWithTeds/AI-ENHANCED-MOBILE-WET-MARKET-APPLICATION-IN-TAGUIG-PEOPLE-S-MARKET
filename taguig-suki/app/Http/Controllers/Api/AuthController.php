@@ -18,7 +18,13 @@ class AuthController extends Controller
 
     public function register(RegisterRequest $request): JsonResponse
     {
-        return $this->successResponse($this->authService->register($request->validated()), 'User registered successfully', 201);
+        $data = $request->validated();
+        // Attach file object for ID verification (multipart/form-data)
+        if ($request->hasFile('id_image')) {
+            $data['id_image'] = $request->file('id_image');
+        }
+
+        return $this->successResponse($this->authService->register($data), 'User registered successfully', 201);
     }
 
     public function login(LoginRequest $request): JsonResponse
