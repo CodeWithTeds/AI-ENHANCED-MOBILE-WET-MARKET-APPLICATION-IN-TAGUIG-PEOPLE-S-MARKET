@@ -2,8 +2,10 @@
 
 namespace App\Services\Admin;
 
+use App\Models\CustomerVerification;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class UserManagementService
@@ -14,7 +16,7 @@ class UserManagementService
      */
     public function getIndexData(array $filters): array
     {
-        $query = User::query()->withCount(['vendor']);
+        $query = User::query()->withCount(['vendor'])->with(['verification', 'vendor']);
 
         $this->applyFilters($query, $filters);
 
@@ -43,6 +45,13 @@ class UserManagementService
                 ['value' => 'active', 'label' => 'Active'],
                 ['value' => 'inactive', 'label' => 'Inactive'],
             ],
+            'verificationStatuses' => [
+                ['value' => 'pending', 'label' => 'Pending'],
+                ['value' => 'verified', 'label' => 'Verified'],
+                ['value' => 'rejected', 'label' => 'Rejected'],
+                ['value' => 'unverified', 'label' => 'Unverified'],
+            ],
+            'verificationStats' => $this->getVerificationStats(),
         ];
     }
 
@@ -83,6 +92,33 @@ class UserManagementService
 
     private function present(User $user): array
     {
+        $verification = $user->verification;
+        // Ensure a verification row exists for consistent UI (lazy create not needed here, just present null)
+        $verifData = null;
+        if ($verification) {
+            $verifData = [
+                'id' => $verification->id,
+                'id_type' => $verification->id_type,
+                'id_image_path' => $verification->id_image_path,
+                'id_image_url' => $verification->id_image_path ? Storage::disk('public')->url($verification->id_image_path) : null,
+                'status' => $verification->status,
+                'rejection_reason' => $verification->rejection_reason,
+                'submitted_at' => $verification->submitted_at,
+                'verified_at' => $verification->verified_at,
+            ];
+        } else {
+            $verifData = [
+                'id' => null,
+                'id_type' => null,
+                'id_image_path' => null,
+                'id_image_url' => null,
+                'status' => CustomerVerification::STATUS_UNVERIFIED,
+                'rejection_reason' => null,
+                'submitted_at' => null,
+                'verified_at' => null,
+            ];
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -98,6 +134,7 @@ class UserManagementService
                 'stall_name' => $user->vendor->stall_name,
                 'status' => $user->vendor->status,
             ] : null,
+            'verification' => $verifData,
         ];
     }
 
@@ -126,6 +163,16 @@ class UserManagementService
                 $query->where('is_admin', false);
             }
         }
+
+        if (! empty($filters['verification_status'])) {
+            $vs = $filters['verification_status'];
+            if ($vs === 'unverified') {
+                $query->whereDoesntHave('verification')
+                    ->orWhereHas('verification', fn (Builder $q) => $q->where('status', 'unverified'));
+            } elseif (in_array($vs, ['pending', 'verified', 'rejected'], true)) {
+                $query->whereHas('verification', fn (Builder $q) => $q->where('status', $vs));
+            }
+        }
     }
 
     private function getStats(): array
@@ -136,6 +183,16 @@ class UserManagementService
             'inactive' => User::where('is_active', false)->count(),
             'admins' => User::where('is_admin', true)->count(),
             'customers' => User::where('is_admin', false)->count(),
+        ];
+    }
+
+    private function getVerificationStats(): array
+    {
+        return [
+            'pending' => CustomerVerification::where('status', 'pending')->count(),
+            'verified' => CustomerVerification::where('status', 'verified')->count(),
+            'rejected' => CustomerVerification::where('status', 'rejected')->count(),
+            'unverified' => CustomerVerification::where('status', 'unverified')->count() + User::whereDoesntHave('verification')->count(),
         ];
     }
 

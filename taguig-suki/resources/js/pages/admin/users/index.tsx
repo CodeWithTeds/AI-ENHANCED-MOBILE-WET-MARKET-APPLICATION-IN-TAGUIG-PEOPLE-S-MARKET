@@ -1,7 +1,9 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import {
     AlertTriangle,
+    BadgeCheck,
     CheckCircle2,
+    Clock,
     Eye,
     Pencil,
     Search,
@@ -21,6 +23,17 @@ import { dashboard } from '@/routes';
 
 type VendorInfo = { id: number; stall_name: string; status: string } | null;
 
+type VerificationInfo = {
+    id: number | null;
+    id_type: string | null;
+    id_image_path: string | null;
+    id_image_url: string | null;
+    status: 'unverified' | 'pending' | 'verified' | 'rejected';
+    rejection_reason: string | null;
+    submitted_at: string | null;
+    verified_at: string | null;
+} | null;
+
 type AppUser = {
     id: number;
     name: string;
@@ -32,6 +45,7 @@ type AppUser = {
     created_at: string;
     updated_at: string;
     vendor: VendorInfo;
+    verification: VerificationInfo;
 };
 
 type FilterOption = { value: string; label: string };
@@ -52,15 +66,24 @@ type Props = {
         admins: number;
         customers: number;
     };
+    verificationStats?: {
+        pending: number;
+        verified: number;
+        rejected: number;
+        unverified: number;
+    };
     filters: Record<string, string | undefined>;
     roles: FilterOption[];
     statuses: FilterOption[];
+    verificationStatuses?: FilterOption[];
 };
 
-export default function UserManagementIndex({ users, stats, filters, roles, statuses }: Props) {
+export default function UserManagementIndex({ users, stats, verificationStats, filters, roles, statuses, verificationStatuses }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [viewUser, setViewUser] = useState<AppUser | null>(null);
     const [editUser, setEditUser] = useState<AppUser | null>(null);
+    const [previewVerif, setPreviewVerif] = useState<AppUser | null>(null);
+    const [rejectVerif, setRejectVerif] = useState<AppUser | null>(null);
 
     function applyFilter(key: string, value: string | undefined) {
         router.get(
@@ -101,7 +124,18 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
         }
     }
 
-    const hasActiveFilters = filters.search || filters.status || filters.role;
+    function handleApproveVerif(user: AppUser) {
+        if (!user.verification?.id) return;
+        if (!confirm(`Approve ID verification for "${user.name}" (${user.verification.id_type})?`)) return;
+        router.post(`/admin/dashboard/verifications/${user.verification.id}/approve`, {}, { preserveScroll: true });
+    }
+
+    function handleRejectVerifConfirm(reason: string) {
+        if (!rejectVerif?.verification?.id) return;
+        router.post(`/admin/dashboard/verifications/${rejectVerif.verification.id}/reject`, { rejection_reason: reason }, { preserveScroll: true, onSuccess: () => setRejectVerif(null) });
+    }
+
+    const hasActiveFilters = filters.search || filters.status || filters.role || filters.verification_status;
 
     return (
         <>
@@ -123,6 +157,14 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
                     <StatCard icon={Shield} label="Admins" value={stats.admins} color="#7c3aed" />
                     <StatCard icon={Users} label="Customers" value={stats.customers} color="#0867ff" />
                 </div>
+                {verificationStats && (
+                    <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <StatCard icon={Clock} label="Pending ID" value={verificationStats.pending} color="#d97706" />
+                        <StatCard icon={BadgeCheck} label="Verified" value={verificationStats.verified} color="#488562" />
+                        <StatCard icon={XCircle} label="Rejected" value={verificationStats.rejected} color="#dc2626" />
+                        <StatCard icon={Shield} label="Unverified" value={verificationStats.unverified} color="#6b7280" />
+                    </div>
+                )}
 
                 {/* Filters */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -139,6 +181,7 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
 
                     <ChipSelect label="Status" value={filters.status} options={statuses} onChange={(v) => applyFilter('status', v)} />
                     <ChipSelect label="Role" value={filters.role} options={roles} onChange={(v) => applyFilter('role', v)} />
+                    {verificationStatuses && <ChipSelect label="ID Verification" value={filters.verification_status} options={verificationStatuses} onChange={(v) => applyFilter('verification_status', v)} />}
 
                     {hasActiveFilters && (
                         <button
@@ -170,6 +213,9 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
                                         Status
                                     </th>
                                     <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
+                                        ID Verification
+                                    </th>
+                                    <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
                                         Vendor
                                     </th>
                                     <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
@@ -183,7 +229,7 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
                             <tbody className="divide-y divide-gray-50">
                                 {users.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-4 py-16 text-center text-base text-gray-400">
+                                        <td colSpan={8} className="px-4 py-16 text-center text-base text-gray-400">
                                             <Users className="mx-auto mb-2 h-10 w-10 text-gray-300" />
                                             No users found.
                                         </td>
@@ -244,6 +290,9 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
                                                         <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> Inactive
                                                     </span>
                                                 )}
+                                            </td>
+                                            <td className="px-4 py-3.5">
+                                                <VerificationCell user={user} onPreview={() => setPreviewVerif(user)} onApprove={() => handleApproveVerif(user)} onReject={() => setRejectVerif(user)} />
                                             </td>
                                             <td className="px-4 py-3.5">
                                                 {user.vendor ? (
@@ -371,6 +420,64 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
                                 <DetailBox label="User ID" value={`#${viewUser.id}`} color="#6b7280" />
                                 <DetailBox label="Vendor" value={viewUser.vendor?.stall_name ?? 'None'} color="#ee600e" />
                             </div>
+                            {/* Verification in view modal */}
+                            {viewUser.verification && (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                    <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">ID Verification</div>
+                                    <div className="flex items-start gap-3">
+                                        {viewUser.verification.id_image_url ? (
+                                            <img src={viewUser.verification.id_image_url} alt="ID" className="h-20 w-28 rounded-lg border object-cover" />
+                                        ) : (
+                                            <div className="h-20 w-28 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No ID</div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <VerificationBadge status={viewUser.verification.status} />
+                                                {viewUser.verification.id_type && <span className="text-xs text-gray-600">{viewUser.verification.id_type}</span>}
+                                            </div>
+                                            {viewUser.verification.rejection_reason && viewUser.verification.status === 'rejected' && (
+                                                <p className="mt-1 text-xs text-red-600">Reason: {viewUser.verification.rejection_reason}</p>
+                                            )}
+                                            <p className="mt-1 text-[11px] text-gray-500">
+                                                {viewUser.verification.submitted_at ? `Submitted ${formatDate(viewUser.verification.submitted_at)}` : 'Not submitted'}
+                                            </p>
+                                            <div className="mt-2 flex gap-1.5">
+                                                {viewUser.verification.status === 'pending' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => {
+                                                                setViewUser(null);
+                                                                handleApproveVerif(viewUser);
+                                                            }}
+                                                            className="rounded-md bg-[#488562] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#3a6e50]"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setViewUser(null);
+                                                                setRejectVerif(viewUser);
+                                                            }}
+                                                            className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {viewUser.verification.id_image_url && (
+                                                    <a href={viewUser.verification.id_image_url} target="_blank" rel="noopener noreferrer" className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
+                                                        View Full
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {/* Admin must approve first notice */}
+                                    {viewUser.verification.status === 'pending' && (
+                                        <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">Admin must approve first — customer is pending until you verify.</p>
+                                    )}
+                                </div>
+                            )}
                             <div className="rounded-xl bg-gray-50 p-3 text-xs space-y-2">
                                 <Row label="Email" value={viewUser.email} />
                                 <Row label="Verified" value={viewUser.email_verified_at ? 'Yes' : 'No'} />
@@ -411,6 +518,37 @@ export default function UserManagementIndex({ users, stats, filters, roles, stat
 
             {/* Edit Dialog */}
             {editUser && <EditModal user={editUser} onClose={() => setEditUser(null)} />}
+
+            {/* ID Preview */}
+            {previewVerif && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreviewVerif(null)}>
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-5 py-3 border-b">
+                            <h3 className="font-bold text-sm">ID — {previewVerif.name} • {previewVerif.verification?.id_type ?? '—'}</h3>
+                            <button onClick={() => setPreviewVerif(null)} className="p-1 rounded hover:bg-gray-100"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="p-4 bg-gray-50 flex items-center justify-center">
+                            {previewVerif.verification?.id_image_url ? (
+                                <img src={previewVerif.verification.id_image_url} alt="ID" className="max-h-[70vh] w-auto rounded-lg shadow" />
+                            ) : (
+                                <p className="text-sm text-gray-500">No ID image</p>
+                            )}
+                        </div>
+                        <div className="px-5 py-3 bg-white border-t flex items-center justify-between">
+                            <VerificationBadge status={previewVerif.verification?.status ?? 'unverified'} />
+                            {previewVerif.verification?.status === 'pending' && (
+                                <div className="flex gap-1.5">
+                                    <button onClick={() => { setPreviewVerif(null); handleApproveVerif(previewVerif); }} className="rounded-md bg-[#488562] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a6e50]">Approve</button>
+                                    <button onClick={() => { setPreviewVerif(null); setRejectVerif(previewVerif); }} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100">Reject</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reject Dialog for users table */}
+            {rejectVerif && <RejectVerifModal user={rejectVerif} onClose={() => setRejectVerif(null)} />}
         </>
     );
 }
@@ -607,6 +745,81 @@ function DetailBox({ label, value, color }: { label: string; value: string; colo
                 <div className="text-[10px] font-semibold tracking-wide text-gray-400 uppercase">{label}</div>
                 <div className="text-sm font-bold text-gray-900 truncate">{value}</div>
             </div>
+        </div>
+    );
+}
+
+function VerificationBadge({ status }: { status: VerificationInfo['status'] }) {
+    const map: Record<string, { bg: string; color: string; label: string }> = {
+        verified: { bg: '#dcfce7', color: '#15803d', label: 'Verified' },
+        pending: { bg: '#fef3c7', color: '#92400e', label: 'Pending' },
+        rejected: { bg: '#fee2e2', color: '#991b1b', label: 'Rejected' },
+        unverified: { bg: '#f3f4f6', color: '#4b5563', label: 'Unverified' },
+    };
+    const s = map[status ?? 'unverified'] ?? map.unverified;
+    return <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: s.bg, color: s.color }}>{s.label}</span>;
+}
+
+function VerificationCell({ user, onPreview, onApprove, onReject }: { user: AppUser; onPreview: () => void; onApprove: () => void; onReject: () => void }) {
+    const v = user.verification;
+    if (!v || v.status === 'unverified' || !v.id_image_url) {
+        return (
+            <div className="flex items-center gap-1.5">
+                <VerificationBadge status={v?.status ?? 'unverified'} />
+                <span className="text-[11px] text-gray-400">{v?.id_type ?? 'No ID'}</span>
+            </div>
+        );
+    }
+    return (
+        <div className="flex items-center gap-2">
+            <img src={v.id_image_url} alt="ID" className="h-9 w-14 rounded-md border object-cover cursor-pointer" onClick={onPreview} />
+            <div className="min-w-0">
+                <VerificationBadge status={v.status} />
+                <div className="text-[11px] text-gray-600 truncate max-w-[90px]">{v.id_type}</div>
+            </div>
+            {v.status === 'pending' && (
+                <div className="flex gap-1">
+                    <button onClick={onApprove} className="rounded bg-[#488562] px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-[#3a6e50]" title="Approve">✓</button>
+                    <button onClick={onReject} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100" title="Reject">✕</button>
+                </div>
+            )}
+            {v.status === 'verified' && <CheckCircle2 className="h-3.5 w-3.5 text-[#488562]" />}
+            {v.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+            {v.status !== 'unverified' && (
+                <button onClick={onPreview} className="p-1 rounded hover:bg-gray-100"><Eye className="h-3 w-3 text-gray-500" /></button>
+            )}
+        </div>
+    );
+}
+
+function RejectVerifModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
+    const { data, setData, post, processing, errors } = useForm({ rejection_reason: user.verification?.rejection_reason ?? '' });
+    function submit(e: React.FormEvent) {
+        e.preventDefault();
+        if (!user.verification?.id) return;
+        post(`/admin/dashboard/verifications/${user.verification.id}/reject`, { onSuccess: () => onClose(), preserveScroll: true });
+    }
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+            <form onSubmit={submit} className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                    <h3 className="font-bold text-sm">Reject ID — {user.name}</h3>
+                    <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-6 py-4 space-y-3">
+                    <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <p className="text-xs text-amber-800">User's status will become Rejected — they’ll be prompted to re-upload.</p>
+                    </div>
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Rejection Reason</label>
+                    <textarea value={data.rejection_reason} onChange={(e) => setData('rejection_reason', e.target.value)} placeholder="e.g., Photo blurry, corners cut off..." className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] outline-none min-h-[90px]" />
+                    {errors.rejection_reason && <p className="text-xs text-red-500">{errors.rejection_reason}</p>}
+                </div>
+                <div className="flex justify-end gap-2 px-6 py-3 border-t">
+                    <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium">Cancel</button>
+                    <button type="submit" disabled={processing} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">{processing ? 'Rejecting...' : 'Reject'}</button>
+                </div>
+            </form>
         </div>
     );
 }
