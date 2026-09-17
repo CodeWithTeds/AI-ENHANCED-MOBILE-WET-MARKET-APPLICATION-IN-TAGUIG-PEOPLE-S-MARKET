@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\CustomerVerificationController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeedbackController;
 use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
@@ -21,7 +22,7 @@ Route::inertia('/', 'welcome', [
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Section Management
     Route::get('dashboard/vendors/sections', [SectionController::class, 'index'])->name('sections.index');
