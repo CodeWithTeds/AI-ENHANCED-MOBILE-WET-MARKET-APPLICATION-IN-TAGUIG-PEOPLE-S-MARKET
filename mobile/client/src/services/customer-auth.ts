@@ -37,9 +37,12 @@ export interface CustomerRegisterData {
 }
 
 interface CustomerAuthResponse {
-  access_token: string;
+  access_token: string | null;
   token_type: string;
   user: CustomerUser;
+  verification?: any;
+  requires_approval?: boolean;
+  message?: string;
 }
 
 /**
@@ -105,13 +108,19 @@ export async function registerCustomer(data: CustomerRegisterData): Promise<Cust
     response = { data: apiRes.data };
   }
 
-  const result = response.data;
+  const result = response.data as CustomerAuthResponse & { requires_approval?: boolean; message?: string };
+
+  // If admin approval required, don't store token — surface pending message
+  if ((result as any).requires_approval || !result.access_token) {
+    const pendingMsg = (result as any).message || 'Registration successful! Your ID is pending admin approval. You will be able to login once verified.';
+    throw new ApiError(pendingMsg, 201, result);
+  }
 
   // Sync both customer and vendor storages so the session works everywhere
   await AsyncStorage.multiSet([
-    [CUSTOMER_TOKEN_KEY, result.access_token],
+    [CUSTOMER_TOKEN_KEY, result.access_token!],
     [CUSTOMER_USER_KEY, JSON.stringify(result.user)],
-    [VENDOR_TOKEN_KEY, result.access_token],
+    [VENDOR_TOKEN_KEY, result.access_token!],
     [VENDOR_USER_KEY, JSON.stringify(result.user)],
     [VENDOR_DATA_KEY, JSON.stringify(null)],
   ]);
@@ -130,11 +139,16 @@ export async function loginCustomer(credentials: CustomerLoginCredentials): Prom
 
   const result = response.data;
 
+  // Login only succeeds for verified customers (backend enforces), so token must exist
+  if (!result.access_token) {
+    throw new ApiError('Login succeeded but no token returned.', 500);
+  }
+
   // Sync both customer and vendor storages so the session works everywhere
   await AsyncStorage.multiSet([
-    [CUSTOMER_TOKEN_KEY, result.access_token],
+    [CUSTOMER_TOKEN_KEY, result.access_token!],
     [CUSTOMER_USER_KEY, JSON.stringify(result.user)],
-    [VENDOR_TOKEN_KEY, result.access_token],
+    [VENDOR_TOKEN_KEY, result.access_token!],
     [VENDOR_USER_KEY, JSON.stringify(result.user)],
     [VENDOR_DATA_KEY, JSON.stringify(null)],
   ]);

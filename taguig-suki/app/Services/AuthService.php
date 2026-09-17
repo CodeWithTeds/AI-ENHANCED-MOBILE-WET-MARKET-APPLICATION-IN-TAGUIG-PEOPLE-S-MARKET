@@ -28,7 +28,6 @@ class AuthService
         unset($data['id_type'], $data['id_image']);
 
         $user = User::create($data);
-        $token = $user->createToken('auth_token')->plainTextToken;
 
         $verification = null;
         // If ID provided at registration, store as pending
@@ -50,14 +49,44 @@ class AuthService
             }
         } else {
             // Ensure an unverified record exists for consistency
-            CustomerVerification::firstOrCreate(['user_id' => $user->id], ['status' => CustomerVerification::STATUS_UNVERIFIED]);
+            $verification = CustomerVerification::firstOrCreate(['user_id' => $user->id], ['status' => CustomerVerification::STATUS_UNVERIFIED]);
         }
 
+        // Admin users don't need verification — auto-approve if is_admin
+        if ($user->is_admin) {
+            $token = $user->createToken('auth_token')->plainTextToken;
+            return [
+                'access_token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'verification' => $verification,
+            ];
+        }
+
+        // For customers: require admin approval — do NOT issue token until verified.
+        // Return verification status so frontend can show pending message.
+        // Token will be issued on successful login after approval.
+        $freshVerification = CustomerVerification::where('user_id', $user->id)->first();
+        $status = $freshVerification?->status ?? CustomerVerification::STATUS_UNVERIFIED;
+
+        if ($status === CustomerVerification::STATUS_VERIFIED) {
+            $token = $user->createToken('auth_token')->plainTextToken;
+            return [
+                'access_token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'verification' => $freshVerification,
+            ];
+        }
+
+        // Pending / unverified / rejected — no token, must wait for admin
         return [
-            'access_token' => $token,
+            'access_token' => null,
             'token_type' => 'Bearer',
             'user' => $user,
-            'verification' => $verification,
+            'verification' => $freshVerification,
+            'requires_approval' => true,
+            'message' => 'Registration successful. Your ID is pending admin approval. You will be able to login once verified.',
         ];
     }
 
@@ -83,6 +112,7 @@ class AuthService
         $vendor = $this->vendorRepository->findByUser($user);
 
         $this->validateVendorAccess($vendor);
+        $this->validateCustomerVerification($user);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -93,6 +123,46 @@ class AuthService
             'vendor' => $vendor?->load('documents'),
             'is_vendor' => $vendor !== null,
         ];
+    }
+
+    /**
+     * Customers must be ID-verified before they can log in.
+     * Admins and verified customers bypass. Vendors use separate vendor status check.
+     *
+     * @throws ValidationException
+     */
+    private function validateCustomerVerification(User $user): void
+    {
+        // Admins bypass verification
+        if ($user->is_admin) {
+            return;
+        }
+
+        // Vendors already have their own approval flow (validateVendorAccess handles it)
+        // If user is a vendor, we don't additionally require customer ID verification
+        // Comment out next check if you want vendors also to need ID verification.
+        $vendor = $this->vendorRepository->findByUser($user);
+        if ($vendor) {
+            return;
+        }
+
+        $verification = CustomerVerification::where('user_id', $user->id)->first();
+
+        $status = $verification?->status ?? CustomerVerification::STATUS_UNVERIFIED;
+
+        if ($status === CustomerVerification::STATUS_VERIFIED) {
+            return;
+        }
+
+        $message = match ($status) {
+            CustomerVerification::STATUS_PENDING => 'Your account is pending admin approval. Your ID is under review — please wait 1-2 days and try logging in again.',
+            CustomerVerification::STATUS_REJECTED => 'Your ID verification was rejected' . ($verification?->rejection_reason ? ': ' . $verification->rejection_reason : '.') . ' Please contact support or re-upload a clearer ID in your profile (if you can access it) or register with correct details.',
+            default => 'Your account is not yet verified. Please upload a valid ID and wait for admin approval before logging in. (Register with ID or contact admin)',
+        };
+
+        throw ValidationException::withMessages([
+            'email' => [$message],
+        ]);
     }
 
     public function getProfile(User $user): array

@@ -108,8 +108,9 @@ function SignInForm() {
       await login({ email: email.trim(), password });
       router.replace('/(customer)/home');
     } catch (error) {
-      const msg = error instanceof ApiError ? error.message : 'Login failed. Try again.';
-      Alert.alert('Login Failed', msg);
+      const msg = error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Login failed. Try again.';
+      const isPending = msg.toLowerCase().includes('pending') || msg.toLowerCase().includes('approval') || msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('not yet verified');
+      Alert.alert(isPending ? 'Verification Required' : 'Login Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -228,8 +229,12 @@ function RegisterForm() {
       Alert.alert('Error', 'Password must be at least 8 characters.');
       return;
     }
-    // If user picked a photo, require id_type; else allow skip
-    if (idImageUri && !idType) {
+    // ID is required — admin must approve first
+    if (!idImageUri) {
+      Alert.alert('ID Required', 'Please upload a valid ID photo. Admin must approve verification before you can login.');
+      return;
+    }
+    if (!idType) {
       Alert.alert('Missing ID Type', 'Please select your ID type.');
       return;
     }
@@ -241,19 +246,33 @@ function RegisterForm() {
         email: email.trim(),
         password,
         password_confirmation: confirmPassword,
-        id_type: idImageUri ? idType : undefined,
-        id_image_uri: idImageUri ?? undefined,
+        id_type: idType,
+        id_image_uri: idImageUri,
       });
-      if (idImageUri) {
-        Alert.alert('Account Created', 'ID submitted for verification (pending review). You can also update it later in Profile → ID Verification.', [
-          { text: 'OK', onPress: () => router.replace('/(customer)/home') },
-        ]);
-      } else {
-        router.replace('/(customer)/home');
-      }
+      // Should not reach here for pending users (register throws pending ApiError)
+      router.replace('/(customer)/home');
     } catch (error) {
       const msg = error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Registration failed.';
-      Alert.alert('Registration Failed', msg);
+      const isPending = msg.toLowerCase().includes('pending') || msg.toLowerCase().includes('approval') || (error instanceof ApiError && (error as any).data?.requires_approval);
+      if (isPending) {
+        Alert.alert('Pending Approval', msg, [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Clear form and stay on sign-in tab
+              setName('');
+              setEmail('');
+              setPassword('');
+              setConfirmPassword('');
+              setIdImageUri(null);
+              // Switch to sign-in tab if possible — parent holds activeTab, so we go back
+              router.replace('/customer-login');
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Registration Failed', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -285,15 +304,15 @@ function RegisterForm() {
         <TextInput style={styles.input} placeholder="Repeat password" placeholderTextColor={Colors.textMuted} value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
       </View>
 
-      {/* ── Optional ID Verification at Registration ── */}
+      {/* ── ID Verification at Registration — required, admin must approve first ── */}
       <View style={styles.idSection}>
         <View style={styles.idHeaderRow}>
           <View style={styles.idIconWrap}>
             <Ionicons name="card-outline" size={16} color={Colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.idSectionTitle}>ID Verification (Optional)</Text>
-            <Text style={styles.idSectionSubtitle}>Upload now to get verified faster. You can also do this later in Profile.</Text>
+            <Text style={styles.idSectionTitle}>ID Verification * Required</Text>
+            <Text style={styles.idSectionSubtitle}>Admin must approve before you can login. Upload a clear photo of your valid ID.</Text>
           </View>
         </View>
 
@@ -339,7 +358,7 @@ function RegisterForm() {
             <Text style={styles.uploadSubtitle}>Camera or Gallery • JPG/PNG/WEBP • max 5MB</Text>
           </TouchableOpacity>
         )}
-        <Text style={styles.idHint}>Skip if you don't have ID now — add it anytime in Profile → ID Verification.</Text>
+        <Text style={styles.idHint}>You cannot login until admin verifies your ID (check status in Profile after approval).</Text>
       </View>
 
       <TouchableOpacity
