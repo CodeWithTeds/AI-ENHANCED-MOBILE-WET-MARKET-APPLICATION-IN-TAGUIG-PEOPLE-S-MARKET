@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AiRecommendationManagementController;
+use App\Http\Controllers\Admin\CustomerVerificationController;
 use App\Http\Controllers\Admin\FeedbackController;
 use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
@@ -84,6 +85,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::patch('dashboard/users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
     Route::patch('dashboard/users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
     Route::delete('dashboard/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+
+    // Customer ID Verification
+    Route::get('dashboard/verifications', [CustomerVerificationController::class, 'index'])->name('verifications.index');
+    Route::post('dashboard/verifications/{customerVerification}/approve', [CustomerVerificationController::class, 'approve'])->name('verifications.approve');
+    Route::post('dashboard/verifications/{customerVerification}/reject', [CustomerVerificationController::class, 'reject'])->name('verifications.reject');
 });
 
 require __DIR__.'/settings.php';

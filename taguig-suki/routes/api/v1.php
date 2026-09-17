@@ -7,6 +7,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CustomerProfileController;
 use App\Http\Controllers\Api\CustomerReportController;
+use App\Http\Controllers\Api\CustomerVerificationController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\OrderController;
@@ -65,6 +66,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/profile', [CustomerProfileController::class, 'updateProfile']);
     Route::put('/profile/password', [CustomerProfileController::class, 'changePassword']);
     Route::put('/profile/notifications', [CustomerProfileController::class, 'updateNotifications']);
+
+    // Customer ID Verification (upload ID picture)
+    Route::get('/profile/verification', [CustomerVerificationController::class, 'show']);
+    Route::post('/profile/verification', [CustomerVerificationController::class, 'store']);
+    Route::delete('/profile/verification', [CustomerVerificationController::class, 'destroy']);
 
     // Vendor Profile & Settings
     Route::get('/vendor/profile', [VendorProfileController::class, 'show']);

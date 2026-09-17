@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     BarChart3,
+    BadgeCheck,
     Box,
     ChevronDown,
     ClipboardList,
@@ -124,6 +125,13 @@ const mainNavItems: SidebarNavItem[] = [
         icon: MessageSquare,
         color: 'text-[#488562]',
         bgColor: 'bg-[#488562]/10',
+    },
+    {
+        title: 'ID Verification',
+        href: '/admin/dashboard/verifications',
+        icon: BadgeCheck,
+        color: 'text-[#0867ff]',
+        bgColor: 'bg-[#0867ff]/10',
     },
 ];
 
