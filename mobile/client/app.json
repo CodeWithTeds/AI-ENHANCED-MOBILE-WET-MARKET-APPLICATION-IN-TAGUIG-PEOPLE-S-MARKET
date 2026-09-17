@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "client",
-    "slug": "client",
+    "name": "Taguig Suki",
+    "slug": "taguig-suki",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "client",
+    "scheme": "taguig-suki",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.taguigsuki.client",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -16,6 +17,7 @@
       }
     },
     "android": {
+      "package": "com.taguigsuki.client",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -44,6 +46,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f3cef2ab-3380-4637-9a05-73fc6166802f"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f3cef2ab-3380-4637-9a05-73fc6166802f"
     }
   }
 }

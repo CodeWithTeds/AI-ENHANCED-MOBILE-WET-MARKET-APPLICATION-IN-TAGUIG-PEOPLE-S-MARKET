@@ -4,6 +4,7 @@ import {
     ArrowRight,
     ChefHat,
     Clock,
+    Download,
     Leaf,
     MapPin,
     ShieldCheck,
@@ -15,6 +16,8 @@ import {
     Truck,
     Users,
 } from 'lucide-react';
+
+const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/63f05748-1d85-44e3-89dd-5eca303c63e1';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -48,10 +51,20 @@ export default function Welcome() {
                         <div className="hidden items-center gap-8 text-sm font-medium text-gray-600 md:flex">
                             <a href="#features" className="transition-colors hover:text-[#488562]">Features</a>
                             <a href="#how-it-works" className="transition-colors hover:text-[#488562]">How It Works</a>
+                            <a href="#download" className="transition-colors hover:text-[#488562]">Download</a>
                             <a href="#about" className="transition-colors hover:text-[#488562]">About</a>
                         </div>
 
                         <div className="flex items-center gap-3">
+                            <a
+                                href={EAS_BUILD_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
+                            >
+                                <Download className="h-3.5 w-3.5" />
+                                Download App
+                            </a>
                             {auth.user ? (
                                 <Link
                                     href={dashboard()}
@@ -104,6 +117,15 @@ export default function Welcome() {
                                 </p>
 
                                 <div className="flex flex-wrap items-center gap-4">
+                                    <a
+                                        href={EAS_BUILD_URL}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="group inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/15 transition-all hover:bg-black hover:shadow-xl"
+                                    >
+                                        <Download className="h-4 w-4" />
+                                        Download App (APK)
+                                    </a>
                                     <Link
                                         href={auth.user ? dashboard() : login()}
                                         className="group inline-flex items-center gap-2 rounded-xl bg-[#488562] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[#488562]/20 transition-all hover:bg-[#3a6e50] hover:shadow-xl"
@@ -118,6 +140,12 @@ export default function Welcome() {
                                         Learn More
                                     </a>
                                 </div>
+                                <p className="mt-3 text-xs text-gray-500">
+                                    Android APK via EAS • Free install •{' '}
+                                    <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2 hover:text-[#3a6e50]">
+                                        View build details
+                                    </a>
+                                </p>
 
                                 {/* Quick stats */}
                                 <div className="mt-10 flex gap-8 border-t border-gray-100 pt-8">
@@ -285,6 +313,92 @@ export default function Welcome() {
                         <p className="text-sm text-gray-400">
                             A capstone project by BSIT students — Binuya, Clapis, Estonillo, Indonilla &amp; Larioza (May 2026)
                         </p>
+                    </div>
+                </section>
+
+                {/* Get the App — EAS Install */}
+                <section id="download" className="border-t border-gray-100 bg-[#fafcfb] px-6 py-20 lg:px-8 lg:py-24">
+                    <div className="mx-auto max-w-6xl">
+                        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+                            <div>
+                                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gray-900/10 bg-gray-900 px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide text-white">
+                                    <Download className="h-3.5 w-3.5" />
+                                    Available Now
+                                </div>
+                                <h2
+                                    className="mb-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl"
+                                    style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+                                >
+                                    Get the TaguigSuki app
+                                </h2>
+                                <p className="mb-6 text-base leading-relaxed text-gray-600">
+                                    Install the Android app directly from Expo EAS. Browse recipes, order from vendors, and track your palengke orders on your phone.
+                                </p>
+                                <div className="mb-8 space-y-3 text-sm text-gray-600">
+                                    <div className="flex items-start gap-3">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">1</span>
+                                        <span>Tap <b>Download APK</b> → open the Expo build page</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">2</span>
+                                        <span>Hit <b>Install</b> and allow “Install unknown apps” if prompted (Android only)</span>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">3</span>
+                                        <span>Open TaguigSuki, register as Customer or Vendor and start ordering</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-3">
+                                    <a
+                                        href={EAS_BUILD_URL}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-black/10 transition hover:bg-black"
+                                    >
+                                        <Download className="h-4 w-4" />
+                                        Download APK — EAS Build
+                                    </a>
+                                    <a
+                                        href="https://expo.dev/accounts/teadlol12345/projects/taguig-suki"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-6 py-3.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                    >
+                                        All builds
+                                        <ArrowRight className="h-4 w-4" />
+                                    </a>
+                                </div>
+                                <p className="mt-4 text-xs text-gray-500">
+                                    Build 63f05748 • preview channel • Android APK • Requires Android 8.0+ •{' '}
+                                    <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2">Expo build page</a>
+                                </p>
+                            </div>
+                            {/* Visual: QR / phone */}
+                            <div className="relative mx-auto w-full max-w-sm">
+                                <div className="rounded-[2rem] border border-gray-200 bg-white p-4 shadow-xl shadow-gray-200/50">
+                                    <div className="rounded-[1.5rem] bg-gray-900 p-6 text-center">
+                                        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+                                            <Smartphone className="h-6 w-6 text-white" />
+                                        </div>
+                                        <div className="mb-3 text-sm font-bold text-white">Scan to install</div>
+                                        <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-3">
+                                            {/* QR code via qrserver */}
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(EAS_BUILD_URL)}`}
+                                                alt="QR to Expo build"
+                                                className="h-full w-full rounded-lg object-contain"
+                                                loading="lazy"
+                                            />
+                                        </div>
+                                        <div className="mt-3 text-[11px] font-medium text-white/60">Point your camera at the QR → open build → tap Install</div>
+                                    </div>
+                                    <div className="mt-4 flex items-center justify-between px-2">
+                                        <span className="text-xs font-semibold text-gray-900">TaguigSuki.apk</span>
+                                        <span className="rounded-full bg-[#488562]/10 px-2.5 py-1 text-[11px] font-bold text-[#488562]">Android</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 5.9.3",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ai-enhanced-mobile-wet-market-application-in-tag-production.up.railway.app/api/v1"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ai-enhanced-mobile-wet-market-application-in-tag-production.up.railway.app/api/v1"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
