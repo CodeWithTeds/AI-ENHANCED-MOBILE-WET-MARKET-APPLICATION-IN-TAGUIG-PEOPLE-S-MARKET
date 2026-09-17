@@ -77,6 +77,8 @@ STRICT RULES:
 3. If the recipe has a regional name (like "Bicol Express"), give ONLY the standard version.
 4. Do NOT act as a chatbot. Only return recipe data.
 5. If the search term is not a valid Filipino dish or ingredient, return an error message.
+6. For available_in_market: set TRUE only if the ingredient EXACTLY matches an item in AVAILABLE MARKET PRODUCTS (case-insensitive whole word). Otherwise FALSE. Do NOT hallucinate availability.
+7. Use simple, market-friendly ingredient names (e.g., "Chicken", "Garlic", "Onion") that can match product names.
 
 USER SEARCH: "{$query}"
 
@@ -195,40 +197,165 @@ PROMPT;
             return $recipe;
         }
 
-        // Match ingredients to available market products
-        $recipe['matching_products'] = $this->matchIngredients($recipe['ingredients'] ?? [], $availableProducts);
+        // Match ingredients to available market products using strict word-boundary matching
+        // Also fixes LLM hallucinated available_in_market flags to reflect real matches
+        $matchResult = $this->matchIngredientsStrict($recipe['ingredients'] ?? [], $availableProducts);
+        $recipe['matching_products'] = $matchResult['matches'];
+
+        // Overwrite LLM flags so UI "In Market" badge matches actual matched products
+        $matchedIngredients = array_column($matchResult['matches'], 'ingredient');
+        foreach ($recipe['ingredients'] as &$ing) {
+            $ingName = $ing['name'] ?? '';
+            $ing['available_in_market'] = in_array($ingName, $matchedIngredients, true);
+        }
+        unset($ing);
 
         return $recipe;
     }
 
     /**
-     * Match recipe ingredients against available marketplace products.
+     * Strict ingredient → product matcher.
+     * Prevents false positives like "salt" matching "salted fish" or "water" matching "watermelon"
+     * by using whole-word boundaries and token singularization instead of naive str_contains.
      */
-    private function matchIngredients(array $ingredients, array $availableProducts): array
+    private function matchIngredientsStrict(array $ingredients, array $availableProducts): array
     {
         $matches = [];
+        $matchedIngredientNames = [];
 
         foreach ($ingredients as $ingredient) {
-            $ingredientName = strtolower($ingredient['name'] ?? '');
+            $rawIng = $ingredient['name'] ?? '';
+            if ($rawIng === '') continue;
+
+            $normIng = $this->normalize($rawIng);
+            if ($normIng === '') continue;
+
+            $bestScore = 0;
+            $bestProduct = null;
 
             foreach ($availableProducts as $product) {
-                $productName = strtolower($product['name']);
+                $normProd = $this->normalize($product['name']);
+                if ($normProd === '') continue;
 
-                // Fuzzy match — check if ingredient name is contained in product name or vice versa
-                if (str_contains($productName, $ingredientName) || str_contains($ingredientName, $productName)) {
+                $score = $this->matchScore($normIng, $normProd);
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestProduct = $product;
+                }
+                // Exact normalized phrase is best possible — early exit
+                if ($score >= 1.0) break;
+            }
+
+            // Require at least 0.5 score (e.g., one significant word matches)
+            // 1.0 = exact phrase, 0.75+ = strong overlap
+            if ($bestProduct && $bestScore >= 0.5) {
+                // Avoid duplicate ingredient entries
+                if (!in_array($rawIng, $matchedIngredientNames, true)) {
                     $matches[] = [
-                        'ingredient' => $ingredient['name'],
-                        'product_id' => $product['id'],
-                        'product_name' => $product['name'],
-                        'price' => $product['price'],
-                        'unit' => $product['unit'],
-                        'category' => $product['category'],
+                        'ingredient' => $rawIng,
+                        'product_id' => $bestProduct['id'],
+                        'product_name' => $bestProduct['name'],
+                        'price' => $bestProduct['price'],
+                        'unit' => $bestProduct['unit'],
+                        'category' => $bestProduct['category'],
                     ];
+                    $matchedIngredientNames[] = $rawIng;
+                }
+            }
+        }
+
+        return ['matches' => $matches];
+    }
+
+    private function normalize(string $s): string
+    {
+        $s = strtolower(trim($s));
+        // Keep letters/numbers, replace others with space, collapse spaces
+        $s = preg_replace('/[^a-z0-9]+/u', ' ', $s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        return trim($s);
+    }
+
+    private function tokens(string $normalized): array
+    {
+        if ($normalized === '') return [];
+        $parts = explode(' ', $normalized);
+        return array_values(array_filter($parts, fn ($p) => $p !== ''));
+    }
+
+    private function singularize(string $word): string
+    {
+        if (strlen($word) < 3) return $word;
+        if (str_ends_with($word, 'ies') && strlen($word) > 4) return substr($word, 0, -3) . 'y';
+        if (str_ends_with($word, 'oes') || str_ends_with($word, 'ses') || str_ends_with($word, 'xes') || str_ends_with($word, 'ches') || str_ends_with($word, 'shes')) {
+            return substr($word, 0, -2);
+        }
+        if (str_ends_with($word, 'es') && strlen($word) > 4) return substr($word, 0, -2);
+        if (str_ends_with($word, 's') && !str_ends_with($word, 'ss')) return substr($word, 0, -1);
+        return $word;
+    }
+
+    private function tokensEqual(string $a, string $b): bool
+    {
+        if ($a === $b) return true;
+        return $this->singularize($a) === $this->singularize($b);
+    }
+
+    /**
+     * Whole-word phrase contains check: does haystack contain needle as whole words?
+     */
+    private function containsWordPhrase(string $haystack, string $needle): bool
+    {
+        if ($haystack === '' || $needle === '') return false;
+        if ($haystack === $needle) return true;
+        return (bool) preg_match('/\b' . preg_quote($needle, '/') . '\b/u', $haystack);
+    }
+
+    /**
+     * Score 0..1 how well ingredient matches product.
+     * 1.0 = exact phrase or whole-phrase word-boundary.
+     * 0.75 = all ingredient tokens found in product.
+     * 0.5 = at least half significant tokens share.
+     */
+    private function matchScore(string $normIng, string $normProd): float
+    {
+        // Exact or whole-phrase word boundary — strongest
+        if ($normIng === $normProd) return 1.0;
+        if ($this->containsWordPhrase($normProd, $normIng)) return 1.0;
+        if ($this->containsWordPhrase($normIng, $normProd)) return 1.0;
+
+        $ingTokens = $this->tokens($normIng);
+        $prodTokens = $this->tokens($normProd);
+
+        // Remove tiny tokens (<2) and common stop-words that cause false positives
+        $stop = ['and', 'or', 'with', 'fresh', 'dried', 'sliced', 'chopped', 'minced', 'crushed', 'ground', 'large', 'small', 'medium'];
+        $ingTokens = array_values(array_filter($ingTokens, fn ($t) => strlen($t) >= 2 && !in_array($t, $stop, true)));
+        $prodTokens = array_values(array_filter($prodTokens, fn ($t) => strlen($t) >= 2 && !in_array($t, $stop, true)));
+
+        if (empty($ingTokens) || empty($prodTokens)) return 0;
+
+        // Count token overlaps using singular-aware equality (ignore stopwords)
+        $shared = 0;
+        foreach ($ingTokens as $it) {
+            foreach ($prodTokens as $pt) {
+                if ($this->tokensEqual($it, $pt)) {
+                    $shared++;
                     break;
                 }
             }
         }
 
-        return $matches;
+        if ($shared === 0) return 0;
+
+        // Ingredient phrase largely covered by product tokens?
+        if ($shared === count($ingTokens)) return 0.85;
+        if ($shared / count($ingTokens) >= 0.5) return 0.6;
+
+        // Single shared significant token (>=4 chars) is minimum viable match
+        // e.g., "chicken" in "chicken wings" -> 1 shared / 1 ingredient token = 1.0 but handled above;
+        // for multi-token like "pork belly" vs "pork" -> 1/2 =0.5 => 0.6 via above
+        // For "salt" vs "salted fish": tokensEqual('salt','salted') false => 0 => no match
+
+        return 0.4; // weak partial — below threshold, filtered out
     }
 }
