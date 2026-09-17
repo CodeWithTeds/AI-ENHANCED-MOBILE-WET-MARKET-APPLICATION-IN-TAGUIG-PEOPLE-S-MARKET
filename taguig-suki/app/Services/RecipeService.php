@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\RecipeRecommendation;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class RecipeService
 {
@@ -103,33 +104,83 @@ PROMPT;
 
     private function callNvidia(string $prompt): string
     {
-        $apiKey = config('services.groq.api_key');
+        /** @var string[] $apiKeys ordered fallback pool */
+        $apiKeys = config('services.groq.api_keys', []);
+        // Backwards-compat: if api_keys empty, fall back to single api_key
+        if (empty($apiKeys)) {
+            $single = config('services.groq.api_key');
+            $apiKeys = $single ? [$single] : [];
+        }
+
+        if (empty($apiKeys)) {
+            throw new \RuntimeException('AI service not configured (missing GROQ API keys).');
+        }
+
         $model = config('services.groq.model', 'openai/gpt-oss-20b');
         $baseUrl = config('services.groq.base_url', 'https://api.groq.com/openai/v1');
 
-        $response = Http::withToken($apiKey)
-            ->timeout(30)
-            ->post("{$baseUrl}/chat/completions", [
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'temperature' => 0.7,
-                'max_tokens' => 4096,
-            ]);
+        $lastError = null;
 
-        if ($response->successful()) {
-            $data = $response->json();
-            $message = $data['choices'][0]['message'] ?? [];
+        foreach ($apiKeys as $idx => $apiKey) {
+            try {
+                $response = Http::withToken($apiKey)
+                    ->timeout(30)
+                    ->post("{$baseUrl}/chat/completions", [
+                        'model' => $model,
+                        'messages' => [
+                            ['role' => 'user', 'content' => $prompt],
+                        ],
+                        'temperature' => 0.7,
+                        'max_tokens' => 4096,
+                    ]);
 
-            return $message['content'] ?? '{"found": false, "message": "Could not generate recipe."}';
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $message = $data['choices'][0]['message'] ?? [];
+
+                    return $message['content'] ?? '{"found": false, "message": "Could not generate recipe."}';
+                }
+
+                // Rate-limit → try next key
+                if ($response->status() === 429) {
+                    $lastError = 'AI quota exceeded for key #'.($idx + 1);
+                    Log::warning('[RecipeService] Groq 429 on key #'.($idx + 1).'/'.count($apiKeys).', trying next', [
+                        'status' => 429,
+                        'body' => $response->body(),
+                    ]);
+
+                    // If this was the last key, surface user-friendly error
+                    if ($idx === count($apiKeys) - 1) {
+                        throw new \RuntimeException('AI quota exceeded. All API keys are rate-limited. Please try again in a minute.');
+                    }
+                    continue;
+                }
+
+                // For 5xx / other server errors, also try next key before failing
+                if ($response->serverError()) {
+                    Log::warning('[RecipeService] Groq server error on key #'.($idx + 1), [
+                        'status' => $response->status(),
+                        'body' => substr($response->body(), 0, 500),
+                    ]);
+                    if ($idx < count($apiKeys) - 1) {
+                        continue;
+                    }
+                }
+
+                // Non-retryable error
+                $lastError = $response->body();
+                throw new \RuntimeException('AI service unavailable. Please try again later.');
+            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                Log::warning('[RecipeService] Groq connection failed on key #'.($idx + 1), ['msg' => $e->getMessage()]);
+                $lastError = $e->getMessage();
+                if ($idx < count($apiKeys) - 1) {
+                    continue;
+                }
+                throw new \RuntimeException('AI service temporarily unreachable. Please try again.');
+            }
         }
 
-        if ($response->status() === 429) {
-            throw new \RuntimeException('AI quota exceeded. Please wait a moment and try again.');
-        }
-
-        throw new \RuntimeException('AI service unavailable. Please try again later.');
+        throw new \RuntimeException($lastError ?: 'AI service unavailable. Please try again later.');
     }
 
     private function parseResponse(string $jsonResponse, array $availableProducts): array
