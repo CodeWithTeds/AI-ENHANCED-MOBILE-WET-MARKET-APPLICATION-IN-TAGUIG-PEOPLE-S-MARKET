@@ -17,7 +17,7 @@ import {
     Users,
 } from 'lucide-react';
 
-const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/63f05748-1d85-44e3-89dd-5eca303c63e1';
+const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/dbddb18f-b713-4bd8-8177-9026658163bd';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -369,7 +369,7 @@ export default function Welcome() {
                                     </a>
                                 </div>
                                 <p className="mt-4 text-xs text-gray-500">
-                                    Build 63f05748 • preview channel • Android APK • Requires Android 8.0+ •{' '}
+                                    Build dbddb18f • preview channel • Android APK • Requires Android 8.0+ •{' '}
                                     <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2">Expo build page</a>
                                 </p>
                             </div>
