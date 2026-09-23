@@ -24,7 +24,17 @@ class RegisterRequest extends FormRequest
     {
         return [
             'name' => ['required', 'max:255', 'regex:/^[A-Za-z\s]+$/'],
-            'email' => ['required', 'email', 'ends_with:@gmail.com,@yahoo.com', 'unique:users,email'],
+            'email' => [
+                'required',
+                'email',
+                'ends_with:@gmail.com,@yahoo.com',
+                'unique:users,email',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    if (\App\Models\RejectedEmail::isBlocked($value)) {
+                        $fail('This email address has been blocked from registration. Please contact the market administration office.');
+                    }
+                },
+            ],
             'password' => ['required', 'min:8', 'confirmed'],
             // ID verification required at registration — admin must approve first
             'id_type' => ['required', 'string', 'in:national_id,drivers_license,passport,umid,philhealth,sss,voters_id,postal_id,student_id,other'],

@@ -45,6 +45,12 @@ trait ProfileValidationRules
             $userId === null
                 ? Rule::unique(User::class)
                 : Rule::unique(User::class)->ignore($userId),
+            function (string $attribute, mixed $value, \Closure $fail) use ($userId) {
+                // Only check for blocked emails on new registrations (not profile updates)
+                if ($userId === null && \App\Models\RejectedEmail::isBlocked($value)) {
+                    $fail('This email address has been blocked from registration. Please contact the market administration office.');
+                }
+            },
         ];
     }
 }

@@ -4,7 +4,6 @@ use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\CustomerVerificationController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeedbackController;
-use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\PaymentManagementController;
 use App\Http\Controllers\Admin\ProductManagementController;
@@ -59,9 +58,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard/payments', [PaymentManagementController::class, 'index'])->name('payments.index');
     Route::patch('dashboard/payments/{order}/verify', [PaymentManagementController::class, 'verify'])->name('payments.verify');
 
-    // Inventory Monitoring
-    Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');
-
     // Order Management
     Route::get('dashboard/orders', [OrderManagementController::class, 'index'])->name('orders.index');
     Route::patch('dashboard/orders/{order}/status', [OrderManagementController::class, 'updateStatus'])->name('orders.update-status');
@@ -86,6 +82,7 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::patch('dashboard/users/{user}/activate', [UserManagementController::class, 'activate'])->name('users.activate');
     Route::patch('dashboard/users/{user}/deactivate', [UserManagementController::class, 'deactivate'])->name('users.deactivate');
     Route::delete('dashboard/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+    Route::post('dashboard/users/{user}/reject', [UserManagementController::class, 'reject'])->name('users.reject');
 
     // Customer ID Verification
     Route::get('dashboard/verifications', [CustomerVerificationController::class, 'index'])->name('verifications.index');

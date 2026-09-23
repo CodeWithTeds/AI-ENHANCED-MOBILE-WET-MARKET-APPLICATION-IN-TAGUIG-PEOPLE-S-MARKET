@@ -140,11 +140,10 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                 </div>
 
                 {/* ─── Overview KPIs ─── */}
-                <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <KpiCard label="Total Revenue" value={formatMoney(overview.total_revenue)} icon={CircleDollarSign} color="#488562" bg="bg-[#488562]/10" sub={`${overview.total_orders.toLocaleString()} orders`} />
                     <KpiCard label="Avg. Order Value" value={formatMoney(overview.avg_order_value)} icon={ReceiptText} color="#0867ff" bg="bg-[#0867ff]/10" sub="across all orders" />
                     <KpiCard label="Total Users" value={overview.total_users.toLocaleString()} icon={Users} color="#8b5cf6" bg="bg-purple-50" sub={`${users.new_users.toLocaleString()} new in range`} />
-                    <KpiCard label="Inventory Value" value={formatMoney(overview.inventory_value)} icon={Box} color="#ee600e" bg="bg-[#ee600e]/10" sub={`${overview.total_products.toLocaleString()} products`} />
                 </div>
 
                 {/* ─── Sales Analytics ─── */}
@@ -343,114 +342,6 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                         </div>
                     </div>
                 </div>
-
-                {/* ─── Inventory ─── */}
-                <SectionHeader icon={Box} color="#0867ff" title="Inventory" subtitle="Stock levels and product value" />
-
-                <div className="grid gap-5 lg:grid-cols-3">
-                    {/* Stock health */}
-                    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                        <CardHeader title="Stock Health" sub={`${inventory.total_items.toLocaleString()} inventory items`} />
-                        <div className="space-y-3">
-                            <StockHealthRow label="In Stock" count={inventory.in_stock} total={inventory.total_items} color="#488562" />
-                            <StockHealthRow label="Low Stock" count={inventory.low_stock} total={inventory.total_items} color="#ee600e" />
-                            <StockHealthRow label="Out of Stock" count={inventory.out_of_stock} total={inventory.total_items} color="#ef4444" />
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                            <MiniStat label="Value (Cost)" value={formatMoney(inventory.total_value)} color="text-[#488562]" />
-                            <MiniStat label="Value (Retail)" value={formatMoney(inventory.retail_value)} color="text-[#0867ff]" />
-                        </div>
-                    </div>
-
-                    {/* Category breakdown */}
-                    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                        <CardHeader title="Value by Category" sub="inventory value at cost" />
-                        <div className="space-y-3">
-                            {inventory.category_breakdown.length === 0 ? (
-                                <EmptyState text="No inventory data yet" />
-                            ) : (
-                                inventory.category_breakdown.map((c) => {
-                                    const max = inventory.category_breakdown[0]?.value || 1;
-
-                                    return (
-                                        <div key={c.category}>
-                                            <div className="mb-1 flex items-center justify-between text-xs">
-                                                <span className="font-medium text-gray-700">{labelize(c.category)}</span>
-                                                <span className="font-bold text-gray-900">{formatMoney(c.value)}</span>
-                                            </div>
-                                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                                                <div className="h-full rounded-full bg-[#0867ff]" style={{ width: `${(c.value / max) * 100}%` }} />
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Stock movements */}
-                    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                        <CardHeader title="Stock Movements" sub="inventory log activity in range" />
-                        <div className="space-y-2.5">
-                            {inventory.stock_movements.length === 0 ? (
-                                <EmptyState text="No stock movements yet" />
-                            ) : (
-                                inventory.stock_movements.map((m) => (
-                                    <div key={m.type} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                                        <div className="flex items-center gap-2 text-xs font-medium text-gray-700">
-                                            <RefreshCw className="h-3.5 w-3.5 text-[#0867ff]" />
-                                            {m.label}
-                                            <span className="text-[10px] text-gray-400">×{m.count.toLocaleString()}</span>
-                                        </div>
-                                        <span className={`text-xs font-bold ${m.net_change >= 0 ? 'text-[#488562]' : 'text-red-500'}`}>
-                                            {m.net_change >= 0 ? '+' : ''}{m.net_change.toLocaleString()}
-                                        </span>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Low stock alert table */}
-                {inventory.low_stock_items.length > 0 && (
-                    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-                        <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-3.5">
-                            <AlertTriangle className="h-4 w-4 text-[#ee600e]" />
-                            <h3 className="text-sm font-bold text-gray-900">Low Stock Alerts</h3>
-                            <span className="text-[11px] text-gray-400">items at or below reorder level</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-100 bg-gray-50/60">
-                                        <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Product</th>
-                                        <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Vendor</th>
-                                        <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Stock</th>
-                                        <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Reorder Level</th>
-                                        <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {inventory.low_stock_items.map((item, i) => (
-                                        <tr key={i} className="transition hover:bg-[#488562]/[0.02]">
-                                            <td className="px-5 py-2.5 text-xs font-semibold text-gray-900">{item.name}</td>
-                                            <td className="px-5 py-2.5 text-xs text-gray-600">{item.vendor}</td>
-                                            <td className="px-5 py-2.5 text-xs font-bold text-[#ee600e]">{item.stock_quantity.toLocaleString()} {item.unit}</td>
-                                            <td className="px-5 py-2.5 text-xs text-gray-500">{item.reorder_level}</td>
-                                            <td className="px-5 py-2.5">
-                                                <span className="inline-flex items-center gap-1 rounded-md bg-[#ee600e]/10 px-2 py-0.5 text-[10px] font-bold text-[#ee600e]">
-                                                    <AlertTriangle className="h-3 w-3" />
-                                                    Low Stock
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
 
                 {/* ─── System Performance ─── */}
                 <SectionHeader icon={Activity} color="#0867ff" title="System Performance" subtitle="Platform health and activity" />

@@ -85,13 +85,6 @@ const mainNavItems: SidebarNavItem[] = [
         bgColor: 'bg-[#488562]/10',
     },
     {
-        title: 'Inventory Monitoring',
-        href: '/admin/dashboard/inventory',
-        icon: Box,
-        color: 'text-[#0867ff]',
-        bgColor: 'bg-[#0867ff]/10',
-    },
-    {
         title: 'Order Management',
         href: '/admin/dashboard/orders',
         icon: ClipboardList,

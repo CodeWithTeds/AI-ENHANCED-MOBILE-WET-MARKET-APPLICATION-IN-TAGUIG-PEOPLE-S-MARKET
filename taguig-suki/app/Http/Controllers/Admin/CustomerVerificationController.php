@@ -35,7 +35,7 @@ class CustomerVerificationController extends Controller
     public function reject(Request $request, CustomerVerification $customerVerification): RedirectResponse
     {
         $validated = $request->validate([
-            'rejection_reason' => ['nullable', 'string', 'max:500'],
+            'rejection_reason' => ['required', 'string', 'max:500'],
         ]);
 
         $this->service->reject($customerVerification, $request->user(), $validated['rejection_reason'] ?? null);

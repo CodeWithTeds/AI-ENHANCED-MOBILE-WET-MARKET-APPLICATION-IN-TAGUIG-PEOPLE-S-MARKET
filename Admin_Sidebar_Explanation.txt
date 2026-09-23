@@ -23,12 +23,9 @@ Pending Approval is like your to-do list for approvals. All new vendor registrat
 Documents is where all the required papers from vendors are stored and verified. This includes business permits, valid IDs, DTI certificates, barangay clearances, and other requirements. You can view each file, check if it is complete, valid, or expired, and confirm if the vendor is legitimate. This section is very important for security and compliance.
 
 8. PRODUCT MANAGEMENT
-Product Management is where you oversee all the products being sold by all vendors in the system. You can see what items are listed, check their prices, descriptions, and categories, and remove or edit any prohibited or incorrect products. This ensures that only proper and allowed products are visible to customers.
+Product Management is where you oversee all the products being sold by all vendors in the system. You can see what items are listed, check their descriptions, and categories, and remove or edit any prohibited or incorrect products. This ensures that only proper and allowed products are visible to customers.
 
-9. INVENTORY MONITORING
-Inventory Monitoring keeps track of product stocks and availability. It shows you which products are running low, which are already out of stock, and which are overstocked. This helps prevent customers from ordering items that are no longer available and also sends alerts to vendors so they know when it is time to restock.
-
-10. ORDER MANAGEMENT
+9. ORDER MANAGEMENT
 Order Management is where you monitor all orders coming from customers. You can track new orders, ongoing or preparing orders, completed orders, and cancelled ones. This section helps you make sure that vendors are processing orders on time and that deliveries are handled properly from ordering to completion.
 
 11. PAYMENT MANAGEMENT

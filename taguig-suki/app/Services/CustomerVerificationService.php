@@ -166,12 +166,27 @@ class CustomerVerificationService
 
     public function reject(CustomerVerification $verification, User $admin, ?string $reason = null): array
     {
+        $rejectionReason = $reason ?? 'ID rejected. Please upload a clearer image.';
+
         $verification->update([
             'status' => CustomerVerification::STATUS_REJECTED,
-            'rejection_reason' => $reason ?? 'ID rejected. Please upload a clearer image.',
+            'rejection_reason' => $rejectionReason,
             'verified_by' => $admin->id,
             'verified_at' => now(),
         ]);
+
+        // Notify the user about the rejection reason
+        $user = $verification->user;
+        if ($user) {
+            try {
+                $user->notify(new \App\Notifications\RegistrationRejectedNotification(
+                    $rejectionReason,
+                    'user'
+                ));
+            } catch (\Throwable) {
+                // If notification fails, still proceed
+            }
+        }
 
         return $this->format($verification->fresh());
     }

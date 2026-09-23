@@ -2,6 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import {
     AlertTriangle,
     BadgeCheck,
+    Ban,
     CheckCircle2,
     Clock,
     Eye,
@@ -13,6 +14,7 @@ import {
     ToggleRight,
     Trash2,
     UserCheck,
+    UserX,
     Users,
     X,
     XCircle,
@@ -84,6 +86,7 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
     const [editUser, setEditUser] = useState<AppUser | null>(null);
     const [previewVerif, setPreviewVerif] = useState<AppUser | null>(null);
     const [rejectVerif, setRejectVerif] = useState<AppUser | null>(null);
+    const [rejectUser, setRejectUser] = useState<AppUser | null>(null);
 
     function applyFilter(key: string, value: string | undefined) {
         router.get(
@@ -261,13 +264,6 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                             </td>
                                             <td className="px-4 py-3.5">
                                                 <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]">{user.email}</div>
-                                                <div className="text-xs text-gray-400">
-                                                    {user.email_verified_at ? (
-                                                        <span className="text-[#488562]">Verified</span>
-                                                    ) : (
-                                                        <span className="text-amber-600">Unverified</span>
-                                                    )}
-                                                </div>
                                             </td>
                                             <td className="px-4 py-3.5">
                                                 {user.is_admin ? (
@@ -336,6 +332,15 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                                             <ToggleRight className="h-3.5 w-3.5" />
                                                         )}
                                                     </button>
+                                                    {!user.is_admin && (
+                                                        <button
+                                                            onClick={() => setRejectUser(user)}
+                                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-orange-200 bg-orange-50 text-orange-600 transition hover:bg-orange-100"
+                                                            title="Reject & Block"
+                                                        >
+                                                            <Ban className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => handleDelete(user)}
                                                         className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-100 bg-red-50 text-red-600 transition hover:bg-red-100"
@@ -549,6 +554,9 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
 
             {/* Reject Dialog for users table */}
             {rejectVerif && <RejectVerifModal user={rejectVerif} onClose={() => setRejectVerif(null)} />}
+
+            {/* Reject User (registration rejection with reason) */}
+            {rejectUser && <RejectUserModal user={rejectUser} onClose={() => setRejectUser(null)} />}
         </>
     );
 }
@@ -818,6 +826,59 @@ function RejectVerifModal({ user, onClose }: { user: AppUser; onClose: () => voi
                 <div className="flex justify-end gap-2 px-6 py-3 border-t">
                     <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium">Cancel</button>
                     <button type="submit" disabled={processing} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">{processing ? 'Rejecting...' : 'Reject'}</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+/* ─── Reject User Modal (registration rejection with reason + email block) ─── */
+function RejectUserModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
+    const { data, setData, post, processing, errors } = useForm({ rejection_reason: '' });
+    function submit(e: React.FormEvent) {
+        e.preventDefault();
+        post(`/admin/dashboard/users/${user.id}/reject`, { onSuccess: () => onClose(), preserveScroll: true });
+    }
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+            <form onSubmit={submit} className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <UserX className="h-4 w-4 text-red-600" />
+                        <h3 className="font-bold text-sm">Reject Registration — {user.name}</h3>
+                    </div>
+                    <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-6 py-4 space-y-3">
+                    <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                        <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                        <div className="text-xs text-red-800">
+                            <p className="font-bold mb-1">This action is irreversible.</p>
+                            <p>The user's account will be <span className="font-bold">deleted</span> and their email (<span className="font-medium">{user.email}</span>) will be <span className="font-bold">permanently blocked</span> from creating a new account.</p>
+                            <p className="mt-1">The user will receive an email notification with the rejection reason.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Reason for Rejection *</label>
+                        <textarea
+                            value={data.rejection_reason}
+                            onChange={(e) => setData('rejection_reason', e.target.value)}
+                            placeholder="e.g., Fraudulent account, violation of terms of service, suspicious activity..."
+                            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] outline-none min-h-[90px]"
+                            required
+                        />
+                        {errors.rejection_reason && <p className="mt-1 text-xs text-red-500">{errors.rejection_reason}</p>}
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 px-6 py-3 border-t">
+                    <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium">Cancel</button>
+                    <button
+                        type="submit"
+                        disabled={processing || !data.rejection_reason.trim()}
+                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                        {processing ? 'Rejecting...' : 'Reject & Block Email'}
+                    </button>
                 </div>
             </form>
         </div>

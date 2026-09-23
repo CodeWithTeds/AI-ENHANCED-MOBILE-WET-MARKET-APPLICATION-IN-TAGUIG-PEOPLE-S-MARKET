@@ -48,6 +48,27 @@ class VendorApprovalService
             'rejection_reason' => $reason,
         ]);
 
+        // Block the vendor's email from future registration and notify them
+        $user = $vendor->user;
+        if ($user) {
+            // Send rejection notification
+            try {
+                $user->notify(new \App\Notifications\RegistrationRejectedNotification($reason, 'vendor'));
+            } catch (\Throwable) {
+                // If mail fails, still proceed with rejection
+            }
+
+            // Block the email from future registration
+            \App\Models\RejectedEmail::updateOrCreate(
+                ['email' => strtolower($user->email)],
+                [
+                    'reason' => $reason,
+                    'rejected_by_type' => 'vendor',
+                    'rejected_by_admin_id' => auth()->id(),
+                ]
+            );
+        }
+
         return $vendor;
     }
 

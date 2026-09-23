@@ -168,12 +168,6 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                         Vendor
                                     </th>
                                     <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
-                                        Price
-                                    </th>
-                                    <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
-                                        Stock
-                                    </th>
-                                    <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
                                         Status
                                     </th>
                                     <th className="px-4 py-3 text-xs font-bold tracking-wider whitespace-nowrap text-gray-400 uppercase">
@@ -187,7 +181,7 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                             <tbody className="divide-y divide-gray-50">
                                 {products.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="px-4 py-16 text-center text-base text-gray-400">
+                                        <td colSpan={6} className="px-4 py-16 text-center text-base text-gray-400">
                                             <Package className="mx-auto mb-2 h-10 w-10 text-gray-300" />
                                             No products found.
                                         </td>
@@ -231,28 +225,6 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                                     </div>
                                                 ) : (
                                                     <span className="text-xs text-gray-400">—</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3.5">
-                                                <div className="text-sm font-bold text-gray-900">₱{Number(product.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                <div className="text-[10px] text-gray-400">per {product.unit}</div>
-                                            </td>
-                                            <td className="px-4 py-3.5">
-                                                {product.inventory ? (
-                                                    <div className="text-xs">
-                                                        <span className={`font-semibold ${product.inventory.stock_quantity === 0 ? 'text-red-500' : product.inventory.stock_quantity <= product.inventory.reorder_level ? 'text-[#ee600e]' : 'text-gray-800'}`}>
-                                                            {product.inventory.stock_quantity}
-                                                        </span>
-                                                        <span className="text-gray-400"> / {product.unit}</span>
-                                                        {product.inventory.stock_quantity === 0 && (
-                                                            <div className="text-[10px] font-bold text-red-500">Out of stock</div>
-                                                        )}
-                                                        {product.inventory.stock_quantity > 0 && product.inventory.stock_quantity <= product.inventory.reorder_level && (
-                                                            <div className="text-[10px] font-bold text-[#ee600e]">Low stock</div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs italic text-gray-300">No inventory</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3.5">
@@ -358,7 +330,7 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                 <div>
                                     <h3 className="text-sm font-bold text-gray-900">{viewProduct.name}</h3>
                                     <p className="text-xs text-gray-500">
-                                        {viewProduct.category} · ₱{Number(viewProduct.price).toLocaleString()} per {viewProduct.unit}
+                                        {viewProduct.category} · per {viewProduct.unit}
                                     </p>
                                 </div>
                             </div>
@@ -367,8 +339,7 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                             </button>
                         </div>
                         <div className="space-y-3 px-6 py-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <DetailBox label="Price" value={`₱${Number(viewProduct.price).toLocaleString()}`} color="#488562" />
+                            <div className="grid grid-cols-3 gap-3">
                                 <DetailBox label="Category" value={viewProduct.category} color="#0867ff" />
                                 <DetailBox label="Unit" value={viewProduct.unit} color="#6b7280" />
                                 <DetailBox
@@ -387,14 +358,6 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                 <Row label="Vendor" value={viewProduct.vendor?.stall_name ?? '—'} />
                                 <Row label="Location" value={viewProduct.vendor?.stall_location ?? '—'} />
                                 <Row label="Vendor Status" value={viewProduct.vendor?.status ?? '—'} />
-                                <Row
-                                    label="Stock"
-                                    value={
-                                        viewProduct.inventory
-                                            ? `${viewProduct.inventory.stock_quantity} ${viewProduct.unit} (reorder at ${viewProduct.inventory.reorder_level})`
-                                            : 'No inventory record'
-                                    }
-                                />
                                 <Row label="Created" value={formatDate(viewProduct.created_at)} />
                                 <Row label="Updated" value={formatDate(viewProduct.updated_at)} />
                                 <Row label="Product ID" value={`#${viewProduct.id}`} />
@@ -451,7 +414,6 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
         name: product.name,
         description: product.description ?? '',
         category: product.category,
-        price: String(product.price),
         unit: product.unit,
         is_available: product.is_available ? 1 : 0,
         image: null as File | null,
@@ -572,31 +534,17 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Price (₱) *</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={data.price}
-                                onChange={(e) => setData('price', e.target.value)}
-                                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-[#488562] focus:ring-1 focus:ring-[#488562] focus:outline-none"
-                            />
-                            {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Availability *</label>
-                            <select
-                                value={String(data.is_available)}
-                                onChange={(e) => setData('is_available', Number(e.target.value) as never)}
-                                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] focus:outline-none"
-                            >
-                                <option value="1">Available — Visible</option>
-                                <option value="0">Unavailable — Hidden</option>
-                            </select>
-                            {errors.is_available && <p className="mt-1 text-[11px] text-red-500">{errors.is_available}</p>}
-                        </div>
+                    <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Availability *</label>
+                        <select
+                            value={String(data.is_available)}
+                            onChange={(e) => setData('is_available', Number(e.target.value) as never)}
+                            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] focus:outline-none"
+                        >
+                            <option value="1">Available — Visible</option>
+                            <option value="0">Unavailable — Hidden</option>
+                        </select>
+                        {errors.is_available && <p className="mt-1 text-[11px] text-red-500">{errors.is_available}</p>}
                     </div>
 
                     <div>

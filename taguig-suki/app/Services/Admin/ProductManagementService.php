@@ -165,7 +165,7 @@ class ProductManagementService
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'category' => ['required', 'string', 'max:100'],
-            'price' => ['required', 'numeric', 'min:0'],
+            'price' => ['sometimes', 'numeric', 'min:0'],
             'unit' => ['required', 'string', 'max:50'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
             'is_available' => ['required', 'boolean'],
