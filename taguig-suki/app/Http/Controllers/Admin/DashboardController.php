@@ -29,7 +29,6 @@ class DashboardController extends Controller
         // Monthly overview (simple)
         $ordersThisMonth = Order::whereMonth('created_at', now()->month)->count();
         $customersThisMonth = User::where('is_admin', false)->whereMonth('created_at', now()->month)->count();
-        $monthlyDone = Order::whereMonth('created_at', now()->month)->where('status', '!=', 'cancelled')->sum('total_amount');
         // Use 20k target like static design, percent capped 100
         $monthlyTarget = 20000;
         $monthlyPercent = $monthlyTarget > 0 ? min(100, (int) round(($ordersThisMonth / max(1, $monthlyTarget)) * 100)) : 0;
@@ -70,14 +69,14 @@ class DashboardController extends Controller
             ];
         }
 
-        // Top vendors by revenue (6)
+        // Top vendors by order count (vendor revenue is private — admin should not see it)
         $topVendors = OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('vendors', 'order_items.vendor_id', '=', 'vendors.id')
             ->where('orders.status', '!=', 'cancelled')
-            ->select('vendors.stall_name', DB::raw('COUNT(DISTINCT order_items.order_id) as orders'), DB::raw('SUM(order_items.subtotal) as revenue'))
+            ->select('vendors.stall_name', DB::raw('COUNT(DISTINCT order_items.order_id) as orders'))
             ->groupBy('vendors.stall_name')
-            ->orderByDesc('revenue')
+            ->orderByDesc('orders')
             ->limit(4)
             ->get()
             ->map(function ($row) {
@@ -88,7 +87,6 @@ class DashboardController extends Controller
                     'name' => $name,
                     'initials' => $initials,
                     'sales' => (string) $row->orders,
-                    'revenue' => '₱' . number_format((float) $row->revenue, 1) . 'K',
                 ];
             })
             ->all();
@@ -98,12 +96,12 @@ class DashboardController extends Controller
             $topVendors = Vendor::withCount('products')->orderByDesc('products_count')->limit(4)->get()->map(function (Vendor $v) {
                 $parts = explode(' ', trim($v->stall_name ?? 'Vendor'));
                 $initials = strtoupper(substr($parts[0] ?? 'V', 0, 1) . substr($parts[1] ?? 'A', 0, 1));
-                return ['name' => $v->stall_name ?? 'Vendor', 'initials' => $initials, 'sales' => (string) $v->products_count, 'revenue' => '—'];
+                return ['name' => $v->stall_name ?? 'Vendor', 'initials' => $initials, 'sales' => (string) $v->products_count];
             })->all();
         }
         if (empty($topVendors)) {
             $topVendors = [
-                ['name' => 'No vendors yet', 'initials' => 'NV', 'sales' => '0', 'revenue' => '₱0'],
+                ['name' => 'No vendors yet', 'initials' => 'NV', 'sales' => '0'],
             ];
         }
 
@@ -180,7 +178,6 @@ class DashboardController extends Controller
         // Bottom stats
         $ordersToday = Order::whereDate('created_at', today())->count();
         $activeThisWeek = User::where('created_at', '>=', now()->subWeek())->count();
-        $revenueThisMonth = Order::where('status', '!=', 'cancelled')->whereMonth('created_at', now()->month)->sum('total_amount');
 
         return Inertia::render('dashboard', [
             'stats' => [
@@ -202,7 +199,6 @@ class DashboardController extends Controller
             'bottom' => [
                 'ordersToday' => $ordersToday,
                 'activeThisWeek' => $activeThisWeek,
-                'revenueThisMonth' => $revenueThisMonth,
             ],
             'pendingVerifications' => CustomerVerification::where('status', 'pending')->count(),
         ]);

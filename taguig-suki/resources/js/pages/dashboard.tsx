@@ -2,7 +2,6 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import { DotLottiePlayer } from '@dotlottie/react-player';
 import {
     BadgeCheck,
-    BarChart3,
     Box,
     CheckCircle2,
     Clock,
@@ -19,7 +18,7 @@ import { dashboard } from '@/routes';
 
 type Stat = { label: string; value: string; change: string; icon: string; color: string };
 type RecentOrder = { name: string; detail: string; status: string; statusColor: string; bgColor: string; icon: string; iconColor: string };
-type TopVendor = { name: string; initials: string; sales: string; revenue: string };
+type TopVendor = { name: string; initials: string; sales: string };
 type Activity = { text: string; time: string; icon: string; iconColor: string; bgColor: string };
 
 type DashboardProps = {
@@ -28,7 +27,7 @@ type DashboardProps = {
     recentOrders?: RecentOrder[];
     topVendors?: TopVendor[];
     activities?: Activity[];
-    bottom?: { ordersToday: number; activeThisWeek: number; revenueThisMonth: number };
+    bottom?: { ordersToday: number; activeThisWeek: number };
     pendingVerifications?: number;
 };
 
@@ -52,7 +51,7 @@ export default function Dashboard(props: DashboardProps) {
     const recentOrders: RecentOrder[] = props.recentOrders ?? staticRecentOrders;
     const topVendors: TopVendor[] = props.topVendors ?? staticTopVendors;
     const activities: Activity[] = props.activities ?? staticActivities;
-    const bottom = props.bottom ?? { ordersToday: 245, activeThisWeek: 1892, revenueThisMonth: 89500 };
+    const bottom = props.bottom ?? { ordersToday: 245, activeThisWeek: 1892 };
     const pendingVerifications = props.pendingVerifications ?? 0;
 
     return (
@@ -207,17 +206,14 @@ export default function Dashboard(props: DashboardProps) {
                         </div>
                         <div className="space-y-3.5">
                             {topVendors.map((vendor, i) => (
-                                <div key={i} className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#488562]/10 to-[#89baa3]/20 text-sm font-bold text-[#488562]">
-                                            {vendor.initials}
-                                        </div>
-                                        <div>
-                                            <div className="text-sm font-medium text-gray-900">{vendor.name}</div>
-                                            <div className="text-[11px] text-gray-400">{vendor.sales} sales</div>
-                                        </div>
+                                <div key={i} className="flex items-center gap-3">
+                                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#488562]/10 to-[#89baa3]/20 text-sm font-bold text-[#488562]">
+                                        {vendor.initials}
                                     </div>
-                                    <span className="text-sm font-semibold text-gray-900">{vendor.revenue}</span>
+                                    <div>
+                                        <div className="text-sm font-medium text-gray-900">{vendor.name}</div>
+                                        <div className="text-[11px] text-gray-400">{vendor.sales} orders</div>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -249,7 +245,7 @@ export default function Dashboard(props: DashboardProps) {
                 </div>
 
                 {/* Bottom Stats Bar — LIVE */}
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                     <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#488562]/10">
                             <ShoppingCart className="h-5 w-5 text-[#488562]" />
@@ -266,15 +262,6 @@ export default function Dashboard(props: DashboardProps) {
                         <div>
                             <div className="text-lg font-bold text-gray-900">{bottom.activeThisWeek}</div>
                             <div className="text-[11px] text-gray-500">Active This Week</div>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0867ff]/10">
-                            <BarChart3 className="h-5 w-5 text-[#0867ff]" />
-                        </div>
-                        <div>
-                            <div className="text-lg font-bold text-gray-900">₱{Number(bottom.revenueThisMonth).toLocaleString('en-PH', { minimumFractionDigits: 0 })}</div>
-                            <div className="text-[11px] text-gray-500">Revenue This Month</div>
                         </div>
                     </div>
                 </div>
@@ -313,7 +300,7 @@ const staticRecentOrders = [
 ];
 
 const staticTopVendors = [
-    { name: 'No vendors yet', initials: 'NV', sales: '0', revenue: '₱0' },
+    { name: 'No vendors yet', initials: 'NV', sales: '0' },
 ];
 
 const staticActivities = [
