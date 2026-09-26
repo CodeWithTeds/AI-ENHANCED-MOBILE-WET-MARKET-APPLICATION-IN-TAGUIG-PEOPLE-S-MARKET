@@ -25,11 +25,8 @@ Documents is where all the required papers from vendors are stored and verified.
 8. PRODUCT MANAGEMENT
 Product Management is where you oversee all the products being sold by all vendors in the system. You can see what items are listed, check their descriptions, and categories, and remove or edit any prohibited or incorrect products. This ensures that only proper and allowed products are visible to customers.
 
-9. ORDER MANAGEMENT
-Order Management is where you monitor all orders coming from customers. You can track new orders, ongoing or preparing orders, completed orders, and cancelled ones. This section helps you make sure that vendors are processing orders on time and that deliveries are handled properly from ordering to completion.
-
-11. PAYMENT MANAGEMENT
-Payment Management handles everything related to money transactions. Here you can track payments made by customers, payouts that go to vendors, and the overall transaction history. It also shows the payment method used, like GCash or Cash on Delivery, and whether a payment is successful, pending, or failed. It keeps the financial flow clear and organized.
+9. PAYMENT AND ORDER MANAGEMENT
+Payment and Order Management combines order monitoring and payment tracking into a single unified dashboard section. Here you can monitor order statuses (pending, in progress, completed, cancelled) and payment methods (GCash, Cash, Maya) using visual distribution graphs, without exposing individual customer names or transaction amounts.
 
 12. AI RECOMMENDATIONS
 AI Recommendations is the smart and automated feature of the system. The AI studies sales data, product trends, and customer buying behavior to give useful suggestions. For example, it can suggest what products are trending, what a customer might want to buy next, or what a vendor should restock. It helps both admins and vendors make smarter business decisions.

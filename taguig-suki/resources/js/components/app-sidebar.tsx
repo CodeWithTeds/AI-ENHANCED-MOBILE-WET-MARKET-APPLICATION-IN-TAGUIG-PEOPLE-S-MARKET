@@ -85,18 +85,11 @@ const mainNavItems: SidebarNavItem[] = [
         bgColor: 'bg-[#488562]/10',
     },
     {
-        title: 'Order Management',
+        title: 'Payment and Order Management',
         href: '/admin/dashboard/orders',
         icon: ClipboardList,
         color: 'text-[#ee600e]',
         bgColor: 'bg-[#ee600e]/10',
-    },
-    {
-        title: 'Payment Management',
-        href: '/admin/dashboard/payments',
-        icon: CreditCard,
-        color: 'text-[#488562]',
-        bgColor: 'bg-[#488562]/10',
     },
     {
         title: 'AI Recommendations',

@@ -54,13 +54,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::delete('dashboard/products/{product}', [ProductManagementController::class, 'destroy'])->name('products.destroy');
     Route::patch('dashboard/products/{product}/toggle', [ProductManagementController::class, 'toggleAvailability'])->name('products.toggle');
 
-    // Payment Management
-    Route::get('dashboard/payments', [PaymentManagementController::class, 'index'])->name('payments.index');
-    Route::patch('dashboard/payments/{order}/verify', [PaymentManagementController::class, 'verify'])->name('payments.verify');
-
-    // Order Management
+    // Payment & Order Management
     Route::get('dashboard/orders', [OrderManagementController::class, 'index'])->name('orders.index');
+    Route::get('dashboard/payments', [OrderManagementController::class, 'index'])->name('payments.index');
     Route::patch('dashboard/orders/{order}/status', [OrderManagementController::class, 'updateStatus'])->name('orders.update-status');
+    Route::patch('dashboard/payments/{order}/verify', [PaymentManagementController::class, 'verify'])->name('payments.verify');
 
     // Reports & Analytics
     Route::get('dashboard/reports', [ReportsAnalyticsController::class, 'index'])->name('reports.index');
