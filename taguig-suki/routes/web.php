@@ -82,7 +82,7 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::delete('dashboard/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
     Route::post('dashboard/users/{user}/reject', [UserManagementController::class, 'reject'])->name('users.reject');
 
-    // Customer ID Verification
+    // Customer ID Verification (Redirects to User Management)
     Route::get('dashboard/verifications', [CustomerVerificationController::class, 'index'])->name('verifications.index');
     Route::post('dashboard/verifications/{customerVerification}/approve', [CustomerVerificationController::class, 'approve'])->name('verifications.approve');
     Route::post('dashboard/verifications/{customerVerification}/reject', [CustomerVerificationController::class, 'reject'])->name('verifications.reject');

@@ -14,16 +14,9 @@ class CustomerVerificationController extends Controller
 {
     public function __construct(private readonly CustomerVerificationService $service) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request): RedirectResponse
     {
-        $status = $request->query('status');
-        $verifications = $this->service->listForAdmin($status, $request);
-
-        return Inertia::render('admin/verifications/index', [
-            'verifications' => $verifications,
-            'filters' => ['status' => $status],
-            'idTypes' => CustomerVerificationService::ALLOWED_ID_TYPES,
-        ]);
+        return redirect()->route('users.index', array_filter(['verification_status' => $request->query('status')]));
     }
 
     public function approve(Request $request, CustomerVerification $customerVerification): RedirectResponse

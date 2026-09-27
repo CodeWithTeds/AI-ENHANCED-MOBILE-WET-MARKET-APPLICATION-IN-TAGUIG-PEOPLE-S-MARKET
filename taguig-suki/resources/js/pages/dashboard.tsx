@@ -61,7 +61,7 @@ export default function Dashboard(props: DashboardProps) {
                 {/* Pending verification alert */}
                 {pendingVerifications > 0 && (
                     <Link
-                        href="/admin/dashboard/verifications"
+                        href="/admin/dashboard/users?verification_status=pending"
                         className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 hover:bg-amber-100 transition"
                     >
                         <BadgeCheck className="h-5 w-5 text-amber-600" />
