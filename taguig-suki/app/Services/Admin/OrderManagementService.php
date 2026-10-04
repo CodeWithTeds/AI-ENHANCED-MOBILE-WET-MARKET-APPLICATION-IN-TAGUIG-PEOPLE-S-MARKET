@@ -11,7 +11,7 @@ class OrderManagementService
     {
         $query = Order::query()->with([
             'user:id,name,email',
-            'items:id,order_id,vendor_id,product_name,category,unit,quantity,unit_price,subtotal',
+            'items:id,order_id,vendor_id,product_name,category,unit,quantity,unit_price,subtotal,status',
             'items.vendor:id,stall_name',
             'statusHistory',
         ]);
@@ -41,6 +41,10 @@ class OrderManagementService
     {
         $order->update(['status' => $status]);
 
+        // Keep per-vendor portions in sync with the admin's decision so the
+        // derived overall status can never regress it afterwards.
+        $order->items()->update(['status' => $status]);
+
         OrderStatusHistory::create([
             'order_id' => $order->id,
             'status' => $status,
@@ -49,7 +53,7 @@ class OrderManagementService
 
         return $order->load([
             'user:id,name,email',
-            'items:id,order_id,vendor_id,product_name,category,unit,quantity,unit_price,subtotal',
+            'items:id,order_id,vendor_id,product_name,category,unit,quantity,unit_price,subtotal,status',
             'items.vendor:id,stall_name',
             'statusHistory',
         ]);
@@ -72,6 +76,7 @@ class OrderManagementService
                 'category' => $item->category,
                 'unit' => $item->unit,
                 'quantity' => $item->quantity,
+                'status' => $item->status,
                 'vendor_stall' => $item->vendor?->stall_name,
             ]),
             'status_history' => $order->statusHistory->map(fn ($history) => [

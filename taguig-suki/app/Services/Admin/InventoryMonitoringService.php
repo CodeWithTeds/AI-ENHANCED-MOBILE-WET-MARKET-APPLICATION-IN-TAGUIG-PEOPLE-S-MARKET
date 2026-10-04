@@ -6,14 +6,13 @@ use App\Enums\VendorStatus;
 use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\Vendor;
-use Illuminate\Support\Facades\DB;
 
 class InventoryMonitoringService
 {
     public function getIndexData(array $filters): array
     {
         $query = Inventory::query()
-            ->with(['product:id,vendor_id,name,category,unit,price,image,is_available', 'vendor:id,stall_name,stall_location']);
+            ->with(['product:id,vendor_id,name,category,unit,image,is_available', 'vendor:id,stall_name,stall_location']);
 
         $this->applyFilters($query, $filters);
 
@@ -41,23 +40,19 @@ class InventoryMonitoringService
 
     private function present(Inventory $inventory): array
     {
+        // Prices and stock values are private to vendors — admin sees quantities only.
         return [
             'id' => $inventory->id,
             'status' => $inventory->status,
             'stock_quantity' => $inventory->stock_quantity,
             'reorder_level' => $inventory->reorder_level,
             'max_stock_level' => $inventory->max_stock_level,
-            'cost_price' => $inventory->cost_price,
-            'selling_price' => $inventory->selling_price,
-            'profit_per_unit' => $inventory->profit_per_unit,
-            'inventory_value' => $inventory->inventory_value,
             'stock_status' => $inventory->isOutOfStock() ? 'out' : ($inventory->isLowStock() ? 'low' : 'in'),
             'product' => [
                 'id' => $inventory->product->id,
                 'name' => $inventory->product->name,
                 'category' => $inventory->product->category,
                 'unit' => $inventory->product->unit,
-                'price' => $inventory->product->price,
                 'image' => $inventory->product->image,
                 'is_available' => $inventory->product->is_available,
             ],
@@ -106,10 +101,6 @@ class InventoryMonitoringService
             'in_stock' => Inventory::where(fn ($q) => $inStock($q))->count(),
             'low_stock' => Inventory::lowStock()->count(),
             'out_of_stock' => Inventory::outOfStock()->count(),
-            'total_value' => (float) Inventory::query()
-                ->where('stock_quantity', '>', 0)
-                ->select(DB::raw('COALESCE(SUM(cost_price * stock_quantity), 0) as value'))
-                ->value('value'),
             'vendor_count' => Inventory::distinct()->count('vendor_id'),
         ];
     }

@@ -64,6 +64,9 @@ export default function CartScreen() {
   const [vendorPaymentsLoading, setVendorPaymentsLoading] = useState(false);
   const [vendorPaymentsError, setVendorPaymentsError] = useState<string | null>(null);
 
+  // Full-screen QR viewer (tap a vendor QR to enlarge for scanning)
+  const [qrViewer, setQrViewer] = useState<{ uri: string; stallName: string } | null>(null);
+
   // Fetch vendor GCash/Maya details when user selects e-wallet
   useEffect(() => {
     if (paymentMethod === 'cash' || items.length === 0) {
@@ -307,10 +310,19 @@ export default function CartScreen() {
                               )}
                             </View>
                             {hasQr && (
-                              <View style={styles.qrWrap}>
+                              <TouchableOpacity
+                                style={styles.qrWrap}
+                                onPress={() => setQrViewer({ uri: methodData.qr_url!, stallName: vendor.stall_name })}
+                                activeOpacity={0.7}
+                                accessibilityRole="button"
+                                accessibilityLabel={`View ${vendor.stall_name} QR code full screen`}
+                              >
                                 <Image source={{ uri: methodData.qr_url! }} style={styles.qrImage} resizeMode="contain" />
-                                <Text style={styles.qrCaption}>Scan QR</Text>
-                              </View>
+                                <Text style={styles.qrCaption}>Tap to enlarge</Text>
+                                <View style={styles.qrZoomBadge}>
+                                  <Ionicons name="expand-outline" size={10} color="#374151" />
+                                </View>
+                              </TouchableOpacity>
                             )}
                           </View>
                         )}
@@ -411,6 +423,32 @@ export default function CartScreen() {
           }}
         />
       )}
+
+      {/* Full-screen QR viewer for easy scanning with another device */}
+      <Modal visible={qrViewer !== null} transparent animationType="fade" onRequestClose={() => setQrViewer(null)}>
+        <TouchableOpacity style={styles.qrViewerBackdrop} activeOpacity={1} onPress={() => setQrViewer(null)}>
+          <TouchableOpacity style={styles.qrViewerCard} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.qrViewerHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.qrViewerTitle} numberOfLines={1}>{qrViewer?.stallName}</Text>
+                <Text style={styles.qrViewerSub}>Scan with your {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} app</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.qrViewerClose}
+                onPress={() => setQrViewer(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Close QR viewer"
+              >
+                <Ionicons name="close" size={20} color="#374151" />
+              </TouchableOpacity>
+            </View>
+            {qrViewer && (
+              <Image source={{ uri: qrViewer.uri }} style={styles.qrViewerImage} resizeMode="contain" />
+            )}
+            <Text style={styles.qrViewerHint}>Tap outside or ✕ to close</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -758,6 +796,32 @@ const styles = StyleSheet.create({
   },
   qrImage: { width: 78, height: 78 },
   qrCaption: { fontSize: 9, color: '#6B7280', fontWeight: '600', marginTop: 2, position: 'absolute', bottom: 2 },
+  qrZoomBadge: {
+    position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(243,244,246,0.95)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
+
+  // Full-screen QR viewer
+  qrViewerBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  qrViewerCard: {
+    width: '100%', maxWidth: 340, backgroundColor: '#FFFFFF', borderRadius: 20,
+    padding: 20, alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  qrViewerHeader: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 12 },
+  qrViewerTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  qrViewerSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  qrViewerClose: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: '#F3F4F6',
+    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+  },
+  qrViewerImage: { width: 280, height: 280, borderRadius: 12, backgroundColor: '#FFFFFF' },
+  qrViewerHint: { fontSize: 11, color: '#9CA3AF', marginTop: 12 },
 
   referenceBox: {
     backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12,

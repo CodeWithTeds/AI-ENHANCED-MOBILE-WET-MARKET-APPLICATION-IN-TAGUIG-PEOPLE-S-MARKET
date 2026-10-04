@@ -71,14 +71,22 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = data as Record<string, unknown>;
-        // Extract Laravel validation errors into a readable message
+        // Extract Laravel validation errors into a readable message.
+        // Backend nests them under `data`; also accept `errors` for compatibility.
         let message = (errorData.message as string) || `Request failed with status ${response.status}`;
-        if (errorData.errors && typeof errorData.errors === 'object') {
-          const validationErrors = Object.values(errorData.errors as Record<string, string[]>)
-            .flat()
-            .join('\n');
-          if (validationErrors) {
-            message = validationErrors;
+        const validationBag = errorData.errors ?? errorData.data;
+        if (validationBag && typeof validationBag === 'object' && !Array.isArray(validationBag)) {
+          const entries = Object.values(validationBag as Record<string, unknown>);
+          const isValidationBag =
+            entries.length > 0 &&
+            entries.every(
+              (v) => typeof v === 'string' || (Array.isArray(v) && v.every((i) => typeof i === 'string')),
+            );
+          if (isValidationBag) {
+            const validationErrors = (entries as (string | string[])[]).flat().join('\n');
+            if (validationErrors) {
+              message = validationErrors;
+            }
           }
         }
         throw new ApiError(message, response.status, errorData);

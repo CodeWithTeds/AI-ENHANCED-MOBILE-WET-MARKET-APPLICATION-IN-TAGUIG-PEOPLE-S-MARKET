@@ -79,28 +79,17 @@ class ReportsAnalyticsService
 
     private function getOverview(?CarbonInterface $from, CarbonInterface $to): array
     {
-        $revenue = (float) Order::query()
-            ->where('status', '!=', 'cancelled')
-            ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
-            ->where('created_at', '<=', $to)
-            ->sum('total_amount');
-
+        // Vendor revenue is private — admin reports only expose order/user counts.
         $orders = Order::query()
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->where('created_at', '<=', $to)
             ->count();
 
         return [
-            'total_revenue' => $revenue,
             'total_orders' => $orders,
-            'avg_order_value' => $orders > 0 ? round($revenue / $orders, 2) : 0,
             'total_users' => User::count(),
             'total_vendors' => Vendor::count(),
             'total_products' => Product::count(),
-            'inventory_value' => (float) Inventory::query()
-                ->where('stock_quantity', '>', 0)
-                ->select(DB::raw('COALESCE(SUM(cost_price * stock_quantity), 0) as value'))
-                ->value('value'),
         ];
     }
 
@@ -111,18 +100,16 @@ class ReportsAnalyticsService
         $orders = Order::query()
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->where('created_at', '<=', $to)
-            ->get(['id', 'status', 'total_amount', 'payment_method', 'created_at']);
+            ->get(['id', 'status', 'payment_method', 'created_at']);
 
-        $revenue = $orders->where('status', '!=', 'cancelled')->sum(fn ($o) => (float) $o->total_amount);
         $orderCount = $orders->count();
-        $nonCancelled = $orders->where('status', '!=', 'cancelled')->count();
 
-        $revenueTrend = $this->buildTimeSeries(
+        $ordersTrend = $this->buildTimeSeries(
             $from ?? $orders->min('created_at'),
             $to,
             $granularity,
             $orders->where('status', '!=', 'cancelled'),
-            'revenue'
+            'count'
         );
 
         $statusLabels = [
@@ -139,7 +126,6 @@ class ReportsAnalyticsService
                 'status' => $status,
                 'label' => $statusLabels[$status] ?? ucfirst($status),
                 'count' => $group->count(),
-                'revenue' => round($group->where('status', '!=', 'cancelled')->sum(fn ($o) => (float) $o->total_amount), 2),
             ])
             ->sortBy(fn ($row) => array_flip(array_keys($statusLabels))[$row['status']] ?? 99)
             ->values()
@@ -158,20 +144,17 @@ class ReportsAnalyticsService
                 'method' => $method,
                 'label' => $paymentMethods[$method] ?? ucfirst($method),
                 'count' => $group->count(),
-                'revenue' => round($group->where('status', '!=', 'cancelled')->sum(fn ($o) => (float) $o->total_amount), 2),
                 'percent' => round(($group->where('status', '!=', 'cancelled')->count() / $paymentTotal) * 100, 1),
             ])
-            ->sortByDesc('revenue')
+            ->sortByDesc('count')
             ->values()
             ->all();
 
         return [
-            'total_revenue' => round($revenue, 2),
             'total_orders' => $orderCount,
-            'avg_order_value' => $nonCancelled > 0 ? round($revenue / $nonCancelled, 2) : 0,
             'completed_orders' => $orders->where('status', 'completed')->count(),
             'cancelled_orders' => $orders->where('status', 'cancelled')->count(),
-            'revenue_trend' => $revenueTrend,
+            'orders_trend' => $ordersTrend,
             'status_breakdown' => $statusBreakdown,
             'payment_breakdown' => $paymentBreakdown,
             'top_products' => $this->getTopProducts($from, $to),
@@ -191,11 +174,10 @@ class ReportsAnalyticsService
                 'order_items.product_name',
                 'order_items.category',
                 'vendors.stall_name',
-                DB::raw('SUM(order_items.quantity) as units_sold'),
-                DB::raw('SUM(order_items.subtotal) as revenue')
+                DB::raw('SUM(order_items.quantity) as units_sold')
             )
             ->groupBy('order_items.product_name', 'order_items.category', 'vendors.stall_name')
-            ->orderByDesc('revenue')
+            ->orderByDesc('units_sold')
             ->limit(6)
             ->get()
             ->map(fn ($row) => [
@@ -203,7 +185,6 @@ class ReportsAnalyticsService
                 'category' => $row->category,
                 'vendor' => $row->stall_name,
                 'units_sold' => (int) $row->units_sold,
-                'revenue' => round((float) $row->revenue, 2),
             ])
             ->all();
     }
@@ -219,18 +200,16 @@ class ReportsAnalyticsService
             ->select(
                 'vendors.id',
                 'vendors.stall_name',
-                DB::raw('COUNT(DISTINCT order_items.order_id) as orders'),
-                DB::raw('SUM(order_items.subtotal) as revenue')
+                DB::raw('COUNT(DISTINCT order_items.order_id) as orders')
             )
             ->groupBy('vendors.id', 'vendors.stall_name')
-            ->orderByDesc('revenue')
+            ->orderByDesc('orders')
             ->limit(6)
             ->get()
             ->map(fn ($row) => [
                 'id' => $row->id,
                 'stall_name' => $row->stall_name,
                 'orders' => (int) $row->orders,
-                'revenue' => round((float) $row->revenue, 2),
             ])
             ->all();
     }
@@ -324,31 +303,19 @@ class ReportsAnalyticsService
 
     private function getInventory(?CarbonInterface $from, CarbonInterface $to): array
     {
-        $totalValue = (float) Inventory::query()
-            ->where('stock_quantity', '>', 0)
-            ->select(DB::raw('COALESCE(SUM(cost_price * stock_quantity), 0) as value'))
-            ->value('value');
-
-        $retailValue = (float) Inventory::query()
-            ->where('stock_quantity', '>', 0)
-            ->select(DB::raw('COALESCE(SUM(selling_price * stock_quantity), 0) as value'))
-            ->value('value');
-
         $categoryBreakdown = Inventory::query()
             ->join('products', 'inventories.product_id', '=', 'products.id')
             ->select(
                 'products.category',
-                DB::raw('COUNT(DISTINCT inventories.id) as items'),
-                DB::raw('COALESCE(SUM(inventories.cost_price * inventories.stock_quantity), 0) as value')
+                DB::raw('COUNT(DISTINCT inventories.id) as items')
             )
             ->groupBy('products.category')
-            ->orderByDesc('value')
+            ->orderByDesc('items')
             ->limit(8)
             ->get()
             ->map(fn ($row) => [
                 'category' => $row->category ?: 'Uncategorized',
                 'items' => (int) $row->items,
-                'value' => round((float) $row->value, 2),
             ])
             ->all();
 
@@ -399,8 +366,6 @@ class ReportsAnalyticsService
             'in_stock' => Inventory::where('stock_quantity', '>', 0)->whereColumn('stock_quantity', '>', 'reorder_level')->count(),
             'low_stock' => Inventory::lowStock()->count(),
             'out_of_stock' => Inventory::outOfStock()->count(),
-            'total_value' => $totalValue,
-            'retail_value' => $retailValue,
             'category_breakdown' => $categoryBreakdown,
             'stock_movements' => $stockMovements,
             'low_stock_items' => $lowStock,

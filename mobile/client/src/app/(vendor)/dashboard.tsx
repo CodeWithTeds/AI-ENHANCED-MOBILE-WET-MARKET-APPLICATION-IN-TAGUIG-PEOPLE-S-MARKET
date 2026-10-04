@@ -20,6 +20,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
+  getVendorPortionStatus,
   ORDER_STATUS_CONFIG,
   type Order,
   type OrderStatus,
@@ -108,10 +109,14 @@ export default function VendorDashboard() {
   const todayOrders = orders.filter((o) => new Date(o.created_at) >= startOfToday);
   const todaysSales = round2(todayOrders.reduce((sum, o) => sum + vendorTotal(o), 0));
 
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const confirmedCount = orders.filter((o) => o.status === 'confirmed' || o.status === 'ready').length;
+  // Portion-based: reflects this vendor's own items, not the overall order.
+  const pendingCount = orders.filter((o) => getVendorPortionStatus(o) === 'pending').length;
+  const confirmedCount = orders.filter((o) => {
+    const s = getVendorPortionStatus(o);
+    return s === 'confirmed' || s === 'ready';
+  }).length;
 
-  const completedOrders = orders.filter((o) => o.status === 'completed');
+  const completedOrders = orders.filter((o) => getVendorPortionStatus(o) === 'completed');
   const completedCount = completedOrders.length;
   const totalRevenue = round2(completedOrders.reduce((sum, o) => sum + vendorTotal(o), 0));
 
@@ -376,7 +381,7 @@ function Tile({
 }
 
 function OrderRow({ order, onPress }: { order: Order; onPress: () => void }) {
-  const cfg = ORDER_STATUS_CONFIG[order.status as OrderStatus];
+  const cfg = ORDER_STATUS_CONFIG[getVendorPortionStatus(order)];
   const customerName = order.user?.name ?? 'Customer';
   const time = new Date(order.created_at).toLocaleTimeString('en-PH', {
     hour: '2-digit', minute: '2-digit',

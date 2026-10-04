@@ -16,17 +16,12 @@ type InventoryItem = {
     stock_quantity: number;
     reorder_level: number;
     max_stock_level: number;
-    cost_price: string;
-    selling_price: string;
-    profit_per_unit: number | null;
-    inventory_value: number | null;
     stock_status: 'in' | 'low' | 'out';
     product: {
         id: number;
         name: string;
         category: string;
         unit: string;
-        price: string;
         image: string | null;
         is_available: boolean;
     };
@@ -53,7 +48,6 @@ type Props = {
         in_stock: number;
         low_stock: number;
         out_of_stock: number;
-        total_value: number;
         vendor_count: number;
     };
     filters: Record<string, string | undefined>;
@@ -96,8 +90,8 @@ export default function InventoryIndex({ inventories, stats, filters, stock_stat
                         <p className="text-xs text-gray-500">Inventory levels and product availability across all vendors</p>
                     </div>
                     <div className="rounded-xl bg-[#0867ff]/10 px-3 py-2 text-right">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-[#0867ff]">Inventory Value</div>
-                        <div className="text-lg font-bold text-[#0867ff]">&#8369;{stats.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-[#0867ff]">Vendors Tracked</div>
+                        <div className="text-lg font-bold text-[#0867ff]">{stats.vendor_count}</div>
                     </div>
                 </div>
 
@@ -176,18 +170,16 @@ export default function InventoryIndex({ inventories, stats, filters, stock_stat
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Product</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Category</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Vendor</th>
-                                    <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Price</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Stock</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Reorder</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Status</th>
-                                    <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Inventory Value</th>
                                     <th className="whitespace-nowrap px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Available</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {inventories.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="px-4 py-16 text-center text-sm text-gray-400">
+                                        <td colSpan={8} className="px-4 py-16 text-center text-sm text-gray-400">
                                             <Box className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                                             No inventory found.
                                         </td>
@@ -221,15 +213,9 @@ export default function InventoryIndex({ inventories, stats, filters, stock_stat
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-2.5 text-xs font-semibold text-gray-800">&#8369;{Number(item.selling_price).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                                             <td className="px-4 py-2.5"><StockBadge item={item} /></td>
                                             <td className="px-4 py-2.5 text-xs text-gray-500">{item.reorder_level}</td>
                                             <td className="px-4 py-2.5"><StockStatusBadge status={item.stock_status} /></td>
-                                            <td className="px-4 py-2.5 text-xs font-semibold text-gray-800">
-                                                {item.inventory_value != null
-                                                    ? '&#8369;' + Number(item.inventory_value).toLocaleString(undefined, { maximumFractionDigits: 2 })
-                                                    : <span className="italic text-gray-300">—</span>}
-                                            </td>
                                             <td className="px-4 py-2.5">
                                                 {item.product.is_available ? (
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#488562]">

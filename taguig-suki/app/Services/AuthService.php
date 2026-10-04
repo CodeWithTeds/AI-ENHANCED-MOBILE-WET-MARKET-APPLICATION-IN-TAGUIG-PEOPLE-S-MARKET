@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\VendorStatus;
 use App\Models\CustomerVerification;
+use App\Models\RejectedEmail;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Repositories\VendorRepositoryInterface;
@@ -103,12 +104,29 @@ class AuthService
     public function login(array $credentials): array
     {
         if (!Auth::attempt($credentials)) {
+            // Rejected registrations have their account deleted and email blocked —
+            // surface the admin's reason instead of a generic credentials error.
+            $email = $credentials['email'] ?? '';
+            if (is_string($email) && $email !== '' && RejectedEmail::isBlocked($email)) {
+                throw ValidationException::withMessages([
+                    'email' => [RejectedEmail::blockedMessage($email)],
+                ]);
+            }
+
             throw ValidationException::withMessages([
                 'email' => ['Invalid credentials. Please check your email and password.'],
             ]);
         }
 
         $user = User::where('email', $credentials['email'])->firstOrFail();
+
+        if (! $user->isActive()) {
+            Auth::logout();
+            throw ValidationException::withMessages([
+                'email' => ['Your account has been deactivated. Please contact the administrator.'],
+            ]);
+        }
+
         $vendor = $this->vendorRepository->findByUser($user);
 
         $this->validateVendorAccess($vendor);

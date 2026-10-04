@@ -21,7 +21,15 @@ class ApiExceptionHandler
     public function handle(Throwable $e, Request $request): JsonResponse
     {
         if ($e instanceof ValidationException) {
-            return $this->errorResponse('Validation failed', 422, $e->errors());
+            // Surface the actual reason (e.g. rejection/deactivation message)
+            // instead of a generic message, so clients display it to the user.
+            $firstMessage = collect($e->errors())->flatten()->first();
+
+            return $this->errorResponse(
+                is_string($firstMessage) && $firstMessage !== '' ? $firstMessage : 'Validation failed',
+                422,
+                $e->errors()
+            );
         }
 
         if ($e instanceof ModelNotFoundException) {

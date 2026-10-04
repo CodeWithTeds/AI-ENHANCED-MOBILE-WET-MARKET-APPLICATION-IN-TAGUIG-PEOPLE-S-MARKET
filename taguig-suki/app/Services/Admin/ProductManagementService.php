@@ -18,7 +18,7 @@ class ProductManagementService
 
         $sortField = $filters['sort'] ?? 'created_at';
         $sortDir = $filters['direction'] ?? 'desc';
-        $allowedSorts = ['name', 'price', 'category', 'created_at', 'is_available'];
+        $allowedSorts = ['name', 'category', 'created_at', 'is_available'];
         if (! in_array($sortField, $allowedSorts, true)) {
             $sortField = 'created_at';
         }
@@ -90,7 +90,6 @@ class ProductManagementService
             'name' => $product->name,
             'description' => $product->description,
             'category' => $product->category,
-            'price' => $product->price,
             'unit' => $product->unit,
             'image' => $product->image,
             'is_available' => (bool) $product->is_available,
@@ -165,7 +164,6 @@ class ProductManagementService
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'category' => ['required', 'string', 'max:100'],
-            'price' => ['sometimes', 'numeric', 'min:0'],
             'unit' => ['required', 'string', 'max:50'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
             'is_available' => ['required', 'boolean'],

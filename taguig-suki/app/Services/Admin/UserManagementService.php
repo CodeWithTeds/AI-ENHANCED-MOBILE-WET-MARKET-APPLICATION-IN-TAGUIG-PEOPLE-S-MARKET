@@ -68,7 +68,14 @@ class UserManagementService
             'is_active' => ! $user->is_active,
         ]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+
+        // Revoke sessions when deactivating so existing tokens stop working.
+        if (! $fresh->isActive()) {
+            $fresh->tokens()->delete();
+        }
+
+        return $fresh;
     }
 
     public function activate(User $user): User
@@ -82,7 +89,12 @@ class UserManagementService
     {
         $user->update(['is_active' => false]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+
+        // Revoke all API tokens so the user is signed out everywhere immediately.
+        $fresh->tokens()->delete();
+
+        return $fresh;
     }
 
     public function delete(User $user): void

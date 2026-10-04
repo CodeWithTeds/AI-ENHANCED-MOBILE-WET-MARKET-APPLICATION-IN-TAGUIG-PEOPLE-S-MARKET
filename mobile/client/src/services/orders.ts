@@ -27,6 +27,8 @@ export interface OrderItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
+  /** Per-vendor fulfillment status of this item's portion (vendor-scoped responses). */
+  status?: OrderStatus;
   vendor?: {
     id: number;
     stall_name: string;
@@ -159,6 +161,31 @@ export async function updateOrderStatus(
     token,
   });
   return response.data;
+}
+
+/* ─── Vendor Portion Helpers ─── */
+
+/**
+ * Fulfillment status of the viewing vendor's own portion of an order.
+ * Vendor API responses scope `items` to the requesting vendor, and all of
+ * a vendor's items advance together — so the first item carrying a status
+ * represents the portion. Falls back to the overall order status.
+ */
+export function getVendorPortionStatus(order: Order): OrderStatus {
+  const itemStatus = order.items.find((i) => !!i.status)?.status;
+  return itemStatus ?? order.status;
+}
+
+/**
+ * Total of the viewing vendor's own portion (their items only — never the
+ * whole multi-vendor order amount).
+ */
+export function getVendorPortionTotal(order: Order): number {
+  if (!order.items.length) return Number(order.total_amount) || 0;
+  return order.items.reduce(
+    (sum, it) => sum + Number(it.subtotal || Number(it.quantity) * Number(it.unit_price) || 0),
+    0,
+  );
 }
 
 /* ─── Payment Verification ─── */

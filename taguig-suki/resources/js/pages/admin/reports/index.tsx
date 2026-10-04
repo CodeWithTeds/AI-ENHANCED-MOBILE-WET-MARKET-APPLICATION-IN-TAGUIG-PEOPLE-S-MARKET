@@ -5,12 +5,9 @@ import {
     BarChart3,
     Box,
     CheckCircle2,
-    CircleDollarSign,
     ClipboardList,
     Database,
-    Gauge,
     MessageSquare,
-    ReceiptText,
     RefreshCw,
     Server,
     ShieldCheck,
@@ -20,6 +17,7 @@ import {
     Store,
     Timer,
     Users,
+    XCircle,
     Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -29,14 +27,14 @@ import { dashboard } from '@/routes';
 
 type RangeOption = { value: string; label: string };
 type TrendPoint = { label: string; value: number };
-type StatusRow = { status: string; label: string; count: number; revenue: number };
-type PaymentRow = { method: string; label: string; count: number; revenue: number; percent: number };
-type ProductRow = { name: string; category: string; vendor: string; units_sold: number; revenue: number };
-type VendorRow = { id: number; stall_name: string; orders: number; revenue: number };
+type StatusRow = { status: string; label: string; count: number };
+type PaymentRow = { method: string; label: string; count: number; percent: number };
+type ProductRow = { name: string; category: string; vendor: string; units_sold: number };
+type VendorRow = { id: number; stall_name: string; orders: number };
 type RoleRow = { label: string; count: number };
 type VendorStatusRow = { status: string; label: string; count: number };
 type LocationRow = { location: string; count: number };
-type CategoryRow = { category: string; items: number; value: number };
+type CategoryRow = { category: string; items: number };
 type MovementRow = { type: string; label: string; count: number; net_change: number };
 type LowStockRow = { name: string; vendor: string; stock_quantity: number; reorder_level: number; unit: string };
 type AiRow = { status: string; label: string; count: number };
@@ -47,21 +45,16 @@ type Props = {
     range: string;
     range_options: RangeOption[];
     overview: {
-        total_revenue: number;
         total_orders: number;
-        avg_order_value: number;
         total_users: number;
         total_vendors: number;
         total_products: number;
-        inventory_value: number;
     };
     sales: {
-        total_revenue: number;
         total_orders: number;
-        avg_order_value: number;
         completed_orders: number;
         cancelled_orders: number;
-        revenue_trend: TrendPoint[];
+        orders_trend: TrendPoint[];
         status_breakdown: StatusRow[];
         payment_breakdown: PaymentRow[];
         top_products: ProductRow[];
@@ -91,8 +84,6 @@ type Props = {
         in_stock: number;
         low_stock: number;
         out_of_stock: number;
-        total_value: number;
-        retail_value: number;
         category_breakdown: CategoryRow[];
         stock_movements: MovementRow[];
         low_stock_items: LowStockRow[];
@@ -116,6 +107,19 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
         router.get('/admin/dashboard/reports', { range: value || undefined }, { preserveState: true, preserveScroll: true });
     }
 
+    // Defensive defaults — a missing series renders an empty chart, never a white screen.
+    const rangeOptions = range_options ?? [];
+    const ordersTrend = sales.orders_trend ?? [];
+    const statusBreakdown = sales.status_breakdown ?? [];
+    const paymentBreakdown = sales.payment_breakdown ?? [];
+    const topProducts = sales.top_products ?? [];
+    const topVendors = sales.top_vendors ?? [];
+    const newUsersTrend = users.new_users_trend ?? [];
+    const roleRows = users.roles ?? [];
+    const vendorStatusRows = vendors.status_breakdown ?? [];
+    const vendorLocations = vendors.locations ?? [];
+    const aiRows = system.ai_breakdown ?? [];
+
     const palette = PALETTE;
 
     return (
@@ -133,33 +137,33 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                         onChange={(e) => applyRange(e.target.value)}
                         className="h-9 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm focus:border-[#488562] focus:outline-none focus:ring-1 focus:ring-[#488562]"
                     >
-                        {range_options.map((opt) => (
+                        {rangeOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                     </select>
                 </div>
 
-                {/* ─── Overview KPIs ─── */}
+                {/* ─── Overview KPIs (order counts only — sales amounts are private to vendors) ─── */}
                 <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <KpiCard label="Total Revenue" value={formatMoney(overview.total_revenue)} icon={CircleDollarSign} color="#488562" bg="bg-[#488562]/10" sub={`${overview.total_orders.toLocaleString()} orders`} />
-                    <KpiCard label="Avg. Order Value" value={formatMoney(overview.avg_order_value)} icon={ReceiptText} color="#0867ff" bg="bg-[#0867ff]/10" sub="across all orders" />
+                    <KpiCard label="Total Orders" value={overview.total_orders.toLocaleString()} icon={ShoppingCart} color="#488562" bg="bg-[#488562]/10" sub={`${sales.completed_orders.toLocaleString()} completed`} />
+                    <KpiCard label="Completed Orders" value={sales.completed_orders.toLocaleString()} icon={CheckCircle2} color="#0867ff" bg="bg-[#0867ff]/10" sub="across all orders" />
                     <KpiCard label="Total Users" value={overview.total_users.toLocaleString()} icon={Users} color="#8b5cf6" bg="bg-purple-50" sub={`${users.new_users.toLocaleString()} new in range`} />
                 </div>
 
                 {/* ─── Sales Analytics ─── */}
-                <SectionHeader icon={BarChart3} color="#488562" title="Sales Analytics" subtitle="Revenue, orders, and payment insights" />
+                <SectionHeader icon={BarChart3} color="#488562" title="Sales Analytics" subtitle="Order volume and payment insights" />
 
                 <div className="grid gap-5 lg:grid-cols-3">
-                    {/* Revenue trend */}
+                    {/* Order volume trend */}
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
-                        <CardHeader title="Revenue Trend" sub={`${overview.total_orders.toLocaleString()} orders · ${formatMoney(sales.total_revenue)} revenue`} />
-                        <BarChart data={sales.revenue_trend} />
+                        <CardHeader title="Order Volume" sub={`${overview.total_orders.toLocaleString()} orders in selected range`} />
+                        <BarChart data={ordersTrend} />
                         <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-50 px-4 py-2.5">
                             <div className="flex items-center gap-2 text-xs text-gray-500">
                                 <CheckCircle2 className="h-3.5 w-3.5 text-[#488562]" />
                                 Completed
                             </div>
-                            <span className="text-sm font-bold text-gray-900">{formatMoney(sales.total_revenue)}</span>
+                            <span className="text-sm font-bold text-gray-900">{sales.completed_orders.toLocaleString()} orders</span>
                         </div>
                     </div>
 
@@ -167,9 +171,9 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="Payment Methods" sub="share of paid orders" />
                         <div className="flex flex-col items-center gap-5">
-                            <DonutChart segments={paymentSegments(sales.payment_breakdown, palette)} />
+                            <DonutChart segments={paymentSegments(paymentBreakdown, palette)} />
                             <div className="w-full space-y-2.5">
-                                {sales.payment_breakdown.map((p) => (
+                                {paymentBreakdown.map((p) => (
                                     <LegendRow key={p.method} label={p.label} value={`${p.count.toLocaleString()} · ${p.percent}%`} color={PAYMENT_COLORS[p.method] ?? palette[0]} />
                                 ))}
                             </div>
@@ -182,7 +186,7 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="Order Status" sub="orders in selected range" />
                         <div className="space-y-3">
-                            {sales.status_breakdown.map((s) => {
+                            {statusBreakdown.map((s) => {
                                 const color = STATUS_COLORS[s.status] ?? palette[7];
                                 const pct = sales.total_orders > 0 ? (s.count / sales.total_orders) * 100 : 0;
 
@@ -203,36 +207,45 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
 
                     {/* Top products */}
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                        <CardHeader title="Top Products" sub="by revenue in selected range" />
+                        <CardHeader title="Top Products" sub="by units sold in selected range" />
                         <div className="space-y-3">
-                            {sales.top_products.length === 0 ? (
+                            {topProducts.length === 0 ? (
                                 <EmptyState text="No sales data yet" />
                             ) : (
-                                sales.top_products.map((p, i) => (
-                                    <div key={i} className="flex items-center justify-between gap-3">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#488562]/10 text-xs font-bold text-[#488562]">{i + 1}</div>
-                                            <div className="min-w-0">
-                                                <div className="truncate text-xs font-semibold text-gray-900">{p.name}</div>
-                                                <div className="text-[10px] text-gray-400">{p.category} · {p.units_sold} sold · {p.vendor}</div>
+                                topProducts.map((p, i) => {
+                                    const max = topProducts[0]?.units_sold || 1;
+
+                                    return (
+                                        <div key={i}>
+                                            <div className="mb-1 flex items-center justify-between gap-3">
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#488562]/10 text-xs font-bold text-[#488562]">{i + 1}</div>
+                                                    <div className="min-w-0">
+                                                        <div className="truncate text-xs font-semibold text-gray-900">{p.name}</div>
+                                                        <div className="text-[10px] text-gray-400">{p.category} · {p.vendor}</div>
+                                                    </div>
+                                                </div>
+                                                <span className="shrink-0 text-xs font-bold text-gray-900">{p.units_sold.toLocaleString()} sold</span>
+                                            </div>
+                                            <div className="ml-11 h-1 w-auto overflow-hidden rounded-full bg-gray-100">
+                                                <div className="h-full rounded-full bg-gradient-to-r from-[#488562] to-[#89baa3]" style={{ width: `${(p.units_sold / max) * 100}%` }} />
                                             </div>
                                         </div>
-                                        <span className="shrink-0 text-xs font-bold text-gray-900">{formatMoney(p.revenue)}</span>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>
 
                     {/* Top vendors */}
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                        <CardHeader title="Top Vendors" sub="by revenue in selected range" />
+                        <CardHeader title="Top Vendors" sub="by orders in selected range" />
                         <div className="space-y-3">
-                            {sales.top_vendors.length === 0 ? (
+                            {topVendors.length === 0 ? (
                                 <EmptyState text="No sales data yet" />
                             ) : (
-                                sales.top_vendors.map((v) => {
-                                    const max = sales.top_vendors[0]?.revenue || 1;
+                                topVendors.map((v) => {
+                                    const max = topVendors[0]?.orders || 1;
 
                                     return (
                                         <div key={v.id}>
@@ -243,13 +256,12 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="truncate text-xs font-semibold text-gray-900">{v.stall_name}</div>
-                                                        <div className="text-[10px] text-gray-400">{v.orders.toLocaleString()} orders</div>
                                                     </div>
                                                 </div>
-                                                <span className="shrink-0 text-xs font-bold text-gray-900">{formatMoney(v.revenue)}</span>
+                                                <span className="shrink-0 text-xs font-bold text-gray-900">{v.orders.toLocaleString()} orders</span>
                                             </div>
                                             <div className="h-1 w-full overflow-hidden rounded-full bg-gray-100">
-                                                <div className="h-full rounded-full bg-gradient-to-r from-[#488562] to-[#89baa3]" style={{ width: `${(v.revenue / max) * 100}%` }} />
+                                                <div className="h-full rounded-full bg-gradient-to-r from-[#488562] to-[#89baa3]" style={{ width: `${(v.orders / max) * 100}%` }} />
                                             </div>
                                         </div>
                                     );
@@ -265,15 +277,15 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                 <div className="grid gap-5 lg:grid-cols-3">
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="User Growth" sub={`${users.new_users.toLocaleString()} new users in range`} />
-                        <BarChart data={users.new_users_trend} from="#6d28d9" to="#c4b5fd" />
+                        <BarChart data={newUsersTrend} from="#6d28d9" to="#c4b5fd" />
                     </div>
 
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="Account Types" sub="all registered accounts" />
                         <div className="flex flex-col items-center gap-5">
-                            <DonutChart segments={roleSegments(users.roles, palette)} />
+                            <DonutChart segments={roleSegments(roleRows, palette)} />
                             <div className="w-full space-y-2.5">
-                                {users.roles.map((r) => (
+                                {roleRows.map((r) => (
                                     <LegendRow key={r.label} label={r.label} value={r.count.toLocaleString()} color={ROLE_COLORS[r.label] ?? palette[0]} />
                                 ))}
                             </div>
@@ -300,9 +312,9 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="Approval Status" sub={`${vendors.new_vendors.toLocaleString()} registered in range`} />
                         <div className="flex flex-col items-center gap-5">
-                            <DonutChart segments={vendorSegments(vendors.status_breakdown, palette)} />
+                            <DonutChart segments={vendorSegments(vendorStatusRows, palette)} />
                             <div className="w-full space-y-2.5">
-                                {vendors.status_breakdown.map((v) => (
+                                {vendorStatusRows.map((v) => (
                                     <LegendRow key={v.status} label={v.label} value={v.count.toLocaleString()} color={VENDOR_STATUS_COLORS[v.status] ?? palette[7]} />
                                 ))}
                             </div>
@@ -312,8 +324,8 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                         <CardHeader title="Vendor Locations" sub="by stall location" />
                         <div className="space-y-3">
-                            {vendors.locations.map((loc) => {
-                                const max = vendors.locations[0]?.count || 1;
+                            {vendorLocations.map((loc) => {
+                                const max = vendorLocations[0]?.count || 1;
 
                                 return (
                                     <div key={loc.location}>
@@ -367,7 +379,7 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                             </div>
                         </div>
                         <div className="space-y-2.5">
-                            {system.ai_breakdown.map((a) => (
+                            {aiRows.map((a) => (
                                 <LegendRow key={a.status} label={a.label} value={a.count.toLocaleString()} color={AI_COLORS[a.status] ?? palette[7]} />
                             ))}
                         </div>
@@ -406,7 +418,7 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                             <PerfRow icon={ShoppingCart} label="Orders (Range)" value={sales.total_orders.toLocaleString()} color="#488562" />
                             <PerfRow icon={Users} label="Users" value={users.total.toLocaleString()} color="#8b5cf6" />
                             <PerfRow icon={Timer} label="Completed Orders" value={sales.completed_orders.toLocaleString()} color="#488562" />
-                            <PerfRow icon={Gauge} label="Avg. Order Value" value={formatMoney(overview.avg_order_value)} color="#0867ff" />
+                            <PerfRow icon={XCircle} label="Cancelled Orders" value={sales.cancelled_orders.toLocaleString()} color="#ef4444" />
                         </div>
                     </div>
                 </div>
@@ -582,8 +594,8 @@ function SystemCard({ icon: Icon, color, bg, label, value, sub, danger }: { icon
 
 /* ─── Charts ─── */
 
-function BarChart({ data, from, to }: { data: TrendPoint[]; from?: string; to?: string }) {
-    const max = Math.max(...data.map((d) => d.value), 1);
+function BarChart({ data = [], from, to }: { data?: TrendPoint[]; from?: string; to?: string }) {
+    const max = Math.max(...(data ?? []).map((d) => d.value), 1);
     const fromC = from ?? '#3a6e50';
     const toC = to ?? '#89baa3';
     const step = Math.ceil(data.length / 10);
@@ -648,10 +660,6 @@ function DonutChart({ segments, size = 160, thickness = 26 }: { segments: Segmen
 }
 
 /* ─── Helpers ─── */
-
-function formatMoney(value: number): string {
-    return '\u20B1' + Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
 
 function formatNumber(value: number): string {
     if (value >= 1_000_000) {

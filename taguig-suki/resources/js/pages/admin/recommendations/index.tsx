@@ -62,7 +62,6 @@ type RecipeRecommendation = {
         ingredient: string;
         product_id: number;
         product_name: string;
-        price: string;
         unit: string;
         category: string;
     }[];
@@ -712,12 +711,7 @@ function RecipeDetail({ rec }: { rec: RecipeRecommendation }) {
                                     </div>
                                 </div>
                                 <span className="font-bold text-gray-900">
-                                    &#8369;
-                                    {Number(match.price).toLocaleString(
-                                        undefined,
-                                        { maximumFractionDigits: 2 },
-                                    )}
-                                    /{match.unit}
+                                    per {match.unit}
                                 </span>
                             </div>
                         ))}

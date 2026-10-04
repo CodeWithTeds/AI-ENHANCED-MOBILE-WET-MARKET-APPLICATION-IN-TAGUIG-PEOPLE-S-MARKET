@@ -31,7 +31,7 @@ class RegisterRequest extends FormRequest
                 'unique:users,email',
                 function (string $attribute, mixed $value, \Closure $fail) {
                     if (\App\Models\RejectedEmail::isBlocked($value)) {
-                        $fail('This email address has been blocked from registration. Please contact the market administration office.');
+                        $fail(\App\Models\RejectedEmail::blockedMessage($value));
                     }
                 },
             ],

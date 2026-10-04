@@ -63,7 +63,14 @@ class AiRecommendationManagementService
             'error_message' => $rec->error_message,
             'ingredient_count' => count($payload['ingredients'] ?? []),
             'matching_count' => count($rec->matching_products ?? []),
-            'matching_products' => $rec->matching_products ?? [],
+            // Product prices are private to vendors — strip them for admin view.
+            'matching_products' => collect($rec->matching_products ?? [])->map(function ($match) {
+                if (is_array($match)) {
+                    unset($match['price']);
+                }
+
+                return $match;
+            })->all(),
             'payload' => $payload,
             'review_count' => $rec->reviews_count ?? 0,
             'review_average' => isset($reviewAggregates[$rec->recipe_name])

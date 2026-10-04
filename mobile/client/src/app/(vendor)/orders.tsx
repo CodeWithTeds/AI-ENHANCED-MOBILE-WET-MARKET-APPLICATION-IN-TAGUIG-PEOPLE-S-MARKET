@@ -3,7 +3,8 @@
  *
  * Features:
  *  - Shows only orders that contain this vendor's items
- *  - Segmented status filter (All / Pending / Confirmed / Ready / Completed) — no Processing
+ *  - Segmented status filter (All / Pending / Ready / Completed) — no Confirmed tab
+ *    (confirming a pending order immediately marks it Ready, so nothing ever sits in Confirmed)
  *  - Expandable order cards with customer avatar, items, subtotal
  *  - Payment verification for GCash/Maya (Pending Verification → Paid / Rejected)
  *  - One-tap status update: Pending → Confirm (auto → Ready) → Completed — vendor confirms once and order becomes Ready
@@ -28,6 +29,8 @@ import { useRouter } from 'expo-router';
 import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
+  getVendorPortionStatus,
+  getVendorPortionTotal,
   updateOrderStatus,
   verifyPayment,
   ORDER_STATUS_CONFIG,
@@ -41,7 +44,6 @@ import { ApiError } from '@/services/api';
 const STATUS_TABS: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'all',        label: 'All' },
   { value: 'pending',    label: 'Pending' },
-  { value: 'confirmed',  label: 'Confirmed' },
   { value: 'ready',      label: 'Ready' },
   { value: 'completed',  label: 'Completed' },
 ];
@@ -87,9 +89,11 @@ export default function VendorOrdersScreen() {
     fetchOrders();
   }
 
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  // All counts/tabs below use the vendor's OWN portion status — never the
+  // overall multi-vendor order status.
+  const pendingCount = orders.filter((o) => getVendorPortionStatus(o) === 'pending').length;
   const pendingVerificationCount = orders.filter((o) => (o.payment_status as string) === 'pending_verification').length;
-  const completedOrders = orders.filter((o) => o.status === 'completed');
+  const completedOrders = orders.filter((o) => getVendorPortionStatus(o) === 'completed');
   const completedCount = completedOrders.length;
   const completedRevenue = completedOrders.reduce(
     (sum, o) =>
@@ -103,15 +107,16 @@ export default function VendorOrdersScreen() {
 
   const filtered = activeTab === 'all'
     ? orders
-    : orders.filter((o) => o.status === activeTab);
+    : orders.filter((o) => getVendorPortionStatus(o) === activeTab);
 
   async function handleStatusUpdate(order: Order) {
-    const next = NEXT_STATUS[order.status as OrderStatus];
+    const portionStatus = getVendorPortionStatus(order);
+    const next = NEXT_STATUS[portionStatus];
     const authToken = token ?? await getToken();
     if (!next || !authToken) return;
 
     // Pending → Confirmed automatically becomes Ready (processing removed)
-    const isConfirmToReady = order.status === 'pending' && next === 'confirmed';
+    const isConfirmToReady = portionStatus === 'pending' && next === 'confirmed';
     const cfg = ORDER_STATUS_CONFIG[isConfirmToReady ? 'ready' : next];
     const title = isConfirmToReady ? 'Confirm Order' : 'Update Order Status';
     const message = isConfirmToReady
@@ -130,8 +135,10 @@ export default function VendorOrdersScreen() {
             setUpdatingId(order.id);
             try {
               const updated = await updateOrderStatus(order.id, next, authToken);
+              // Replace wholesale: response carries the new portion item
+              // statuses plus the derived overall order status.
               setOrders((prev) =>
-                prev.map((o) => (o.id === updated.id ? { ...o, status: updated.status } : o)),
+                prev.map((o) => (o.id === updated.id ? updated : o)),
               );
             } catch (err) {
               const msg = err instanceof ApiError ? err.message : 'Failed to update status';
@@ -349,8 +356,11 @@ function VendorOrderCard({
   onStatusUpdate: () => void;
   onVerify: (action: 'verify' | 'reject') => void;
 }) {
-  const statusCfg = ORDER_STATUS_CONFIG[order.status as OrderStatus];
-  const nextStatus = NEXT_STATUS[order.status as OrderStatus];
+  // This card always reflects the vendor's OWN portion — not the overall order.
+  const portionStatus = getVendorPortionStatus(order);
+  const portionTotal = getVendorPortionTotal(order);
+  const statusCfg = ORDER_STATUS_CONFIG[portionStatus];
+  const nextStatus = NEXT_STATUS[portionStatus];
   const nextCfg = nextStatus ? ORDER_STATUS_CONFIG[nextStatus] : null;
 
   const paymentStatus = (order.payment_status as PaymentStatus) ?? 'unpaid';
@@ -380,13 +390,13 @@ function VendorOrderCard({
         <View style={styles.cardHeaderCenter}>
           <View style={styles.nameRow}>
             <Text style={styles.customerName} numberOfLines={1}>{customerName}</Text>
-            {order.status === 'pending' && <View style={styles.newDot} />}
+            {portionStatus === 'pending' && <View style={styles.newDot} />}
             {needsVerification && <View style={[styles.newDot, { backgroundColor: '#D97706' }]} />}
           </View>
         </View>
 
         <View style={styles.cardHeaderRight}>
-          <Text style={styles.cardTotal}>₱{Number(order.total_amount).toFixed(2)}</Text>
+          <Text style={styles.cardTotal}>₱{portionTotal.toFixed(2)}</Text>
           <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
             <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
             <Text style={[styles.statusText, { color: statusCfg.color }]}>
@@ -529,8 +539,8 @@ function VendorOrderCard({
           ))}
 
           <View style={styles.itemsTotalRow}>
-            <Text style={styles.itemsTotalLabel}>Total</Text>
-            <Text style={styles.itemsTotalValue}>₱{Number(order.total_amount).toFixed(2)}</Text>
+            <Text style={styles.itemsTotalLabel}>My Portion Total</Text>
+            <Text style={styles.itemsTotalValue}>₱{portionTotal.toFixed(2)}</Text>
           </View>
 
           {/* Status Update Button */}
@@ -557,7 +567,7 @@ function VendorOrderCard({
             </TouchableOpacity>
           )}
 
-          {order.status === 'completed' && (
+          {portionStatus === 'completed' && (
             <View style={[styles.statusRow, { backgroundColor: '#F0FDF4' }]}>
               <Ionicons name="checkmark-done-circle" size={18} color="#16A34A" />
               <Text style={[styles.statusRowText, { color: '#15803D' }]}>Order completed</Text>
@@ -567,7 +577,7 @@ function VendorOrderCard({
             </View>
           )}
 
-          {order.status === 'cancelled' && (
+          {portionStatus === 'cancelled' && (
             <View style={[styles.statusRow, { backgroundColor: '#FEF2F2' }]}>
               <Ionicons name="close-circle" size={18} color="#DC2626" />
               <Text style={[styles.statusRowText, { color: '#B91C1C' }]}>Order cancelled</Text>

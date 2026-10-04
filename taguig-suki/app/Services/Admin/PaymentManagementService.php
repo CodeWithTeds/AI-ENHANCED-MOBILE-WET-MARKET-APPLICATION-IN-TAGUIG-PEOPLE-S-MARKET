@@ -13,7 +13,7 @@ class PaymentManagementService
     {
         $query = Order::query()->with([
             'user:id,name,email',
-            'items:id,order_id,vendor_id,product_name,quantity,unit_price,subtotal',
+            'items:id,order_id,vendor_id,product_name,quantity,status',
             'items.vendor:id,stall_name,stall_location',
         ]);
 
@@ -52,20 +52,18 @@ class PaymentManagementService
             ? $this->resolvePaymentStatusFromPayment($order->payment_status)
             : $this->resolvePaymentStatus($order->status);
 
-        // Group items by vendor for payout breakdown
+        // Group items by vendor (order counts only — amounts are private to vendors)
         $payouts = $order->items->groupBy('vendor_id')->map(function ($items, $vendorId) {
             $vendor = $items->first()->vendor;
             return [
                 'vendor_id' => $vendorId,
                 'stall_name' => $vendor?->stall_name ?? 'Unknown Vendor',
                 'stall_location' => $vendor?->stall_location ?? null,
-                'amount' => $items->sum(fn ($i) => (float) $i->subtotal),
                 'items_count' => $items->count(),
                 'items' => $items->map(fn ($i) => [
                     'product_name' => $i->product_name,
                     'quantity' => $i->quantity,
-                    'unit_price' => $i->unit_price,
-                    'subtotal' => $i->subtotal,
+                    'status' => $i->status,
                 ])->all(),
             ];
         })->values()->all();
@@ -81,7 +79,6 @@ class PaymentManagementService
             'payment_submitted_at' => $order->payment_submitted_at,
             'payment_verified_at' => $order->payment_verified_at,
             'payment_verified_by' => $order->payment_verified_by,
-            'total_amount' => $order->total_amount,
             'notes' => $order->notes,
             'created_at' => $order->created_at,
             'updated_at' => $order->updated_at,
@@ -96,8 +93,7 @@ class PaymentManagementService
             'items' => $order->items->map(fn ($item) => [
                 'product_name' => $item->product_name,
                 'quantity' => $item->quantity,
-                'unit_price' => $item->unit_price,
-                'subtotal' => $item->subtotal,
+                'status' => $item->status,
                 'vendor_stall' => $item->vendor?->stall_name,
             ])->all(),
         ];
@@ -191,32 +187,12 @@ class PaymentManagementService
 
     private function getStats(): array
     {
-        $totalTransactions = Order::count();
-
-        $totalRevenue = (float) Order::where('status', '!=', 'cancelled')->sum('total_amount');
-        $successfulRevenue = (float) Order::where('status', 'completed')->sum('total_amount');
-        $pendingRevenue = (float) Order::whereIn('status', ['pending', 'confirmed', 'ready'])->sum('total_amount');
-        $failedRevenue = (float) Order::where('status', 'cancelled')->sum('total_amount');
-
-        $pendingCount = Order::whereIn('status', ['pending', 'confirmed', 'ready'])->count();
-        $successfulCount = Order::where('status', 'completed')->count();
-        $failedCount = Order::where('status', 'cancelled')->count();
-
-        // Payout to vendors = sum of order_items for completed orders (actual money vendors receive)
-        $totalPayout = (float) OrderItem::whereHas('order', fn (Builder $q) => $q->where('status', 'completed'))->sum('subtotal');
-        $pendingPayout = (float) OrderItem::whereHas('order', fn (Builder $q) => $q->whereIn('status', ['pending', 'confirmed', 'ready']))->sum('subtotal');
-
+        // Counts only — revenue and vendor payouts are private to vendors.
         return [
-            'total_transactions' => $totalTransactions,
-            'total_revenue' => $totalRevenue,
-            'successful_revenue' => $successfulRevenue,
-            'pending_revenue' => $pendingRevenue,
-            'failed_revenue' => $failedRevenue,
-            'successful_count' => $successfulCount,
-            'pending_count' => $pendingCount,
-            'failed_count' => $failedCount,
-            'total_payout' => $totalPayout,
-            'pending_payout' => $pendingPayout,
+            'total_transactions' => Order::count(),
+            'successful_count' => Order::where('status', 'completed')->count(),
+            'pending_count' => Order::whereIn('status', ['pending', 'confirmed', 'ready'])->count(),
+            'failed_count' => Order::where('status', 'cancelled')->count(),
         ];
     }
 
@@ -225,7 +201,7 @@ class PaymentManagementService
         $methods = ['cash' => 'Cash', 'gcash' => 'GCash', 'maya' => 'Maya'];
         $total = Order::where('status', '!=', 'cancelled')->count() ?: 1;
 
-        return Order::select('payment_method', DB::raw('COUNT(*) as count'), DB::raw('SUM(total_amount) as revenue'))
+        return Order::select('payment_method', DB::raw('COUNT(*) as count'))
             ->where('status', '!=', 'cancelled')
             ->groupBy('payment_method')
             ->get()
@@ -233,16 +209,16 @@ class PaymentManagementService
                 'method' => $row->payment_method,
                 'label' => $methods[$row->payment_method] ?? ucfirst($row->payment_method),
                 'count' => (int) $row->count,
-                'revenue' => round((float) $row->revenue, 2),
                 'percent' => round(((int) $row->count / $total) * 100, 1),
             ])
-            ->sortByDesc('revenue')
+            ->sortByDesc('count')
             ->values()
             ->all();
     }
 
     private function getVendorPayouts(): array
     {
+        // Order counts per vendor only — payout amounts are private to vendors.
         return OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('vendors', 'order_items.vendor_id', '=', 'vendors.id')
@@ -251,11 +227,10 @@ class PaymentManagementService
                 'vendors.id',
                 'vendors.stall_name',
                 'vendors.stall_location',
-                DB::raw('COUNT(DISTINCT order_items.order_id) as orders_count'),
-                DB::raw('SUM(order_items.subtotal) as payout')
+                DB::raw('COUNT(DISTINCT order_items.order_id) as orders_count')
             )
             ->groupBy('vendors.id', 'vendors.stall_name', 'vendors.stall_location')
-            ->orderByDesc('payout')
+            ->orderByDesc('orders_count')
             ->limit(6)
             ->get()
             ->map(fn ($row) => [
@@ -263,7 +238,6 @@ class PaymentManagementService
                 'stall_name' => $row->stall_name,
                 'stall_location' => $row->stall_location,
                 'orders_count' => (int) $row->orders_count,
-                'payout' => round((float) $row->payout, 2),
             ])
             ->all();
     }

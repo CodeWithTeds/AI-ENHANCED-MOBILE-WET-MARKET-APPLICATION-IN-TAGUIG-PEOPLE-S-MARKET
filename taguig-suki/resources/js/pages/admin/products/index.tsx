@@ -23,7 +23,6 @@ type Product = {
     name: string;
     description: string | null;
     category: string;
-    price: string;
     unit: string;
     image: string | null;
     is_available: boolean;

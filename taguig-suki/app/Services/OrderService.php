@@ -177,7 +177,8 @@ class OrderService
                 $qty = (float) $item['quantity'];
                 $unitPrice = (float) $product->price;
 
-                // Create order item (snapshot of product data at purchase time)
+                // Create order item (snapshot of product data at purchase time).
+                // Each vendor's portion starts as pending and advances independently.
                 $order->items()->create([
                     'product_id' => $product->id,
                     'vendor_id' => $product->vendor_id,
@@ -187,6 +188,7 @@ class OrderService
                     'quantity' => $qty,
                     'unit_price' => $unitPrice,
                     'subtotal' => round($unitPrice * $qty, 2),
+                    'status' => 'pending',
                 ]);
 
                 // Deduct stock and log the sale
@@ -383,9 +385,25 @@ class OrderService
     }
 
     /**
-     * Vendor updates the status of an order they own items in.
+     * Progression ranks used to derive the overall order status from its
+     * per-vendor portions. The overall status is the least-advanced portion:
+     * the order is Ready / Completed only once EVERY vendor's portion is.
+     */
+    private const PORTION_STATUS_RANKS = [
+        'cancelled' => -1,
+        'pending' => 0,
+        'confirmed' => 1,
+        'ready' => 2,
+        'completed' => 3,
+    ];
+
+    /**
+     * Vendor updates the status of THEIR OWN portion of an order.
+     * Other vendors' portions are never touched: each vendor independently
+     * confirms, prepares, and completes only their own items.
+     *
      * Processing status removed: pending → confirmed → ready → completed.
-     * When vendor confirms a pending order, it automatically moves to Ready to reduce actions.
+     * When vendor confirms a pending portion, it automatically moves to Ready.
      */
     public function updateOrderStatus(User $user, int $orderId, string $status): Order
     {
@@ -399,37 +417,76 @@ class OrderService
             throw new UnprocessableEntityHttpException('Processing status has been removed. Use Ready instead.');
         }
 
-        // Confirm this vendor has items in this order
+        // Confirm this vendor has items in this order (load ALL items for aggregation)
         $order = Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
+            ->with('items')
             ->findOrFail($orderId);
 
-        // Auto-advance: pending + confirm => directly to Ready (one-click confirm)
-        if ($order->status === 'pending' && $status === 'confirmed') {
-            $order->update(['status' => 'ready']);
+        if ($order->status === 'cancelled') {
+            throw new UnprocessableEntityHttpException('This order has been cancelled and can no longer be updated.');
+        }
 
+        $portionStatus = $this->portionStatus($order, $vendor->id);
+
+        // Auto-advance: pending + confirm => directly to Ready (one-click confirm)
+        $effectiveStatus = ($portionStatus === 'pending' && $status === 'confirmed') ? 'ready' : $status;
+
+        // Update ONLY this vendor's items — never another vendor's portion.
+        $order->items()
+            ->where('vendor_id', $vendor->id)
+            ->update(['status' => $effectiveStatus]);
+
+        if ($portionStatus === 'pending' && $status === 'confirmed') {
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'confirmed',
-                'note' => 'Order confirmed by vendor',
+                'note' => "Portion confirmed by {$vendor->stall_name}",
             ]);
-            OrderStatusHistory::create([
-                'order_id' => $order->id,
-                'status' => 'ready',
-                'note' => 'Automatically marked as Ready after confirmation (processing step removed)',
-            ]);
-
-            return $order->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
         }
 
-        $order->update(['status' => $status]);
+        $this->refreshOverallStatus($order->fresh('items'), "Portion updated to {$effectiveStatus} by {$vendor->stall_name}");
+
+        return $order->fresh()->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+    }
+
+    /**
+     * Get the fulfillment status of one vendor's portion of an order.
+     * All of a vendor's items always move together, so the first item's
+     * status represents the portion (falls back to the overall status).
+     */
+    public function portionStatus(Order $order, int $vendorId): string
+    {
+        $item = $order->items->firstWhere('vendor_id', $vendorId);
+
+        return $item?->status ?? $order->status;
+    }
+
+    /**
+     * Recompute the overall order status from its portions and persist it
+     * when it changed. Records timeline entries only for overall transitions
+     * so the customer sees Ready / Completed once ALL portions get there.
+     */
+    public function refreshOverallStatus(Order $order, ?string $note = null): bool
+    {
+        $ranks = self::PORTION_STATUS_RANKS;
+
+        $overall = $order->items->reduce(
+            fn (?string $carry, $item) => $carry === null || ($ranks[$item->status] ?? 0) < ($ranks[$carry] ?? 0) ? $item->status : $carry
+        ) ?? 'pending';
+
+        if ($overall === $order->status) {
+            return false;
+        }
+
+        $order->update(['status' => $overall]);
 
         OrderStatusHistory::create([
             'order_id' => $order->id,
-            'status' => $status,
-            'note' => 'Status updated by vendor',
+            'status' => $overall,
+            'note' => $note ?? "Order status updated to {$overall}",
         ]);
 
-        return $order->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+        return true;
     }
 
     /**

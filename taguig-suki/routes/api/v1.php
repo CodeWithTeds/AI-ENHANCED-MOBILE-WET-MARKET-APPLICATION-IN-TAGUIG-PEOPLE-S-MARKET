@@ -50,7 +50,7 @@ Route::get('/reviews/recipe', [ReviewController::class, 'recipeReviews']);
 Route::get('/vendors/{vendor}/payment-details', [VendorPaymentSettingsController::class, 'publicShow']);
 Route::post('/vendors/payment-details/batch', [VendorPaymentSettingsController::class, 'batchShow']);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'profile']);
     Route::get('/vendor/status', [VendorRegistrationController::class, 'status']);
