@@ -17,7 +17,7 @@ import {
     Users,
 } from 'lucide-react';
 
-const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/63898ef7-43e8-478c-8a2e-574ec3fe1f2e';
+const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/0fa6598f-cd79-4f8c-a735-cbffc1aa247a';
 
 export default function Welcome() {
     const { auth } = usePage().props;
