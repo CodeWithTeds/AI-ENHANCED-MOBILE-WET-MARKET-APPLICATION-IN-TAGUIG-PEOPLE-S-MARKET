@@ -15,6 +15,7 @@ export interface CartItem {
   unit: string;
   category: string;
   quantity: number;
+  image?: string | null;
 }
 
 interface CartContextValue {
@@ -66,7 +67,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const normalizedQty = Math.round(quantity * 100) / 100;
     if (idx >= 0) {
       const newQty = Math.round((next[idx].quantity + normalizedQty) * 100) / 100;
-      next[idx] = { ...next[idx], quantity: newQty };
+      next[idx] = {
+        ...next[idx],
+        quantity: newQty,
+        image: product.image ?? next[idx].image,
+      };
     } else {
       next.push({ ...product, quantity: normalizedQty });
     }

@@ -21,6 +21,7 @@ export interface MatchingProduct {
   price: number;
   unit: string;
   category: string;
+  image?: string | null;
 }
 
 export interface RecipeResult {

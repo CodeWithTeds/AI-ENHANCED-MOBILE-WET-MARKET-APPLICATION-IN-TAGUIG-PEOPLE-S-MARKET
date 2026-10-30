@@ -8,6 +8,7 @@ import { api } from './api';
 
 export type OrderStatus =
   | 'pending'
+  | 'pending_confirmation'
   | 'confirmed'
   | 'ready'
   | 'completed'
@@ -16,6 +17,8 @@ export type OrderStatus =
 export type PaymentMethod = 'cash' | 'gcash' | 'maya';
 
 export type PaymentStatus = 'unpaid' | 'pending_verification' | 'paid' | 'rejected';
+
+export type ConfirmationStatus = 'pending_confirmation' | 'confirmed' | 'cancelled' | 'not_required' | 'none';
 
 export interface OrderItem {
   id: number;
@@ -29,6 +32,7 @@ export interface OrderItem {
   subtotal: number;
   /** Per-vendor fulfillment status of this item's portion (vendor-scoped responses). */
   status?: OrderStatus;
+  confirmation_status?: ConfirmationStatus;
   vendor?: {
     id: number;
     stall_name: string;
@@ -38,6 +42,10 @@ export interface OrderItem {
     gcash_qr_path?: string | null;
     maya_qr_path?: string | null;
   };
+  product?: {
+    id: number;
+    image: string | null;
+  } | null;
 }
 
 /** One step in the order status timeline (recorded server-side). */
@@ -53,6 +61,7 @@ export interface Order {
   id: number;
   order_number: string;
   status: OrderStatus;
+  confirmation_status?: ConfirmationStatus;
   total_amount: number;
   payment_method: PaymentMethod | string;
   payment_reference_number?: string | null;
@@ -266,11 +275,21 @@ export const ORDER_STATUS_CONFIG: Record<
   OrderStatus,
   { label: string; color: string; bg: string; icon: string }
 > = {
-  pending:    { label: 'Pending',    color: '#D97706', bg: '#FEF3C7', icon: 'time-outline' },
-  confirmed:  { label: 'Confirmed',  color: '#2563EB', bg: '#EFF6FF', icon: 'checkmark-circle-outline' },
-  ready:      { label: 'Ready',      color: '#059669', bg: '#ECFDF5', icon: 'bag-check-outline' },
-  completed:  { label: 'Completed',  color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-done-outline' },
-  cancelled:  { label: 'Cancelled',  color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
+  pending:              { label: 'Pending',              color: '#D97706', bg: '#FEF3C7', icon: 'time-outline' },
+  pending_confirmation: { label: 'Pending Confirmation', color: '#D97706', bg: '#FEF3C7', icon: 'chatbubble-ellipses-outline' },
+  confirmed:            { label: 'Confirmed',            color: '#2563EB', bg: '#EFF6FF', icon: 'checkmark-circle-outline' },
+  ready:                { label: 'Ready',                color: '#059669', bg: '#ECFDF5', icon: 'bag-check-outline' },
+  completed:            { label: 'Completed',            color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-done-outline' },
+  cancelled:            { label: 'Cancelled',            color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
+};
+
+export const CONFIRMATION_STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string; bg: string; icon: string }
+> = {
+  pending_confirmation: { label: 'Pending Confirmation', color: '#D97706', bg: '#FEF3C7', icon: 'chatbubble-ellipses-outline' },
+  confirmed:            { label: 'Confirmed',            color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-circle-outline' },
+  cancelled:            { label: 'Cancelled',            color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
 };
 
 export const PAYMENT_STATUS_CONFIG: Record<
