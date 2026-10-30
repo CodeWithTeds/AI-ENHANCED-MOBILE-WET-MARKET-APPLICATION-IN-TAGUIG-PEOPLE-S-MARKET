@@ -18,6 +18,7 @@ class OrderItem extends Model
         'unit_price',
         'subtotal',
         'status',
+        'confirmation_status',
     ];
 
     protected function casts(): array

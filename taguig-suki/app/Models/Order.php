@@ -12,6 +12,9 @@ class Order extends Model
         'user_id',
         'order_number',
         'status',
+        'confirmation_status',
+        'confirmed_at',
+        'confirmed_by',
         'total_amount',
         'payment_method',
         'payment_reference_number',
@@ -28,6 +31,7 @@ class Order extends Model
             'total_amount' => 'decimal:2',
             'payment_submitted_at' => 'datetime',
             'payment_verified_at' => 'datetime',
+            'confirmed_at' => 'datetime',
         ];
     }
 
@@ -49,6 +53,16 @@ class Order extends Model
     public function verifier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'payment_verified_by');
+    }
+
+    public function confirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(OrderConversation::class);
     }
 
     /**

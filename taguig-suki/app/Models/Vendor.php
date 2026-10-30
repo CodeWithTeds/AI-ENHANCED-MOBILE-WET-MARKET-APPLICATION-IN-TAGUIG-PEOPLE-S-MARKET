@@ -53,6 +53,11 @@ class Vendor extends Model
         return $this->hasMany(Inventory::class);
     }
 
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(OrderConversation::class);
+    }
+
     public function isApproved(): bool
     {
         return $this->status === VendorStatus::Approved->value;

@@ -62,6 +62,11 @@ class User extends Authenticatable
         return $this->hasOne(CustomerVerification::class);
     }
 
+    public function customerConversations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(OrderConversation::class, 'customer_id');
+    }
+
     /**
      * Determine if the user is an admin.
      */
