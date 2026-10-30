@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,10 @@ import {
   type PaymentStatus,
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
+import { OrderChatModal } from '@/components/chat/OrderChatModal';
+import { ReviewSheet } from '@/components/customer/ReviewSheet';
+import { getProductImageUrl } from '@/utils/image';
+import { getCategoryEmoji } from '@/constants/categories';
 
 export default function OrdersScreen() {
   const { token } = useCustomerAuth();
@@ -39,10 +44,14 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chatOrder, setChatOrder] = useState<{ order: Order; vendorId: number; stallName: string } | null>(null);
+  const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
+  const [currentToken, setCurrentToken] = useState<string>('');
 
   const fetchOrders = useCallback(async () => {
     const authToken = await getAuthToken();
     if (!authToken) { setLoading(false); return; }
+    setCurrentToken(authToken);
     try {
       const result = await getOrders(authToken);
       setOrders(result.data ?? []);
@@ -128,10 +137,46 @@ export default function OrdersScreen() {
               onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
               onUpdated={handleUpdated}
               getToken={getAuthToken}
+              onOpenChat={(ord) => {
+                const firstVendor = ord.items.find((i) => !!i.vendor) ?? ord.items[0];
+                const vId = firstVendor?.vendor?.id ?? firstVendor?.vendor_id ?? 1;
+                const vName = firstVendor?.vendor?.stall_name ?? 'Vendor Stall';
+                setChatOrder({ order: ord, vendorId: vId, stallName: vName });
+              }}
+              onRate={(ord) => setRatingOrder(ord)}
             />
           ))
         )}
       </ScrollView>
+
+      {/* In-App Order Chat Modal */}
+      {chatOrder && currentToken ? (
+        <OrderChatModal
+          visible={true}
+          orderId={chatOrder.order.id}
+          vendorId={chatOrder.vendorId}
+          token={currentToken}
+          userRole="customer"
+          stallName={chatOrder.stallName}
+          orderNumber={chatOrder.order.order_number}
+          isCod={chatOrder.order.payment_method === 'cash'}
+          onClose={() => setChatOrder(null)}
+          onStatusUpdated={() => fetchOrders()}
+        />
+      ) : null}
+
+      {/* Rate Your Purchase Modal */}
+      {ratingOrder && (
+        <ReviewSheet
+          visible={!!ratingOrder}
+          onClose={() => setRatingOrder(null)}
+          order={ratingOrder}
+          onSubmitted={() => {
+            setRatingOrder(null);
+            fetchOrders();
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -144,12 +189,16 @@ function OrderCard({
   onToggle,
   onUpdated,
   getToken,
+  onOpenChat,
+  onRate,
 }: {
   order: Order;
   expanded: boolean;
   onToggle: () => void;
   onUpdated: (o: Order) => void;
   getToken: () => Promise<string | null>;
+  onOpenChat?: (order: Order) => void;
+  onRate?: (order: Order) => void;
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [refInput, setRefInput] = useState('');
@@ -204,12 +253,21 @@ function OrderCard({
         </View>
 
         <View style={styles.cardHeaderRight}>
-          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
-            <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.color} />
-            <Text style={[styles.statusText, { color: statusCfg.color }]}>
-              {statusCfg.label}
-            </Text>
-          </View>
+          {order.confirmation_status === 'pending_confirmation' && order.status !== 'cancelled' ? (
+            <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color="#D97706" />
+              <Text style={[styles.statusText, { color: '#D97706' }]}>
+                Pending Confirmation
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { backgroundColor: statusCfg?.bg ?? '#FEF3C7' }]}>
+              <Ionicons name={(statusCfg?.icon as any) ?? 'time-outline'} size={12} color={statusCfg?.color ?? '#D97706'} />
+              <Text style={[styles.statusText, { color: statusCfg?.color ?? '#D97706' }]}>
+                {statusCfg?.label ?? order.status}
+              </Text>
+            </View>
+          )}
           <Ionicons
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={16}
@@ -308,7 +366,7 @@ function OrderCard({
 
           {order.items.map((item) => (
             <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+              <OrderItemThumbnail image={item.product?.image} category={item.category} />
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
                 <Text style={styles.itemMeta}>
@@ -328,11 +386,24 @@ function OrderCard({
           </View>
 
           {/* Track + Review actions */}
+          {onOpenChat && (
+            <TouchableOpacity
+              style={styles.chatVendorBtn}
+              activeOpacity={0.85}
+              onPress={() => onOpenChat(order)}
+            >
+              <Ionicons name="chatbubbles-outline" size={16} color="#059669" />
+              <Text style={styles.chatVendorBtnText}>
+                {order.confirmation_status === 'pending_confirmation' ? 'Confirm / Chat with Vendor' : 'Chat with Vendor'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {order.status === 'completed' && (
             <TouchableOpacity
               style={styles.rateBtn}
               activeOpacity={0.85}
-              onPress={() => router.push(`/track/${order.id}?rate=1`)}
+              onPress={() => (onRate ? onRate(order) : router.push(`/(customer)/track/${order.id}` as any))}
             >
               <Ionicons name="star" size={16} color="#FFFFFF" />
               <Text style={styles.rateBtnText}>Rate Your Purchase</Text>
@@ -342,7 +413,7 @@ function OrderCard({
           <TouchableOpacity
             style={[styles.trackBtn, order.status === 'completed' && styles.trackBtnOutline]}
             activeOpacity={0.85}
-            onPress={() => router.push(`/track/${order.id}`)}
+            onPress={() => router.push(`/(customer)/track/${order.id}` as any)}
           >
             <Ionicons
               name="pulse-outline"
@@ -361,12 +432,28 @@ function OrderCard({
 
 /* ─── Helpers ─── */
 
-function getCategoryEmoji(category: string): string {
-  const map: Record<string, string> = {
-    meat: '🥩', fish: '🐟', vegetables: '🥬', fruits: '🍎',
-    spices: '🌶️', poultry: '🍗', condiments: '🫙', dairy: '🥛',
-  };
-  return map[category.toLowerCase()] ?? '🛒';
+function OrderItemThumbnail({ image, category }: { image?: string | null; category: string }) {
+  const [failed, setFailed] = useState(false);
+  const url = getProductImageUrl(image);
+
+  if (url && !failed) {
+    return (
+      <View style={styles.itemImageWrap}>
+        <Image
+          source={{ uri: url }}
+          style={styles.itemImage}
+          resizeMode="cover"
+          onError={() => setFailed(true)}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.itemEmojiWrap}>
+      <Text style={styles.itemEmoji}>{getCategoryEmoji(category)}</Text>
+    </View>
+  );
 }
 
 /* ─── Styles ─── */
@@ -488,6 +575,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7,
     borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
   },
+  itemImageWrap: {
+    width: 38, height: 38, borderRadius: 8, overflow: 'hidden',
+    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  itemImage: { width: '100%', height: '100%' },
+  itemEmojiWrap: {
+    width: 38, height: 38, borderRadius: 8,
+    backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center',
+  },
   itemEmoji: { fontSize: 18 },
   itemInfo: { flex: 1 },
   itemName: { fontSize: 13, fontWeight: '600', color: '#111827' },
@@ -531,4 +627,22 @@ const styles = StyleSheet.create({
     borderColor: '#1B6B45',
   },
   trackBtnTextOutline: { color: '#1B6B45' },
+
+  chatVendorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    borderRadius: 12,
+    paddingVertical: 11,
+    marginTop: 12,
+  },
+  chatVendorBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
 });
