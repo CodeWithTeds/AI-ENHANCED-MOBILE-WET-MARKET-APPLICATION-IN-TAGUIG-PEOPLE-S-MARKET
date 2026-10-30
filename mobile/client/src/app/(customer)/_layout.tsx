@@ -2,14 +2,14 @@
  * Customer Layout — bottom tab navigation for customer app.
  */
 
-import { StyleSheet, Text, View, type ColorValue } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomerAuthProvider } from '@/context/CustomerAuthContext';
 import { CartProvider, useCart } from '@/context/CartContext';
 import { FavoritesProvider } from '@/context/FavoritesContext';
 
-function CartTabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+function CartTabIcon({ color, focused }: { color: string; focused: boolean }) {
   const { totalItems } = useCart();
   return (
     <View style={styles.iconWrap}>
@@ -52,7 +52,7 @@ export default function CustomerLayout() {
               options={{
                 title: 'Home',
                 tabBarIcon: ({ color, focused }) => (
-                  <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+                  <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color as string} />
                 ),
               }}
             />
@@ -61,7 +61,7 @@ export default function CustomerLayout() {
               options={{
                 title: 'Favorites',
                 tabBarIcon: ({ color, focused }) => (
-                  <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color} />
+                  <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color as string} />
                 ),
               }}
             />
@@ -70,7 +70,7 @@ export default function CustomerLayout() {
               options={{
                 title: 'Cart',
                 tabBarIcon: ({ color, focused }) => (
-                  <CartTabIcon color={color} focused={focused} />
+                  <CartTabIcon color={color as string} focused={focused} />
                 ),
               }}
             />
@@ -79,7 +79,7 @@ export default function CustomerLayout() {
               options={{
                 title: 'Orders',
                 tabBarIcon: ({ color, focused }) => (
-                  <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
+                  <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color as string} />
                 ),
               }}
             />
@@ -88,14 +88,14 @@ export default function CustomerLayout() {
               options={{
                 title: 'Profile',
                 tabBarIcon: ({ color, focused }) => (
-                  <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+                  <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color as string} />
                 ),
               }}
             />
             {/* Order tracking screen — opened from the Orders tab, not a tab itself */}
-            <Tabs.Screen name="track/[id]" options={{ href: null }} />
+            <Tabs.Screen name="track/[id]" options={{ tabBarButton: () => null, tabBarStyle: { display: 'none' } }} />
             {/* Reports screen — navigated from Profile/Orders, not a tab */}
-            <Tabs.Screen name="reports" options={{ href: null }} />
+            <Tabs.Screen name="reports" options={{ tabBarButton: () => null }} />
           </Tabs>
         </CartProvider>
       </FavoritesProvider>
