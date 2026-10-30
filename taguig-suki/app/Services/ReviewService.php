@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Review;
+use App\Models\ReviewImage;
 use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class ReviewService
@@ -30,14 +32,16 @@ class ReviewService
             ]);
         }
 
-        return $this->createReview($user, [
+        $attributes = [
             'order_id' => $order->id,
             'reviewable_type' => Vendor::class,
             'reviewable_id' => $data['vendor_id'],
             'recipe_name' => null,
             'rating' => $data['rating'],
             'comment' => $data['comment'] ?? null,
-        ]);
+        ];
+
+        return $this->createReview($user, $attributes, $data['images'] ?? []);
     }
 
     /**
@@ -57,14 +61,16 @@ class ReviewService
             ]);
         }
 
-        return $this->createReview($user, [
+        $attributes = [
             'order_id' => $order->id,
             'reviewable_type' => Product::class,
             'reviewable_id' => $data['product_id'],
             'recipe_name' => null,
             'rating' => $data['rating'],
             'comment' => $data['comment'] ?? null,
-        ]);
+        ];
+
+        return $this->createReview($user, $attributes, $data['images'] ?? []);
     }
 
     /**
@@ -74,14 +80,16 @@ class ReviewService
      */
     public function createRecipeReview(User $user, array $data): Review
     {
-        return $this->createReview($user, [
+        $attributes = [
             'order_id' => null,
             'reviewable_type' => 'recipe',
             'reviewable_id' => null,
             'recipe_name' => $data['recipe_name'],
             'rating' => $data['rating'],
             'comment' => $data['comment'] ?? null,
-        ]);
+        ];
+
+        return $this->createReview($user, $attributes, $data['images'] ?? []);
     }
 
     /**
@@ -98,7 +106,51 @@ class ReviewService
             'comment' => $data['comment'] ?? $review->comment,
         ]);
 
-        return $review->fresh(['user:id,name']);
+        // Handle image removal
+        if (isset($data['remove_images']) && $data['remove_images']) {
+            foreach ($review->images as $image) {
+                Storage::disk('public')->delete($image->path);
+            }
+            $review->images()->delete();
+        }
+
+        // Handle image replacement
+        if (isset($data['images']) && is_array($data['images'])) {
+            // Remove existing images not in the new set
+            $newImageOrders = array_column($data['images'], 'order');
+            $removed = $review->images()->whereNotIn('order', $newImageOrders)->get();
+            foreach ($removed as $image) {
+                Storage::disk('public')->delete($image->path);
+            }
+            $review->images()->whereNotIn('order', $newImageOrders)->delete();
+
+            // Update or create images
+            foreach ($data['images'] as $imageData) {
+                if (isset($imageData['id']) && $imageData['id']) {
+                    // Update existing image
+                    $review->images()->where('id', $imageData['id'])->update([
+                        'path' => $imageData['path'] ?? '',
+                        'order' => $imageData['order'] ?? 0,
+                    ]);
+                } else {
+                    // Create new image
+                    $review->images()->create([
+                        'path' => $imageData['path'] ?? '',
+                        'order' => $imageData['order'] ?? 0,
+                    ]);
+                }
+            }
+        }
+
+        return $review->fresh(['user:id,name', 'images']);
+    }
+
+    /**
+     * Get review images for a given review.
+     */
+    public function getReviewImages(Review $review): Collection
+    {
+        return $review->images()->orderBy('order')->get();
     }
 
     /**
@@ -107,6 +159,10 @@ class ReviewService
     public function deleteReview(User $user, Review $review): void
     {
         $this->assertOwns($user, $review);
+
+        foreach ($review->images as $image) {
+            Storage::disk('public')->delete($image->path);
+        }
 
         $review->delete();
     }
@@ -168,6 +224,7 @@ class ReviewService
     {
         $reviews = Review::where('reviewable_type', Vendor::class)
             ->where('reviewable_id', $vendorId)
+            ->with(['user:id,name', 'images'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -181,6 +238,7 @@ class ReviewService
     {
         $reviews = Review::where('reviewable_type', Product::class)
             ->where('reviewable_id', $productId)
+            ->with(['user:id,name', 'images'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -193,6 +251,7 @@ class ReviewService
     public function recipeReviews(string $recipeName): array
     {
         $reviews = Review::where('recipe_name', $recipeName)
+            ->with(['user:id,name', 'images'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -232,7 +291,7 @@ class ReviewService
      *
      * @throws ValidationException
      */
-    private function createReview(User $user, array $attributes): Review
+    private function createReview(User $user, array $attributes, array $images = []): Review
     {
         $existing = Review::where('user_id', $user->id)
             ->where(function ($q) use ($attributes) {
@@ -253,7 +312,19 @@ class ReviewService
             ]);
         }
 
-        return DB::transaction(fn () => Review::create($attributes + ['user_id' => $user->id]));
+        return DB::transaction(function () use ($attributes, $user, $images) {
+            $review = Review::create($attributes + ['user_id' => $user->id]);
+
+            foreach ($images as $image) {
+                ReviewImage::create([
+                    'review_id' => $review->id,
+                    'path' => $image['path'],
+                    'order' => $image['order'] ?? 0,
+                ]);
+            }
+
+            return $review->load(['user:id,name', 'images']);
+        });
     }
 
     /**
@@ -302,7 +373,7 @@ class ReviewService
         // 1. Fetch Vendor/Stall reviews
         $stallReviews = Review::where('reviewable_type', Vendor::class)
             ->where('reviewable_id', $vendor->id)
-            ->with('user:id,name')
+            ->with(['user:id,name', 'images'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -313,7 +384,7 @@ class ReviewService
 
         $productReviews = Review::where('reviewable_type', Product::class)
             ->whereIn('reviewable_id', $productIds)
-            ->with(['user:id,name', 'reviewable'])
+            ->with(['user:id,name', 'reviewable', 'images'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -327,6 +398,11 @@ class ReviewService
                 'product_id' => $r->reviewable_id,
                 'product_name' => $r->reviewable?->name ?? 'Deleted Product',
                 'product_category' => $r->reviewable?->category ?? 'General',
+                'images' => $r->images->map(fn ($img) => [
+                    'id' => $img->id,
+                    'path' => $img->path,
+                    'url' => Storage::disk('public')->url($img->path),
+                ])->values(),
             ])->values(),
             'average_rating' => $productReviews->count() > 0 ? round($productReviews->avg('rating'), 1) : 0,
             'total' => $productReviews->count(),
@@ -350,12 +426,17 @@ class ReviewService
         $total = $reviews->count();
 
         return [
-            'reviews' => $reviews->load('user:id,name')->map(fn (Review $r) => [
+            'reviews' => $reviews->loadMissing(['user:id,name', 'images'])->map(fn (Review $r) => [
                 'id' => $r->id,
                 'rating' => $r->rating,
                 'comment' => $r->comment,
                 'created_at' => $r->created_at,
                 'user' => $r->user?->name ?? 'Anonymous',
+                'images' => $r->images->map(fn ($img) => [
+                    'id' => $img->id,
+                    'path' => $img->path,
+                    'url' => Storage::disk('public')->url($img->path),
+                ])->values(),
             ])->values(),
             'average_rating' => $total > 0 ? round($reviews->avg('rating'), 1) : 0,
             'total' => $total,
