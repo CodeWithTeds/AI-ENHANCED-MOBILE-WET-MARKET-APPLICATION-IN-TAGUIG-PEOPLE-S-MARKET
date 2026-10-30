@@ -3,7 +3,7 @@
  * Live sales overview, pending orders, and inventory summary.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -18,6 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/services/auth';
+import { getCustomerToken } from '@/services/customer-auth';
 import {
   getVendorOrders,
   getVendorPortionStatus,
@@ -72,7 +73,7 @@ export default function VendorDashboard() {
 
   const load = useCallback(
     async (_isRefresh = false) => {
-      const authToken = token ?? (await getToken());
+      const authToken = token ?? (await getToken()) ?? (await getCustomerToken());
       if (!authToken) {
         setLoading(false);
         setRefreshing(false);
@@ -81,12 +82,12 @@ export default function VendorDashboard() {
       try {
         const [orderData, invSummary] = await Promise.all([
           getVendorOrders(authToken),
-          fetchInventorySummary(),
+          fetchInventorySummary(authToken),
         ]);
         setOrders(Array.isArray(orderData) ? orderData : []);
         setSummary(invSummary);
-      } catch {
-        // keep last known data on refresh failure
+      } catch (err) {
+        console.error('[VendorDashboard] Failed to load dashboard data:', err);
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -94,6 +95,12 @@ export default function VendorDashboard() {
     },
     [token],
   );
+
+  useEffect(() => {
+    load();
+    const timer = setTimeout(() => setLoading(false), 4000);
+    return () => clearTimeout(timer);
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -131,22 +138,6 @@ export default function VendorDashboard() {
   const stallName = vendor?.stall_name ?? 'My Store';
   const stallLocation = vendor?.stall_location ?? 'Taguig People\'s Market';
   const greeting = getGreeting();
-
-  if (loading && orders.length === 0) {
-    return (
-      <View style={styles.screen}>
-        <View style={styles.headerWrap}>
-          <SafeAreaView edges={['top']} style={styles.safeHeader}>
-            <View style={styles.header} />
-          </SafeAreaView>
-        </View>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={C.brand} />
-          <Text style={styles.loadingText}>Loading your dashboard…</Text>
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.screen}>
