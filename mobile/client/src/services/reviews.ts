@@ -4,8 +4,15 @@
  */
 
 import { api } from './api';
+import { API_BASE_URL } from '@/config/api';
 
 /* ─── Types ─── */
+
+export interface ReviewImage {
+  id: number;
+  path: string;
+  url: string;
+}
 
 export interface Review {
   id: number;
@@ -13,6 +20,7 @@ export interface Review {
   comment: string | null;
   created_at: string;
   user: string;
+  images?: ReviewImage[];
 }
 
 export interface ReviewSummary {
@@ -46,10 +54,30 @@ export interface EligibleOrder {
   products: ReviewableProduct[];
 }
 
+export interface SubmitReviewImage {
+  uri: string;
+  name?: string;
+  type?: string;
+}
+
 export interface SubmitReviewPayload {
   rating: number;
   comment?: string;
   order_id?: number;
+  images?: SubmitReviewImage[];
+}
+
+export function resolveReviewImageUrl(url: string | null, path: string | null): string {
+  if (path) {
+    const base = API_BASE_URL.replace('/api/v1', '');
+    return `${base}/storage/${path.replace(/^\//, '')}`;
+  }
+  if (url && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+    const base = API_BASE_URL.replace('/api/v1', '');
+    const idx = url.indexOf('/storage/');
+    if (idx !== -1) return base + url.substring(idx);
+  }
+  return url ?? '';
 }
 
 /* ─── API Calls (public) ─── */
@@ -94,6 +122,35 @@ export async function submitVendorReview(
   payload: SubmitReviewPayload,
   token: string,
 ): Promise<Review> {
+  if (payload.images && payload.images.length > 0) {
+    const formData = new FormData();
+    formData.append('vendor_id', String(vendorId));
+    formData.append('rating', String(payload.rating));
+    if (payload.comment) formData.append('comment', payload.comment);
+    if (payload.order_id) formData.append('order_id', String(payload.order_id));
+
+    payload.images.forEach((img, index) => {
+      const filename = img.name || img.uri.split('/').pop() || `vendor_review_${index}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : 'jpg';
+      const type = img.type || (ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg');
+
+      formData.append('images[]', {
+        uri: img.uri,
+        name: filename,
+        type,
+      } as unknown as Blob);
+    });
+
+    const response = await api.request<Review>('/reviews/vendor', {
+      method: 'POST',
+      body: formData,
+      isFormData: true,
+      token,
+    });
+    return response.data;
+  }
+
   const response = await api.request<Review>('/reviews/vendor', {
     method: 'POST',
     body: { ...payload, vendor_id: vendorId } as unknown as Record<string, unknown>,
@@ -107,6 +164,35 @@ export async function submitProductReview(
   payload: SubmitReviewPayload,
   token: string,
 ): Promise<Review> {
+  if (payload.images && payload.images.length > 0) {
+    const formData = new FormData();
+    formData.append('product_id', String(productId));
+    formData.append('rating', String(payload.rating));
+    if (payload.comment) formData.append('comment', payload.comment);
+    if (payload.order_id) formData.append('order_id', String(payload.order_id));
+
+    payload.images.forEach((img, index) => {
+      const filename = img.name || img.uri.split('/').pop() || `product_review_${index}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : 'jpg';
+      const type = img.type || (ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg');
+
+      formData.append('images[]', {
+        uri: img.uri,
+        name: filename,
+        type,
+      } as unknown as Blob);
+    });
+
+    const response = await api.request<Review>('/reviews/product', {
+      method: 'POST',
+      body: formData,
+      isFormData: true,
+      token,
+    });
+    return response.data;
+  }
+
   const response = await api.request<Review>('/reviews/product', {
     method: 'POST',
     body: { ...payload, product_id: productId } as unknown as Record<string, unknown>,
