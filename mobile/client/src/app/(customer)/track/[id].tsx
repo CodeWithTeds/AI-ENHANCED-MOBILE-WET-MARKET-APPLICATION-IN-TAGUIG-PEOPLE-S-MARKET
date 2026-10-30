@@ -11,11 +11,13 @@
  *    rate the vendors and products from this order
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   AppState,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -30,6 +32,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
+import { getCategoryEmoji } from '@/constants/categories';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrderTracking,
@@ -42,12 +45,12 @@ import {
 } from '@/services/orders';
 import {
   getEligibleReviews,
-  submitProductReview,
-  submitVendorReview,
   type EligibleOrder,
 } from '@/services/reviews';
-import { StarRating } from '@/components/customer/StarRating';
+import { ReviewSheet } from '@/components/customer/ReviewSheet';
+import { OrderChatModal } from '@/components/chat/OrderChatModal';
 import { ApiError } from '@/services/api';
+import { getProductImageUrl } from '@/utils/image';
 
 const STATUS_STEPS: OrderStatus[] = ['pending', 'confirmed', 'ready', 'completed'];
 const POLL_INTERVAL_MS = 5000;
@@ -65,10 +68,13 @@ export default function OrderTrackingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const [eligible, setEligible] = useState<EligibleOrder | null>(null);
+  const [activeChatVendor, setActiveChatVendor] = useState<{ id: number; stall_name: string } | null>(null);
+  const [currentToken, setCurrentToken] = useState<string>('');
 
   const fetchTracking = useCallback(async () => {
     const authToken = await getAuthToken();
     if (!authToken || !orderId) return;
+    setCurrentToken(authToken);
     try {
       const data = await getOrderTracking(orderId, authToken);
       setOrder(data);
@@ -120,10 +126,8 @@ export default function OrderTrackingScreen() {
   }, [order?.status, order?.id]);
 
   /* Auto-open the rating sheet when arriving from the "Rate Your Purchase" button */
-  const autoOpenedRating = useRef(false);
   useEffect(() => {
-    if (order?.status === 'completed' && rate === '1' && !autoOpenedRating.current) {
-      autoOpenedRating.current = true;
+    if (order?.status === 'completed' && rate === '1') {
       setReviewSheetOpen(true);
     }
   }, [order?.status, rate]);
@@ -169,6 +173,37 @@ export default function OrderTrackingScreen() {
       >
         {/* Current status banner */}
         <StatusBanner order={order} />
+
+        {/* COD Confirmation Required Card */}
+        {order.payment_method === 'cash' && (order.confirmation_status === 'pending_confirmation' || order.status === 'pending_confirmation') && (
+          <View style={styles.codCard}>
+            <View style={styles.codHeaderRow}>
+              <View style={styles.codIconWrap}>
+                <Ionicons name="alert-circle" size={20} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.codTitle}>Order Confirmation Required (COD)</Text>
+                <Text style={styles.codSub}>
+                  Vendors require your confirmation before butchering and preparing fresh items. Please confirm in the order chat.
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.codChatBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                const vendorItem = order.items.find((i) => !!i.vendor) ?? order.items[0];
+                const vId = vendorItem?.vendor?.id ?? vendorItem?.vendor_id ?? 1;
+                const vName = vendorItem?.vendor?.stall_name ?? 'Vendor';
+                setActiveChatVendor({ id: vId, stall_name: vName });
+              }}
+            >
+              <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
+              <Text style={styles.codChatBtnText}>Open Order Chat to Confirm</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Payment verification status for GCash/Maya */}
         {(order.payment_method === 'gcash' || order.payment_method === 'maya') && order.payment_status && (
@@ -229,7 +264,13 @@ export default function OrderTrackingScreen() {
             <Text style={styles.cardTotal}>₱{Number(order.total_amount).toFixed(2)}</Text>
           </View>
           {order.items.map((item) => (
-            <ItemRow key={item.id} item={item} />
+            <ItemRow
+              key={item.id}
+              item={item}
+              onChatVendor={(vendorId, stallName) => {
+                setActiveChatVendor({ id: vendorId, stall_name: stallName });
+              }}
+            />
           ))}
         </View>
 
@@ -271,6 +312,21 @@ export default function OrderTrackingScreen() {
           }}
         />
       )}
+      {/* In-App Customer-Vendor Order Chat Modal */}
+      {activeChatVendor && currentToken ? (
+        <OrderChatModal
+          visible={true}
+          orderId={order.id}
+          vendorId={activeChatVendor.id}
+          token={currentToken}
+          userRole="customer"
+          stallName={activeChatVendor.stall_name}
+          orderNumber={order.order_number}
+          isCod={order.payment_method === 'cash'}
+          onClose={() => setActiveChatVendor(null)}
+          onStatusUpdated={() => fetchTracking()}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -430,214 +486,54 @@ function PulsingDot() {
 
 /* ─── Item row ─── */
 
-function ItemRow({ item }: { item: OrderItem }) {
+function ItemRow({
+  item,
+  onChatVendor,
+}: {
+  item: OrderItem;
+  onChatVendor?: (vendorId: number, stallName: string) => void;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = getProductImageUrl(item.product?.image);
+  const stallName = item.vendor?.stall_name ?? `Vendor #${item.vendor_id}`;
+
   return (
     <View style={styles.itemRow}>
-      <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+      {imageUrl && !imageFailed ? (
+        <View style={styles.itemImageWrap}>
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.itemImage}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        </View>
+      ) : (
+        <View style={styles.itemEmojiWrap}>
+          <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+        </View>
+      )}
       <View style={styles.itemInfo}>
         <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
         <Text style={styles.itemMeta}>
-          ×{item.quantity} {item.unit} · {item.vendor?.stall_name ?? `Vendor #${item.vendor_id}`}
+          ×{item.quantity} {item.unit} · {stallName}
         </Text>
       </View>
-      <Text style={styles.itemSubtotal}>₱{Number(item.subtotal).toFixed(2)}</Text>
-    </View>
-  );
-}
 
-/* ─── Review bottom sheet ─── */
-
-function ReviewSheet({
-  visible,
-  onClose,
-  order,
-  eligible,
-  onSubmitted,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  order: Order;
-  eligible: EligibleOrder | null;
-  onSubmitted: () => void;
-}) {
-  const { token } = useCustomerAuth();
-  const getAuthToken = async () => token ?? await getCustomerToken();
-
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState('');
-  const [target, setTarget] = useState<{ type: 'vendor' | 'product'; id: number; name: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Set<string>>(new Set());
-
-  const vendors = eligible?.vendors ?? [];
-  const products = eligible?.products ?? [];
-
-  function isReviewed(type: 'vendor' | 'product', id: number): boolean {
-    if (type === 'vendor') return eligible?.vendors.find((v) => v.id === id)?.reviewed ?? false;
-    return eligible?.products.find((p) => p.id === id)?.reviewed ?? false;
-  }
-
-  function openTarget(type: 'vendor' | 'product', id: number, name: string) {
-    setTarget({ type, id, name });
-    setRating(0);
-    setComment('');
-    setError(null);
-  }
-
-  async function handleSubmit() {
-    if (!target || rating === 0) return;
-    const authToken = await getAuthToken();
-    if (!authToken) return;
-
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (target.type === 'vendor') {
-        await submitVendorReview(target.id, { rating, comment: comment || undefined, order_id: order.id }, authToken);
-      } else {
-        await submitProductReview(target.id, { rating, comment: comment || undefined, order_id: order.id }, authToken);
-      }
-      setDone((prev) => new Set(prev).add(`${target.type}:${target.id}`));
-      setTarget(null);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not submit review. Try again.';
-      setError(message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const pendingVendors = vendors.filter((v) => !v.reviewed && !done.has(`vendor:${v.id}`));
-  const pendingProducts = products.filter((p) => !p.reviewed && !done.has(`product:${p.id}`));
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={sheetStyles.backdrop} />
-      </TouchableWithoutFeedback>
-
-      <View style={sheetStyles.sheet}>
-        <View style={sheetStyles.handle} />
-        <View style={sheetStyles.header}>
-          <Text style={sheetStyles.title}>Rate Your Purchase</Text>
-          <Text style={sheetStyles.subtitle}>Order {order.order_number}</Text>
-          <TouchableOpacity style={sheetStyles.closeBtn} onPress={onClose} accessibilityLabel="Close">
-            <Ionicons name="close" size={20} color="#6B7280" />
+      <View style={styles.itemRightAction}>
+        <Text style={styles.itemSubtotal}>₱{Number(item.subtotal).toFixed(2)}</Text>
+        {onChatVendor && (
+          <TouchableOpacity
+            style={styles.itemChatSmallBtn}
+            onPress={() => onChatVendor(item.vendor_id, stallName)}
+            accessibilityLabel={`Chat with ${stallName}`}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={12} color="#059669" />
+            <Text style={styles.itemChatSmallText}>Chat</Text>
           </TouchableOpacity>
-        </View>
-
-        <ScrollView contentContainerStyle={sheetStyles.content} showsVerticalScrollIndicator={false}>
-          {pendingVendors.length === 0 && pendingProducts.length === 0 ? (
-            <View style={sheetStyles.allDone}>
-              <Ionicons name="checkmark-done-circle" size={44} color="#16A34A" />
-              <Text style={sheetStyles.allDoneTitle}>All rated! Salamat!</Text>
-              <Text style={sheetStyles.allDoneSub}>
-                You've reviewed everything from this order.
-              </Text>
-              <TouchableOpacity style={sheetStyles.doneBtn} onPress={onSubmitted}>
-                <Text style={sheetStyles.doneBtnText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              {/* Vendors */}
-              {pendingVendors.length > 0 && (
-                <>
-                  <Text style={sheetStyles.sectionLabel}>Vendors</Text>
-                  {pendingVendors.map((vendor) => (
-                    <ReviewRow
-                      key={`v-${vendor.id}`}
-                      icon="storefront-outline"
-                      name={vendor.stall_name}
-                      meta={vendor.stall_location}
-                      onPress={() => openTarget('vendor', vendor.id, vendor.stall_name)}
-                    />
-                  ))}
-                </>
-              )}
-
-              {/* Products */}
-              {pendingProducts.length > 0 && (
-                <>
-                  <Text style={[sheetStyles.sectionLabel, { marginTop: 18 }]}>Products</Text>
-                  {pendingProducts.map((product) => (
-                    <ReviewRow
-                      key={`p-${product.id}`}
-                      icon="cube-outline"
-                      name={product.name}
-                      meta={`${product.category} · per ${product.unit} · ₱${Number(product.price).toFixed(2)}`}
-                      onPress={() => openTarget('product', product.id, product.name)}
-                    />
-                  ))}
-                </>
-              )}
-
-              {/* Rating editor */}
-              {target && (
-                <View style={sheetStyles.editor}>
-                  <Text style={sheetStyles.editorTitle}>Rate {target.name}</Text>
-                  <StarRating value={rating} onChange={setRating} size={34} />
-                  <TextInput
-                    style={sheetStyles.commentInput}
-                    placeholder="Share your experience (optional)..."
-                    placeholderTextColor="#9CA3AF"
-                    value={comment}
-                    onChangeText={setComment}
-                    multiline
-                    maxLength={1000}
-                  />
-                  {error && <Text style={sheetStyles.errorText}>{error}</Text>}
-                  <TouchableOpacity
-                    style={[sheetStyles.submitBtn, (rating === 0 || submitting) && sheetStyles.submitBtnDisabled]}
-                    onPress={handleSubmit}
-                    disabled={rating === 0 || submitting}
-                    activeOpacity={0.85}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Ionicons name="star" size={16} color="#FFFFFF" />
-                        <Text style={sheetStyles.submitBtnText}>Submit Review</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-        </ScrollView>
+        )}
       </View>
-    </Modal>
-  );
-}
-
-function ReviewRow({
-  icon,
-  name,
-  meta,
-  onPress,
-}: {
-  icon: string;
-  name: string;
-  meta: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={sheetStyles.row} onPress={onPress} activeOpacity={0.8}>
-      <View style={sheetStyles.rowIcon}>
-        <Ionicons name={icon as any} size={18} color="#1B6B45" />
-      </View>
-      <View style={sheetStyles.rowInfo}>
-        <Text style={sheetStyles.rowName} numberOfLines={1}>{name}</Text>
-        <Text style={sheetStyles.rowMeta} numberOfLines={1}>{meta}</Text>
-      </View>
-      <View style={sheetStyles.rowCta}>
-        <Ionicons name="star-outline" size={16} color="#F59E0B" />
-        <Text style={sheetStyles.rowCtaText}>Rate</Text>
-      </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -653,15 +549,6 @@ function countUnreviewed(eligible: EligibleOrder): string {
 function formatDateTime(value: string): string {
   const d = new Date(value);
   return `${d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`;
-}
-
-function getCategoryEmoji(category: string): string {
-  const map: Record<string, string> = {
-    meat: '🥩', fish: '🐟', vegetables: '🥬', fruits: '🍎',
-    spices: '🌶️', poultry: '🍗', condiments: '🫙', dairy: '🥛',
-    grains: '🌾', herbs: '🌿',
-  };
-  return map[category.toLowerCase()] ?? '🛒';
 }
 
 /* ─── Styles ─── */
@@ -765,6 +652,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F9FAFB',
   },
+  itemImageWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  itemImage: { width: '100%', height: '100%' },
+  itemEmojiWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   itemEmoji: { fontSize: 18 },
   itemInfo: { flex: 1 },
   itemName: { fontSize: 13, fontWeight: '600', color: '#111827' },
@@ -806,108 +711,69 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cancelledNoteText: { flex: 1, fontSize: 12, color: '#6B7280', lineHeight: 18 },
-});
 
-const sheetStyles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    maxHeight: '80%',
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 10,
-  },
-  handle: {
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E5E7EB',
-    alignSelf: 'center',
-    marginBottom: 8,
-  },
-  header: { paddingHorizontal: 20, paddingBottom: 4 },
-  title: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  subtitle: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  closeBtn: { position: 'absolute', top: 4, right: 16 },
-  content: { paddingHorizontal: 20, paddingBottom: 28, paddingTop: 10 },
-
-  sectionLabel: { fontSize: 13, fontWeight: '700', color: '#6B7280', marginBottom: 8 },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  rowIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowInfo: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  rowMeta: { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-  rowCta: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  rowCtaText: { fontSize: 12, fontWeight: '700', color: '#B45309' },
-
-  editor: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#E8F5E9',
-    alignItems: 'center',
-  },
-  editorTitle: { fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 10, textAlign: 'center' },
-  commentInput: {
-    width: '100%',
-    minHeight: 70,
-    backgroundColor: '#F9FAFB',
+  /* COD Confirmation card */
+  codCard: {
+    backgroundColor: '#FFFBEB',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    padding: 12,
-    fontSize: 13,
-    color: '#111827',
-    textAlignVertical: 'top',
-    marginTop: 12,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
   },
-  errorText: { fontSize: 12, color: '#DC2626', marginTop: 8 },
-  submitBtn: {
+  codHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  codIconWrap: {
+    marginTop: 2,
+  },
+  codTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  codSub: {
+    fontSize: 12,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  codChatBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#1B6B45',
-    borderRadius: 12,
-    paddingVertical: 13,
-    width: '100%',
-    marginTop: 12,
-  },
-  submitBtnDisabled: { backgroundColor: '#A7D4BE' },
-  submitBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-
-  allDone: { alignItems: 'center', paddingVertical: 24, gap: 6 },
-  allDoneTitle: { fontSize: 17, fontWeight: '800', color: '#111827', marginTop: 4 },
-  allDoneSub: { fontSize: 13, color: '#6B7280', textAlign: 'center' },
-  doneBtn: {
-    backgroundColor: '#1B6B45',
-    borderRadius: 12,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
+    gap: 6,
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingVertical: 10,
     marginTop: 10,
   },
-  doneBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  codChatBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  itemRightAction: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  itemChatSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  itemChatSmallText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
 });
