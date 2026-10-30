@@ -3,10 +3,12 @@
  * Shows customer ratings and feedback for the vendor's stall and products.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,8 +21,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/services/auth';
+import { getCustomerToken } from '@/services/customer-auth';
 import {
   getVendorReviewsDashboard,
+  resolveReviewImageUrl,
   type ProductReviewItem,
   type Review,
   type ReviewSummary,
@@ -64,25 +68,37 @@ export default function VendorReviewsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<VendorReviewsDashboardResponse | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('stall');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    const authToken = token ?? (await getToken());
-    if (!authToken) { setLoading(false); setRefreshing(false); return; }
+    const authToken = token ?? (await getToken()) ?? (await getCustomerToken());
+    if (!authToken) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
+      setError(null);
       const result = await getVendorReviewsDashboard(authToken);
       setData(result);
-    } catch {
-      // keep last data on refresh failure
+    } catch (err: any) {
+      console.error('[VendorReviews] Failed to load reviews:', err);
+      setError(err?.message || 'Could not load customer feedback.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [token]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useFocusEffect(
     useCallback(() => {
@@ -126,28 +142,6 @@ export default function VendorReviewsScreen() {
     return list;
   }, [activeData.reviews, selectedRatingFilter, sortBy]);
 
-  if (loading && !data) {
-    return (
-      <View style={styles.screen}>
-        <View style={styles.headerWrap}>
-          <SafeAreaView edges={['top']}>
-            <View style={styles.headerNav}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                <Ionicons name="arrow-back" size={20} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>Ratings & Reviews</Text>
-              <View style={{ width: 38 }} />
-            </View>
-          </SafeAreaView>
-        </View>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={C.brand} />
-          <Text style={styles.loadingText}>Loading customer feedback…</Text>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.screen}>
       {/* ─── Header ─── */}
@@ -155,7 +149,11 @@ export default function VendorReviewsScreen() {
         <SafeAreaView edges={['top']}>
           <View style={styles.headerInner}>
             <View style={styles.headerNav}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Go back">
+              <TouchableOpacity
+                onPress={() => (router.canGoBack() ? router.back() : router.replace('/(vendor)/dashboard' as any))}
+                style={styles.backBtn}
+                accessibilityLabel="Go back"
+              >
                 <Ionicons name="arrow-back" size={20} color="#FFF" />
               </TouchableOpacity>
               <View style={styles.headerTitleWrap}>
@@ -324,7 +322,26 @@ export default function VendorReviewsScreen() {
             </View>
           </View>
 
-          {filteredReviews.length === 0 ? (
+          {loading && !data ? (
+            <View style={{ paddingVertical: 32, alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color={C.brand} />
+              <Text style={{ fontSize: 13, color: C.muted }}>Loading feedback…</Text>
+            </View>
+          ) : error && !data ? (
+            <View style={{ paddingVertical: 24, alignItems: 'center', gap: 8, paddingHorizontal: 16 }}>
+              <Ionicons name="alert-circle-outline" size={30} color={C.red} />
+              <Text style={{ fontSize: 13, color: C.red, textAlign: 'center' }}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => {
+                  setLoading(true);
+                  loadData();
+                }}
+              >
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredReviews.length === 0 ? (
             <EmptyState
               icon="star-outline"
               title={selectedRatingFilter !== null ? `No ${selectedRatingFilter}★ reviews` : 'No reviews yet'}
@@ -342,6 +359,7 @@ export default function VendorReviewsScreen() {
                 isProduct={activeTab === 'products'}
                 expanded={expandedId === review.id}
                 onToggle={() => setExpandedId(expandedId === review.id ? null : review.id)}
+                onPreviewImage={setPreviewImage}
               />
             ))
           )}
@@ -352,6 +370,26 @@ export default function VendorReviewsScreen() {
           <InsightSummary stall={stall} products={products} />
         )}
       </ScrollView>
+
+      {/* ─── Evidence Photo Modal ─── */}
+      <Modal visible={!!previewImage} transparent animationType="fade" onRequestClose={() => setPreviewImage(null)}>
+        <View style={styles.photoModalBackdrop}>
+          <TouchableOpacity
+            style={styles.photoModalClose}
+            onPress={() => setPreviewImage(null)}
+            accessibilityLabel="Close photo"
+          >
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          {previewImage && (
+            <Image
+              source={{ uri: previewImage }}
+              style={styles.photoModalImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -388,31 +426,56 @@ function KpiCard({ icon, label, value, sub, color, bg }: {
   );
 }
 
-function ReviewCard({ review, isProduct, expanded, onToggle }: {
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  } catch {
+    return String(dateStr);
+  }
+}
+
+function formatTime(dateStr?: string | null): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 || 12;
+    return `${h12}:${minutes} ${ampm}`;
+  } catch {
+    return '';
+  }
+}
+
+function ReviewCard({ review, isProduct, expanded, onToggle, onPreviewImage }: {
   review: Review | ProductReviewItem;
   isProduct: boolean;
   expanded: boolean;
   onToggle: () => void;
+  onPreviewImage?: (url: string) => void;
 }) {
   const productReview = isProduct ? (review as ProductReviewItem) : null;
-  const dateStr = new Date(review.created_at).toLocaleDateString('en-PH', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
-  const timeStr = new Date(review.created_at).toLocaleTimeString('en-PH', {
-    hour: '2-digit', minute: '2-digit',
-  });
+  const userName = review.user || 'Customer';
+  const dateStr = formatDate(review.created_at);
+  const timeStr = formatTime(review.created_at);
 
   return (
     <View style={styles.reviewCard}>
       <TouchableOpacity style={styles.reviewCardHeader} onPress={onToggle} activeOpacity={0.75}>
         {/* Avatar */}
-        <View style={[styles.reviewAvatar, { backgroundColor: getAvatarColor(review.user) }]}>
-          <Text style={styles.reviewAvatarText}>{review.user.charAt(0).toUpperCase()}</Text>
+        <View style={[styles.reviewAvatar, { backgroundColor: getAvatarColor(userName) }]}>
+          <Text style={styles.reviewAvatarText}>{userName.charAt(0).toUpperCase()}</Text>
         </View>
 
         <View style={styles.reviewInfo}>
           <View style={styles.reviewNameRow}>
-            <Text style={styles.reviewerName} numberOfLines={1}>{review.user}</Text>
+            <Text style={styles.reviewerName} numberOfLines={1}>{userName}</Text>
             {productReview && (
               <View style={styles.productBadge}>
                 <Text style={styles.productBadgeText} numberOfLines={1}>{productReview.product_name}</Text>
@@ -437,6 +500,16 @@ function ReviewCard({ review, isProduct, expanded, onToggle }: {
             </Text>
           ) : (
             <Text style={styles.noCommentText}>No written comment</Text>
+          )}
+
+          {/* Photo count chip in collapsed state */}
+          {review.images && review.images.length > 0 && !expanded && (
+            <View style={styles.imageBadgeRow}>
+              <Ionicons name="camera" size={12} color="#D97706" />
+              <Text style={styles.imageBadgeText}>
+                {review.images.length} photo proof attached
+              </Text>
+            </View>
           )}
         </View>
 
@@ -479,6 +552,35 @@ function ReviewCard({ review, isProduct, expanded, onToggle }: {
               <Text style={styles.commentBoxText}>"{review.comment}"</Text>
             </View>
           )}
+
+          {/* Photo Evidence in expanded view */}
+          {review.images && review.images.length > 0 && (
+            <View style={styles.evidenceContainer}>
+              <View style={styles.evidenceHeader}>
+                <Ionicons name="camera-outline" size={14} color="#D97706" />
+                <Text style={styles.evidenceTitle}>Customer Photo Evidence ({review.images.length})</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.evidenceScroll}>
+                {review.images.map((img, idx) => {
+                  const fullUrl = resolveReviewImageUrl(img.url, img.path);
+                  return (
+                    <TouchableOpacity
+                      key={img.id ?? idx}
+                      activeOpacity={0.85}
+                      onPress={() => onPreviewImage?.(fullUrl)}
+                      style={styles.evidenceThumbWrap}
+                    >
+                      <Image source={{ uri: fullUrl }} style={styles.evidenceThumb} />
+                      <View style={styles.evidenceZoomIcon}>
+                        <Ionicons name="scan-outline" size={11} color="#FFFFFF" />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Sentiment chip */}
           <View style={[styles.sentimentChip, { backgroundColor: getSentimentColor(review.rating).bg }]}>
             <Ionicons name={getSentimentColor(review.rating).icon as any} size={12} color={getSentimentColor(review.rating).color} />
@@ -564,10 +666,11 @@ function getBarColor(star: number): string {
   return C.red;
 }
 
-function getAvatarColor(name: string): string {
+function getAvatarColor(name?: string | null): string {
+  const safe = name || 'Customer';
   const colors = [C.brandSoft, C.blueSoft, C.purpleSoft, C.amberSoft, C.orangeSoft];
   let sum = 0;
-  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  for (let i = 0; i < safe.length; i++) sum += safe.charCodeAt(i);
   return colors[sum % colors.length];
 }
 
@@ -609,7 +712,15 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 19, fontWeight: '800', color: '#FFFFFF', marginTop: 1 },
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 13, color: C.muted, fontWeight: '600' },
+  loadingText: { fontSize: 13, color: C.muted, fontWeight: '600', textAlign: 'center', paddingHorizontal: 24 },
+  retryBtn: {
+    backgroundColor: C.brand,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 6,
+  },
+  retryBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
 
   body: { flex: 1 },
   bodyContent: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 40, gap: 14 },
@@ -749,6 +860,87 @@ const styles = StyleSheet.create({
     borderRadius: 10, alignSelf: 'flex-start',
   },
   sentimentText: { fontSize: 11, fontWeight: '700' },
+
+  imageBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: C.amberSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  imageBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: C.amber,
+  },
+  evidenceContainer: {
+    backgroundColor: C.card,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  evidenceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  evidenceTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.ink,
+  },
+  evidenceScroll: {
+    flexDirection: 'row',
+  },
+  evidenceThumbWrap: {
+    position: 'relative',
+    marginRight: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  evidenceThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+  },
+  evidenceZoomIcon: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 4,
+    padding: 2,
+  },
+  photoModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  photoModalClose: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  photoModalImage: {
+    width: '100%',
+    height: '80%',
+  },
 
   /* Insight card */
   insightCard: {
