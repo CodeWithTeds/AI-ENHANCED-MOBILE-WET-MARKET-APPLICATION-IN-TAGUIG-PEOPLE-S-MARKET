@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\Review;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Storage;
 
 class FeedbackManagementService
 {
@@ -12,6 +13,7 @@ class FeedbackManagementService
         $query = Review::query()->with([
             'user:id,name,email',
             'order:id,order_number',
+            'images',
         ]);
 
         $this->applyFilters($query, $filters);
@@ -46,7 +48,7 @@ class FeedbackManagementService
             'resolved_at' => now(),
         ]);
 
-        return $review->fresh(['user:id,name,email', 'order:id,order_number']);
+        return $review->fresh(['user:id,name,email', 'order:id,order_number', 'images']);
     }
 
     public function updateStatus(Review $review, string $status, ?string $response = null): Review
@@ -60,7 +62,7 @@ class FeedbackManagementService
 
         $review->update($data);
 
-        return $review->fresh(['user:id,name,email', 'order:id,order_number']);
+        return $review->fresh(['user:id,name,email', 'order:id,order_number', 'images']);
     }
 
     private function present(Review $review): array
@@ -83,6 +85,11 @@ class FeedbackManagementService
                 : null,
             'type' => $this->resolveType($review),
             'target_name' => $this->resolveTargetName($review),
+            'images' => $review->images->map(fn ($img) => [
+                'id' => $img->id,
+                'path' => $img->path,
+                'url' => Storage::disk('public')->url($img->path),
+            ])->values()->all(),
         ];
     }
 
