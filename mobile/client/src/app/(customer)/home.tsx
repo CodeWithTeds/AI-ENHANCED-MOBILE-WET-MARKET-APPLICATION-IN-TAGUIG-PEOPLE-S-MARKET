@@ -35,23 +35,15 @@ import { useFavorites } from '@/context/FavoritesContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ProductDetailModal } from '@/components/customer/ProductDetailModal';
 import { StarRating, StarRatingDisplay } from '@/components/customer/StarRating';
+import { CategoryChip } from '@/components/customer/CategoryChip';
+import { PRODUCT_CATEGORIES } from '@/types/vendor';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
-
-/* ─── Category icons mapping (using emojis for reliability) ─── */
-const CATEGORY_EMOJIS: Record<string, { emoji: string; bg: string }> = {
-  all: { emoji: '🛒', bg: '#E8F5E9' },
-  meat: { emoji: '🥩', bg: '#FFEBEE' },
-  fish: { emoji: '🐟', bg: '#E3F2FD' },
-  vegetables: { emoji: '🥬', bg: '#E8F5E9' },
-  fruits: { emoji: '🍎', bg: '#FFF3E0' },
-  spices: { emoji: '🌶️', bg: '#FCE4EC' },
-};
+const CARD_WIDTH = Math.min((SCREEN_WIDTH - 48 - 12) / 2, 240);
 
 export default function CustomerHomeScreen() {
   const [products, setProducts] = useState<MarketProduct[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([...PRODUCT_CATEGORIES]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,7 +61,13 @@ export default function CustomerHomeScreen() {
         getCategories(),
       ]);
       setProducts(productsData);
-      setCategories(categoriesData);
+      const combined = Array.from(
+        new Set([
+          ...(Array.isArray(categoriesData) ? categoriesData : []),
+          ...PRODUCT_CATEGORIES,
+        ])
+      );
+      setCategories(combined);
     } catch (err) {
       console.error('[Home] fetch failed:', err);
     } finally {
@@ -86,7 +84,7 @@ export default function CustomerHomeScreen() {
     setSelectedCategory(category);
     setLoading(true);
     try {
-      if (category === 'all') {
+      if (category.toLowerCase() === 'all') {
         const data = await getFeaturedProducts();
         setProducts(data);
       } else {
@@ -191,29 +189,32 @@ export default function CustomerHomeScreen() {
         )}
 
         {/* Categories */}
-        <Text style={styles.sectionTitle}>Categories</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-          <CategoryChip
-            label="All"
-            emoji="🛒"
-            bgColor="#E8F5E9"
-            isActive={selectedCategory === 'all'}
-            onPress={() => handleCategoryPress('all')}
-          />
-          {categories.map((cat) => {
-            const config = CATEGORY_EMOJIS[cat.toLowerCase()] ?? { emoji: '📦', bg: '#F3F4F6' };
-            return (
+        <View style={styles.categoriesSection}>
+          <View style={styles.categoriesHeader}>
+            <Text style={styles.sectionTitle}>Categories</Text>
+            <Text style={styles.categoriesSubtext}>Fresh wet market goods</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesRow}
+          >
+            <CategoryChip
+              category="all"
+              label="All"
+              isActive={selectedCategory.toLowerCase() === 'all'}
+              onPress={() => handleCategoryPress('all')}
+            />
+            {categories.map((cat) => (
               <CategoryChip
                 key={cat}
-                label={cat.charAt(0).toUpperCase() + cat.slice(1)}
-                emoji={config.emoji}
-                bgColor={config.bg}
-                isActive={selectedCategory === cat}
+                category={cat}
+                isActive={selectedCategory.toLowerCase() === cat.toLowerCase()}
                 onPress={() => handleCategoryPress(cat)}
               />
-            );
-          })}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        </View>
 
         {/* Featured Products */}
         <View style={styles.sectionHeader}>
@@ -268,19 +269,6 @@ export default function CustomerHomeScreen() {
 }
 
 /* ─── Components ─── */
-
-function CategoryChip({ label, emoji, bgColor, isActive, onPress }: {
-  label: string; emoji: string; bgColor: string; isActive: boolean; onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={[styles.categoryChip, isActive && styles.categoryChipActive]} onPress={onPress}>
-      <View style={[styles.categoryIcon, { backgroundColor: isActive ? '#1B6B45' : bgColor }]}>
-        <Text style={styles.categoryEmoji}>{emoji}</Text>
-      </View>
-      <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
 
 function ProductCard({ product, onPress }: { product: MarketProduct; onPress: () => void }) {
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
@@ -577,6 +565,7 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
       price: product.price,
       unit: product.unit,
       category: product.category,
+      image: product.image,
     });
 
     setAdded(true);
@@ -700,13 +689,10 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: 13, fontWeight: '600', color: '#1B6B45' },
 
   // Categories
-  categoriesRow: { gap: 14, paddingBottom: 16 },
-  categoryChip: { alignItems: 'center', gap: 6 },
-  categoryChipActive: {},
-  categoryIcon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  categoryEmoji: { fontSize: 22 },
-  categoryLabel: { fontSize: 11, fontWeight: '600', color: '#6B7280' },
-  categoryLabelActive: { color: '#1B6B45', fontWeight: '700' },
+  categoriesSection: { marginBottom: 6 },
+  categoriesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
+  categoriesSubtext: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
+  categoriesRow: { gap: 12, paddingBottom: 14, paddingHorizontal: 2 },
 
   // Products Grid
   productsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12, marginBottom: 20 },

@@ -40,6 +40,8 @@ import {
   type PaymentStatus,
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
+import { OrderChatModal } from '@/components/chat/OrderChatModal';
+import { requestOrderConfirmation } from '@/services/chat';
 
 const STATUS_TABS: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'all',        label: 'All' },
@@ -65,11 +67,15 @@ export default function VendorOrdersScreen() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
+  const [requestingConfirmationId, setRequestingConfirmationId] = useState<number | null>(null);
+  const [chatOrder, setChatOrder] = useState<{ order: Order; vendorId: number; customerName: string } | null>(null);
+  const [currentToken, setCurrentToken] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     const authToken = token ?? await getToken();
     if (!authToken) { setLoading(false); return; }
+    setCurrentToken(authToken);
     try {
       const data = await getVendorOrders(authToken);
       setOrders(Array.isArray(data) ? data : []);
@@ -150,6 +156,29 @@ export default function VendorOrdersScreen() {
         },
       ],
     );
+  }
+
+  async function handleRequestConfirmation(order: Order) {
+    const authToken = token ?? await getToken();
+    const vendorId = order.items[0]?.vendor_id;
+    if (!authToken || !vendorId) return;
+
+    setRequestingConfirmationId(order.id);
+    try {
+      await requestOrderConfirmation(order.id, vendorId, authToken);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, confirmation_status: 'pending_confirmation' } : o)),
+      );
+      Alert.alert(
+        'Confirmation Requested',
+        `A real-time notification has been sent to ${order.user?.name ?? 'the customer'} requesting order confirmation before preparing items.`,
+      );
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to request confirmation';
+      Alert.alert('Error', msg);
+    } finally {
+      setRequestingConfirmationId(null);
+    }
   }
 
   async function handleVerifyPayment(order: Order, action: 'verify' | 'reject') {
@@ -326,13 +355,36 @@ export default function VendorOrdersScreen() {
               expanded={expandedId === order.id}
               updating={updatingId === order.id}
               verifying={verifyingId === order.id}
+              requestingConfirmation={requestingConfirmationId === order.id}
               onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
               onStatusUpdate={() => handleStatusUpdate(order)}
               onVerify={(action) => handleVerifyPayment(order, action)}
+              onRequestConfirmation={() => handleRequestConfirmation(order)}
+              onOpenChat={() => {
+                const vendorId = order.items[0]?.vendor_id ?? 1;
+                const customerName = order.user?.name ?? 'Customer';
+                setChatOrder({ order, vendorId, customerName });
+              }}
             />
           ))
         )}
       </ScrollView>
+
+      {/* In-App Customer-Vendor Order Chat Modal */}
+      {chatOrder && currentToken ? (
+        <OrderChatModal
+          visible={true}
+          orderId={chatOrder.order.id}
+          vendorId={chatOrder.vendorId}
+          token={currentToken}
+          userRole="vendor"
+          stallName="My Stall"
+          orderNumber={chatOrder.order.order_number}
+          isCod={chatOrder.order.payment_method === 'cash'}
+          onClose={() => setChatOrder(null)}
+          onStatusUpdated={() => fetchOrders()}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -344,17 +396,23 @@ function VendorOrderCard({
   expanded,
   updating,
   verifying,
+  requestingConfirmation,
   onToggle,
   onStatusUpdate,
   onVerify,
+  onRequestConfirmation,
+  onOpenChat,
 }: {
   order: Order;
   expanded: boolean;
   updating: boolean;
   verifying: boolean;
+  requestingConfirmation?: boolean;
   onToggle: () => void;
   onStatusUpdate: () => void;
   onVerify: (action: 'verify' | 'reject') => void;
+  onRequestConfirmation?: () => void;
+  onOpenChat?: () => void;
 }) {
   // This card always reflects the vendor's OWN portion — not the overall order.
   const portionStatus = getVendorPortionStatus(order);
@@ -397,12 +455,19 @@ function VendorOrderCard({
 
         <View style={styles.cardHeaderRight}>
           <Text style={styles.cardTotal}>₱{portionTotal.toFixed(2)}</Text>
-          <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
-            <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
-            <Text style={[styles.statusText, { color: statusCfg.color }]}>
-              {statusCfg.label}
-            </Text>
-          </View>
+          {order.payment_method === 'cash' && order.confirmation_status === 'pending_confirmation' ? (
+            <View style={[styles.statusPill, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="alert-circle-outline" size={11} color="#D97706" />
+              <Text style={[styles.statusText, { color: '#D97706' }]}>Pending Confirm</Text>
+            </View>
+          ) : (
+            <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
+              <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
+              <Text style={[styles.statusText, { color: statusCfg.color }]}>
+                {statusCfg.label}
+              </Text>
+            </View>
+          )}
           {needsVerification && (
             <View style={[styles.statusPill, { backgroundColor: paymentCfg.bg }]}>
               <Ionicons name={paymentCfg.icon as any} size={11} color={paymentCfg.color} />
@@ -542,6 +607,112 @@ function VendorOrderCard({
             <Text style={styles.itemsTotalLabel}>My Portion Total</Text>
             <Text style={styles.itemsTotalValue}>₱{portionTotal.toFixed(2)}</Text>
           </View>
+
+          {/* COD Order Confirmation Banner for Vendor */}
+          {order.payment_method === 'cash' && (
+            <View
+              style={[
+                styles.codVendorBanner,
+                order.confirmation_status === 'confirmed'
+                  ? styles.codVendorConfirmed
+                  : order.confirmation_status === 'cancelled'
+                  ? styles.codVendorCancelled
+                  : styles.codVendorPending,
+              ]}
+            >
+              <Ionicons
+                name={
+                  order.confirmation_status === 'confirmed'
+                    ? 'checkmark-circle'
+                    : order.confirmation_status === 'cancelled'
+                    ? 'close-circle'
+                    : 'alert-circle'
+                }
+                size={18}
+                color={
+                  order.confirmation_status === 'confirmed'
+                    ? '#16A34A'
+                    : order.confirmation_status === 'cancelled'
+                    ? '#DC2626'
+                    : '#D97706'
+                }
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    styles.codVendorTitle,
+                    {
+                      color:
+                        order.confirmation_status === 'confirmed'
+                          ? '#166534'
+                          : order.confirmation_status === 'cancelled'
+                          ? '#991B1B'
+                          : '#92400E',
+                    },
+                  ]}
+                >
+                  {order.confirmation_status === 'confirmed'
+                    ? 'Customer Confirmed (COD)'
+                    : order.confirmation_status === 'cancelled'
+                    ? 'Order Cancelled (COD)'
+                    : 'Awaiting Customer Confirmation (COD)'}
+                </Text>
+                <Text
+                  style={[
+                    styles.codVendorSub,
+                    {
+                      color:
+                        order.confirmation_status === 'confirmed'
+                          ? '#15803D'
+                          : order.confirmation_status === 'cancelled'
+                          ? '#B91C1C'
+                          : '#B45309',
+                    },
+                  ]}
+                >
+                  {order.confirmation_status === 'confirmed'
+                    ? 'Customer confirmed. You may now safely butcher and prepare fresh items!'
+                    : order.confirmation_status === 'cancelled'
+                    ? 'Customer cancelled. Items were not prepared.'
+                    : 'Vendor should request confirmation before preparing perishable goods to avoid unclaimed orders.'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Customer Chat Action */}
+          {onOpenChat && (
+            <TouchableOpacity
+              style={styles.chatCustomerBtn}
+              onPress={onOpenChat}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chatbubbles-outline" size={16} color="#059669" />
+              <Text style={styles.chatCustomerBtnText}>Chat with Customer</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Request Confirmation Button (For COD pending orders) */}
+          {order.payment_method === 'cash' &&
+            order.confirmation_status !== 'confirmed' &&
+            order.confirmation_status !== 'cancelled' &&
+            onRequestConfirmation && (
+              <TouchableOpacity
+                style={styles.requestConfirmBtn}
+                onPress={onRequestConfirmation}
+                disabled={requestingConfirmation}
+                activeOpacity={0.85}
+              >
+                {requestingConfirmation ? (
+                  <ActivityIndicator size="small" color="#D97706" />
+                ) : (
+                  <>
+                    <Ionicons name="notifications-outline" size={16} color="#D97706" />
+                    <Text style={styles.requestConfirmBtnText}>Request Order Confirmation</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
           {/* Status Update Button */}
           {nextCfg && (
@@ -836,4 +1007,70 @@ const styles = StyleSheet.create({
   },
   statusRowText: { flex: 1, fontSize: 13, fontWeight: '700' },
   statusRowHint: { fontSize: 11, fontWeight: '600' },
+
+  /* Vendor COD & Chat Actions */
+  codVendorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  codVendorPending: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  codVendorConfirmed: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  codVendorCancelled: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  codVendorTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  codVendorSub: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  chatCustomerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    borderRadius: 12,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+  chatCustomerBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  requestConfirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    borderRadius: 12,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+  requestConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#D97706',
+  },
 });

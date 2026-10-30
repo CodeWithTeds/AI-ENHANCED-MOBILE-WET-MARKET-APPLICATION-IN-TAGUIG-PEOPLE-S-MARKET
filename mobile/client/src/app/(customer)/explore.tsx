@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFavorites, type FavoriteRecipe, type FavoriteProduct } from '@/context/FavoritesContext';
 import { useCart } from '@/context/CartContext';
+import { getCategoryEmoji } from '@/constants/categories';
 
 type Tab = 'recipes' | 'products';
 
@@ -162,7 +163,7 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
                 <Text style={styles.marketPrice}>₱{Number(mp.price).toFixed(0)}</Text>
                 <TouchableOpacity
                   style={[styles.addBtn, inCart && styles.addBtnAdded]}
-                  onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category })}
+                  onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, image: mp.image })}
                 >
                   <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
                 </TouchableOpacity>
@@ -233,7 +234,7 @@ function ProductCard({ product }: { product: FavoriteProduct }) {
         <View style={styles.productActions}>
           <TouchableOpacity
             style={[styles.addBtn, inCart && styles.addBtnAdded]}
-            onPress={() => !inCart && addItem({ product_id: product.id, product_name: product.name, price: product.price, unit: product.unit, category: product.category })}
+            onPress={() => !inCart && addItem({ product_id: product.id, product_name: product.name, price: product.price, unit: product.unit, category: product.category, image: product.image })}
           >
             <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
           </TouchableOpacity>
@@ -285,14 +286,6 @@ function EmptyState({ icon, title, subtitle }: { icon: string; title: string; su
       <Text style={styles.emptySubtitle}>{subtitle}</Text>
     </View>
   );
-}
-
-function getCategoryEmoji(category: string): string {
-  const map: Record<string, string> = {
-    meat: '🥩', fish: '🐟', vegetables: '🥬', fruits: '🍎',
-    spices: '🌶️', poultry: '🍗', condiments: '🫙', dairy: '🥛',
-  };
-  return map[category.toLowerCase()] ?? '🛒';
 }
 
 /* ─── Styles ─── */

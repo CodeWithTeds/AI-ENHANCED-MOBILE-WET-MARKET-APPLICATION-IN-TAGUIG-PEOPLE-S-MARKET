@@ -31,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCart, type CartItem } from '@/context/CartContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
+import { getCategoryEmoji } from '@/constants/categories';
 import {
   placeOrder,
   getVendorsPaymentDetails,
@@ -40,6 +41,8 @@ import {
   type VendorPaymentDetail,
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
+import { getProductImageUrl } from '@/utils/image';
+import { getProductDetail } from '@/services/marketplace';
 
 type PaymentMethod = 'cash' | 'gcash' | 'maya';
 
@@ -462,6 +465,28 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
   const step = isWeight ? 0.5 : 1;
   const minQty = isWeight ? 0.5 : 1;
 
+  const [imageUrl, setImageUrl] = useState<string | null>(() => getProductImageUrl(item.image));
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    if (item.image) {
+      setImageUrl(getProductImageUrl(item.image));
+      setImageFailed(false);
+      return;
+    }
+    // Fallback: If item.image was missing in cart (e.g. from prior session), fetch from marketplace
+    let active = true;
+    getProductDetail(item.product_id)
+      .then((prod) => {
+        if (active && prod?.image) {
+          setImageUrl(getProductImageUrl(prod.image));
+          setImageFailed(false);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [item.product_id, item.image]);
+
   function formatQty(q: number): string {
     return Number.isInteger(q) ? String(q) : q.toFixed(1).replace(/\.0$/, '');
   }
@@ -487,8 +512,19 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
 
   return (
     <Animated.View style={[styles.itemCard, { opacity: fadeAnim }]}>
-      <View style={styles.itemIcon}>
-        <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+      <View style={styles.itemImageContainer}>
+        {imageUrl && !imageFailed ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.itemImage}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <View style={styles.itemIcon}>
+            <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+          </View>
+        )}
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
@@ -514,6 +550,30 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
         </TouchableOpacity>
       </View>
     </Animated.View>
+  );
+}
+
+function OrderItemThumb({ image, category }: { image?: string | null; category: string }) {
+  const [failed, setFailed] = useState(false);
+  const url = getProductImageUrl(image);
+
+  if (url && !failed) {
+    return (
+      <View style={confirmStyles.itemImageWrap}>
+        <Image
+          source={{ uri: url }}
+          style={confirmStyles.itemImage}
+          resizeMode="cover"
+          onError={() => setFailed(true)}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={confirmStyles.itemEmojiWrap}>
+      <Text style={confirmStyles.itemEmoji}>{getCategoryEmoji(category)}</Text>
+    </View>
   );
 }
 
@@ -583,6 +643,21 @@ function OrderConfirmationModal({
             </View>
           )}
 
+          {/* COD Perishables Notice & Chat Confirmation */}
+          {order.payment_method === 'cash' && (
+            <View style={[confirmStyles.paymentStatusBanner, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#D97706" />
+              <View style={{ flex: 1 }}>
+                <Text style={[confirmStyles.paymentStatusLabel, { color: '#92400E' }]}>
+                  COD Order Confirmation
+                </Text>
+                <Text style={confirmStyles.paymentStatusHint}>
+                  To avoid unclaimed fresh items, vendor will request confirmation in chat before butchering/preparing your order.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Order Number */}
           <View style={confirmStyles.orderNumBox}>
             <Text style={confirmStyles.orderNumLabel}>Order Number</Text>
@@ -598,7 +673,7 @@ function OrderConfirmationModal({
             <Text style={confirmStyles.sectionLabel}>Items Ordered</Text>
             {order.items.map((item) => (
               <View key={item.id} style={confirmStyles.itemRow}>
-                <Text style={confirmStyles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+                <OrderItemThumb image={item.product?.image} category={item.category} />
                 <View style={confirmStyles.itemInfo}>
                   <Text style={confirmStyles.itemName} numberOfLines={1}>{item.product_name}</Text>
                   <Text style={confirmStyles.itemMeta}>×{Number.isInteger(Number(item.quantity)) ? item.quantity : Number(item.quantity).toFixed(1).replace(/\.0$/, '')} {item.unit}</Text>
@@ -651,28 +726,25 @@ function OrderConfirmationModal({
           </ScrollView>
 
           {/* Actions */}
-          <TouchableOpacity style={confirmStyles.primaryBtn} onPress={onViewOrders}>
-            <Ionicons name="receipt-outline" size={18} color="#FFFFFF" />
-            <Text style={confirmStyles.primaryBtnText}>View My Orders</Text>
+          <TouchableOpacity
+            style={confirmStyles.primaryBtn}
+            onPress={() => {
+              onClose();
+              router.push(`/track/${order.id}` as any);
+            }}
+          >
+            <Ionicons name="chatbubbles-outline" size={18} color="#FFFFFF" />
+            <Text style={confirmStyles.primaryBtnText}>Track Order & Chat with Vendor</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={confirmStyles.secondaryBtn} onPress={onClose}>
-            <Text style={confirmStyles.secondaryBtnText}>Continue Shopping</Text>
+          <TouchableOpacity style={confirmStyles.secondaryBtn} onPress={onViewOrders}>
+            <Ionicons name="receipt-outline" size={16} color="#374151" />
+            <Text style={[confirmStyles.secondaryBtnText, { marginLeft: 6 }]}>View All Orders</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
     </Modal>
   );
-}
-
-/* ─── Helpers ─── */
-
-function getCategoryEmoji(category: string): string {
-  const map: Record<string, string> = {
-    meat: '🥩', fish: '🐟', vegetables: '🥬', fruits: '🍎',
-    spices: '🌶️', poultry: '🍗', condiments: '🫙', dairy: '🥛',
-  };
-  return map[category.toLowerCase()] ?? '🛒';
 }
 
 /* ─── Styles ─── */
@@ -717,11 +789,17 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  itemIcon: {
-    width: 46, height: 46, borderRadius: 14,
+  itemImageContainer: {
+    width: 58, height: 58, borderRadius: 14, overflow: 'hidden',
     backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#E5E7EB',
   },
-  itemEmoji: { fontSize: 22 },
+  itemImage: { width: '100%', height: '100%' },
+  itemIcon: {
+    width: '100%', height: '100%',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  itemEmoji: { fontSize: 24 },
   itemInfo: { flex: 1 },
   itemName: { fontSize: 14, fontWeight: '700', color: '#111827' },
   itemMeta: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
@@ -922,7 +1000,16 @@ const confirmStyles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', gap: 10,
   },
-  itemEmoji: { fontSize: 20 },
+  itemImageWrap: {
+    width: 38, height: 38, borderRadius: 8, overflow: 'hidden',
+    backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  itemImage: { width: '100%', height: '100%' },
+  itemEmojiWrap: {
+    width: 38, height: 38, borderRadius: 8,
+    backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center',
+  },
+  itemEmoji: { fontSize: 18 },
   itemInfo: { flex: 1 },
   itemName: { fontSize: 13, fontWeight: '600', color: '#111827' },
   itemMeta: { fontSize: 11, color: '#9CA3AF' },
