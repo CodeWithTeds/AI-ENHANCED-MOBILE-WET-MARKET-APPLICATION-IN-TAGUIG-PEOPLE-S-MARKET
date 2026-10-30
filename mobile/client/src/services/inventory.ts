@@ -86,8 +86,8 @@ export async function fetchInventory(filters?: {
 /**
  * Fetch inventory summary stats.
  */
-export async function fetchInventorySummary(): Promise<InventorySummary> {
-  const token = await getToken();
+export async function fetchInventorySummary(authToken?: string): Promise<InventorySummary> {
+  const token = authToken ?? (await getToken());
   if (!token) throw new ApiError('Not authenticated', 401);
 
   const response = await api.request<InventorySummary>('/inventory/summary', {
