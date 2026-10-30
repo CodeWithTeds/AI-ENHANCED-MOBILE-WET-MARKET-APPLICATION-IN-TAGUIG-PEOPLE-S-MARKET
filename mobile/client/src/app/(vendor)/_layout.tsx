@@ -31,7 +31,7 @@ export default function VendorLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="home" size={22} color={color} />
+            <Feather name="home" size={22} color={color as string} />
           ),
         }}
       />
@@ -40,7 +40,7 @@ export default function VendorLayout() {
         options={{
           title: 'Products',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="shopping-bag" size={22} color={color} />
+            <Feather name="shopping-bag" size={22} color={color as string} />
           ),
         }}
       />
@@ -49,7 +49,7 @@ export default function VendorLayout() {
         options={{
           title: 'Inventory',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="package" size={22} color={color} />
+            <Feather name="package" size={22} color={color as string} />
           ),
         }}
       />
@@ -58,7 +58,7 @@ export default function VendorLayout() {
         options={{
           title: 'Orders',
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="clipboard-text-outline" size={22} color={color} />
+            <MaterialCommunityIcons name="clipboard-text-outline" size={22} color={color as string} />
           ),
         }}
       />
@@ -67,21 +67,21 @@ export default function VendorLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="user" size={22} color={color} />
+            <Feather name="user" size={22} color={color as string} />
           ),
         }}
       />
       <Tabs.Screen
         name="sales"
         options={{
-          href: null,
+          tabBarButton: () => null,
           tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
         name="reviews"
         options={{
-          href: null,
+          tabBarButton: () => null,
           tabBarStyle: { display: 'none' },
         }}
       />
