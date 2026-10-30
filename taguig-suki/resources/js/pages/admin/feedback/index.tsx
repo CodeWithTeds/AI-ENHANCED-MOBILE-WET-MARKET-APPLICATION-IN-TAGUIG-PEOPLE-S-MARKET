@@ -1,9 +1,11 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import {
     AlertTriangle,
+    Camera,
     CheckCircle2,
     Clock,
     Eye,
+    Image as ImageIcon,
     MessageSquare,
     MessageSquareReply,
     Star,
@@ -17,6 +19,12 @@ import { dashboard } from '@/routes';
 type ReviewUser = { id: number; name: string; email: string };
 type ReviewOrder = { id: number; order_number: string } | null;
 
+type ReviewImage = {
+    id: number;
+    path: string;
+    url: string;
+};
+
 type Review = {
     id: number;
     rating: number;
@@ -29,6 +37,7 @@ type Review = {
     order: ReviewOrder;
     type: string;
     target_name: string | null;
+    images?: ReviewImage[];
 };
 
 type FilterOption = { value: string; label: string };
@@ -202,8 +211,26 @@ export default function FeedbackIndex({ reviews, stats, filters, statuses, types
                                             <td className="px-4 py-2.5"><TypeBadge type={review.type} /></td>
                                             <td className="px-4 py-2.5 text-xs font-medium text-gray-700">{review.target_name ?? '---'}</td>
                                             <td className="px-4 py-2.5"><StarRating rating={review.rating} /></td>
-                                            <td className="max-w-[200px] px-4 py-2.5">
+                                            <td className="max-w-[220px] px-4 py-2.5">
                                                 <p className="truncate text-xs text-gray-600">{review.comment ?? '---'}</p>
+                                                {review.images && review.images.length > 0 && (
+                                                    <div className="mt-1 flex items-center gap-1.5">
+                                                        <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200/60">
+                                                            <Camera className="h-2.5 w-2.5" />
+                                                            {review.images.length} {review.images.length === 1 ? 'photo' : 'photos'}
+                                                        </span>
+                                                        <div className="flex -space-x-1.5 overflow-hidden">
+                                                            {review.images.slice(0, 3).map((img, i) => (
+                                                                <img
+                                                                    key={img.id ?? i}
+                                                                    src={img.url}
+                                                                    alt="Visual proof"
+                                                                    className="inline-block h-5 w-5 rounded object-cover ring-1 ring-white"
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-2.5"><StatusBadge status={review.status} /></td>
                                             <td className="px-4 py-2.5 text-[11px] text-gray-400">{formatDate(review.created_at)}</td>
@@ -348,62 +375,121 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 function ReviewDetailModal({ review, onClose, onRespond }: { review: Review; onClose: () => void; onRespond: (r: Review) => void }) {
+    const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-                    <h3 className="text-sm font-bold text-gray-900">Review Details</h3>
-                    <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-                <div className="space-y-4 px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-xs font-medium text-gray-800">{review.user.name}</div>
-                            <div className="text-[10px] text-gray-400">{review.user.email}</div>
+        <>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+                <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                        <h3 className="text-sm font-bold text-gray-900">Review Details</h3>
+                        <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div className="space-y-4 px-6 py-4 overflow-y-auto">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <div className="text-xs font-medium text-gray-800">{review.user.name}</div>
+                                <div className="text-[10px] text-gray-400">{review.user.email}</div>
+                            </div>
+                            <StatusBadge status={review.status} />
                         </div>
-                        <StatusBadge status={review.status} />
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <StarRating rating={review.rating} />
-                        <TypeBadge type={review.type} />
-                        {review.target_name && (
-                            <span className="text-[11px] text-gray-500">Target: <span className="font-medium text-gray-700">{review.target_name}</span></span>
-                        )}
-                    </div>
-                    {review.order && (
-                        <div className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
-                            Related Order: <span className="font-semibold text-gray-700">{review.order.order_number}</span>
-                        </div>
-                    )}
-                    <div className="rounded-lg bg-gray-50 px-4 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Customer Comment</div>
-                        <p className="mt-1 text-xs text-gray-700">{review.comment ?? 'No comment provided.'}</p>
-                    </div>
-                    {review.admin_response && (
-                        <div className="rounded-lg bg-[#488562]/5 px-4 py-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-[#488562]">Admin Response</div>
-                            <p className="mt-1 text-xs text-gray-700">{review.admin_response}</p>
-                            {review.resolved_at && (
-                                <p className="mt-1 text-[10px] text-gray-400">Resolved {formatDate(review.resolved_at)}</p>
+                        <div className="flex items-center gap-4">
+                            <StarRating rating={review.rating} />
+                            <TypeBadge type={review.type} />
+                            {review.target_name && (
+                                <span className="text-[11px] text-gray-500">Target: <span className="font-medium text-gray-700">{review.target_name}</span></span>
                             )}
                         </div>
-                    )}
-                    <div className="text-[10px] text-gray-400">Submitted {formatDate(review.created_at)}</div>
-                </div>
-                <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-6 py-3">
-                    <button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
-                        Close
-                    </button>
-                    {(review.status === 'pending' || review.status === 'in_review') && (
-                        <button onClick={() => onRespond(review)} className="rounded-lg bg-[#488562] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#3a7052]">
-                            Respond
+                        {review.order && (
+                            <div className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+                                Related Order: <span className="font-semibold text-gray-700">{review.order.order_number}</span>
+                            </div>
+                        )}
+                        <div className="rounded-lg bg-gray-50 px-4 py-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Customer Comment</div>
+                            <p className="mt-1 text-xs text-gray-700">{review.comment ?? 'No comment provided.'}</p>
+                        </div>
+
+                        {/* Customer Attached Photos (Visual Evidence) */}
+                        {review.images && review.images.length > 0 && (
+                            <div className="rounded-xl border border-gray-100 bg-gray-50/75 p-3.5">
+                                <div className="mb-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                                        <Camera className="h-3.5 w-3.5 text-amber-600" />
+                                        Customer Visual Evidence ({review.images.length})
+                                    </div>
+                                    <span className="text-[10px] text-gray-400">Click photo to view larger</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {review.images.map((img, idx) => (
+                                        <button
+                                            key={img.id ?? idx}
+                                            type="button"
+                                            onClick={() => setPreviewPhoto(img.url)}
+                                            className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-white transition hover:border-[#488562] focus:outline-none"
+                                        >
+                                            <img
+                                                src={img.url}
+                                                alt={`Visual evidence ${idx + 1}`}
+                                                className="h-full w-full object-cover transition duration-150 group-hover:scale-105"
+                                            />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition group-hover:bg-black/25">
+                                                <Eye className="h-4 w-4 text-white opacity-0 transition group-hover:opacity-100" />
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {review.admin_response && (
+                            <div className="rounded-lg bg-[#488562]/5 px-4 py-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-[#488562]">Admin Response</div>
+                                <p className="mt-1 text-xs text-gray-700">{review.admin_response}</p>
+                                {review.resolved_at && (
+                                    <p className="mt-1 text-[10px] text-gray-400">Resolved {formatDate(review.resolved_at)}</p>
+                                )}
+                            </div>
+                        )}
+                        <div className="text-[10px] text-gray-400">Submitted {formatDate(review.created_at)}</div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-6 py-3">
+                        <button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
+                            Close
                         </button>
-                    )}
+                        {(review.status === 'pending' || review.status === 'in_review') && (
+                            <button onClick={() => onRespond(review)} className="rounded-lg bg-[#488562] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#3a7052]">
+                                Respond
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {/* Lightbox photo viewer */}
+            {previewPhoto && (
+                <div
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4"
+                    onClick={() => setPreviewPhoto(null)}
+                >
+                    <div className="relative max-h-[85vh] max-w-[85vw]" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setPreviewPhoto(null)}
+                            className="absolute -top-3 -right-3 z-10 rounded-full bg-white p-1.5 text-gray-700 shadow-lg hover:bg-gray-100"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                        <img
+                            src={previewPhoto}
+                            alt="Visual evidence preview"
+                            className="max-h-[80vh] w-auto max-w-full rounded-xl object-contain shadow-2xl"
+                        />
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
 
@@ -441,6 +527,27 @@ function RespondModal({ review, onClose }: { review: Review; onClose: () => void
                     </div>
                     {review.comment && (
                         <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">&ldquo;{review.comment}&rdquo;</p>
+                    )}
+                    {review.images && review.images.length > 0 && (
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/75 p-3">
+                            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                                <Camera className="h-3.5 w-3.5 text-amber-600" />
+                                Attached Visual Proof ({review.images.length})
+                            </div>
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                                {review.images.map((img, idx) => (
+                                    <a
+                                        key={img.id ?? idx}
+                                        href={img.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white hover:border-[#488562]"
+                                    >
+                                        <img src={img.url} alt={`Evidence ${idx + 1}`} className="h-full w-full object-cover" />
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
                     )}
                     <div>
                         <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Your Response</label>
