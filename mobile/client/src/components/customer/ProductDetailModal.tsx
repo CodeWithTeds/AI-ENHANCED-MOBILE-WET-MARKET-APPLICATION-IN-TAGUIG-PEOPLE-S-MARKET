@@ -34,36 +34,11 @@ import { useFavorites } from '@/context/FavoritesContext';
 import type { MarketProduct } from '@/services/marketplace';
 import { getProductReviews, type ReviewSummary } from '@/services/reviews';
 import { StarRatingDisplay } from '@/components/customer/StarRating';
+import { getCategoryConfig } from '@/constants/categories';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.88;
 const IMAGE_HEIGHT = SCREEN_HEIGHT * 0.32;
-
-const CATEGORY_EMOJIS: Record<string, string> = {
-  meat: '🥩',
-  fish: '🐟',
-  vegetables: '🥬',
-  fruits: '🍎',
-  spices: '🌶️',
-  poultry: '🍗',
-  condiments: '🫙',
-  dairy: '🥛',
-  grains: '🌾',
-  herbs: '🌿',
-};
-
-const CATEGORY_COLORS: Record<string, string> = {
-  meat: '#FFEBEE',
-  fish: '#E3F2FD',
-  vegetables: '#E8F5E9',
-  fruits: '#FFF3E0',
-  spices: '#FCE4EC',
-  poultry: '#FFF8E1',
-  condiments: '#F3E5F5',
-  dairy: '#E8EAF6',
-  grains: '#FFF9C4',
-  herbs: '#F1F8E9',
-};
 
 interface Props {
   product: MarketProduct | null;
@@ -274,6 +249,7 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
       price: product.price,
       unit: product.unit,
       category: product.category,
+      image: product.image,
     }, quantity);
 
     /* Show snackbar */
@@ -308,10 +284,11 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
 
   /* We show the real image + a "zoomed" placeholder as second slide when no extra images exist */
   const galleryImages = imageUrl ? [imageUrl] : [];
-  const categoryEmoji = CATEGORY_EMOJIS[product.category.toLowerCase()] ?? '🛒';
-  const categoryBg = CATEGORY_COLORS[product.category.toLowerCase()] ?? '#F3F4F6';
+  const categoryConfig = getCategoryConfig(product.category);
+  const categoryEmoji = categoryConfig.emoji;
+  const categoryBg = categoryConfig.bg;
   const subtotal = product.price * quantity;
-  const categoryLabel = product.category.charAt(0).toUpperCase() + product.category.slice(1);
+  const categoryLabel = categoryConfig.label;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
