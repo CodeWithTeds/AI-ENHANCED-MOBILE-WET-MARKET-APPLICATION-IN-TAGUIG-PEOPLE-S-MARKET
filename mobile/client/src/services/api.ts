@@ -31,6 +31,10 @@ class ApiService {
   async request<T>(endpoint: string, options: ApiOptions = {}): Promise<ApiResponse<T>> {
     const { method = 'GET', body, token, isFormData = false, timeout = 15000 } = options;
 
+    if (isFormData && body) {
+      return this.uploadFormData<T>(endpoint, method, body as FormData, token, timeout);
+    }
+
     const headers: Record<string, string> = {
       Accept: 'application/json',
     };
@@ -102,6 +106,58 @@ class ApiService {
       console.error(`[API] ${method} ${url} failed:`, message);
       throw new ApiError(message, 0);
     }
+  }
+
+  private uploadFormData<T>(
+    endpoint: string,
+    method: string,
+    formData: FormData,
+    token?: string,
+    timeout = 30000,
+  ): Promise<ApiResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      xhr.setRequestHeader('Accept', 'application/json');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.timeout = timeout;
+
+      xhr.onload = () => {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(res as ApiResponse<T>);
+          } else {
+            let message = res.message || `Request failed with status ${xhr.status}`;
+            const validationBag = res.errors ?? res.data;
+            if (validationBag && typeof validationBag === 'object' && !Array.isArray(validationBag)) {
+              const entries = Object.values(validationBag as Record<string, unknown>);
+              const isValidationBag =
+                entries.length > 0 &&
+                entries.every(
+                  (v) => typeof v === 'string' || (Array.isArray(v) && v.every((i) => typeof i === 'string')),
+                );
+              if (isValidationBag) {
+                const validationErrors = (entries as (string | string[])[]).flat().join('\n');
+                if (validationErrors) {
+                  message = validationErrors;
+                }
+              }
+            }
+            reject(new ApiError(message, xhr.status, res));
+          }
+        } catch {
+          reject(new ApiError(`Invalid JSON response: ${xhr.responseText.substring(0, 200)}`, xhr.status));
+        }
+      };
+
+      xhr.onerror = () => reject(new ApiError('Network request failed. Check your connection.', 0));
+      xhr.ontimeout = () => reject(new ApiError('Request timed out', 0));
+      xhr.send(formData);
+    });
   }
 }
 
