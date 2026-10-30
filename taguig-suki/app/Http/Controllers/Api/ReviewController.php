@@ -10,6 +10,7 @@ use App\Services\ReviewService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 
 class ReviewController extends Controller
@@ -22,7 +23,7 @@ class ReviewController extends Controller
      * Rate a vendor (must have a completed order containing this vendor).
      *
      * POST /reviews/vendor
-     * Body: { vendor_id, rating, comment?, order_id? }
+     * Body: { vendor_id, rating, comment?, order_id?, images? }
      */
     public function storeVendor(Request $request): JsonResponse
     {
@@ -30,8 +31,10 @@ class ReviewController extends Controller
             'vendor_id' => 'required|integer|exists:vendors,id',
         ]);
 
+        $images = $this->validateAndExtractImages($request);
+
         try {
-            $review = $this->reviewService->createVendorReview($request->user(), $validated);
+            $review = $this->reviewService->createVendorReview($request->user(), array_merge($validated, ['images' => $images]));
 
             return $this->successResponse($review, 'Vendor review submitted', 201);
         } catch (ValidationException $e) {
@@ -43,7 +46,7 @@ class ReviewController extends Controller
      * Rate a product (must have a completed order containing this product).
      *
      * POST /reviews/product
-     * Body: { product_id, rating, comment?, order_id? }
+     * Body: { product_id, rating, comment?, order_id?, images? }
      */
     public function storeProduct(Request $request): JsonResponse
     {
@@ -51,8 +54,10 @@ class ReviewController extends Controller
             'product_id' => 'required|integer|exists:products,id',
         ]);
 
+        $images = $this->validateAndExtractImages($request);
+
         try {
-            $review = $this->reviewService->createProductReview($request->user(), $validated);
+            $review = $this->reviewService->createProductReview($request->user(), array_merge($validated, ['images' => $images]));
 
             return $this->successResponse($review, 'Product review submitted', 201);
         } catch (ValidationException $e) {
@@ -64,7 +69,7 @@ class ReviewController extends Controller
      * Rate an AI-generated recipe.
      *
      * POST /reviews/recipe
-     * Body: { recipe_name, rating, comment? }
+     * Body: { recipe_name, rating, comment?, images? }
      */
     public function storeRecipe(Request $request): JsonResponse
     {
@@ -72,8 +77,10 @@ class ReviewController extends Controller
             'recipe_name' => 'required|string|max:100',
         ]);
 
+        $images = $this->validateAndExtractImages($request);
+
         try {
-            $review = $this->reviewService->createRecipeReview($request->user(), $validated);
+            $review = $this->reviewService->createRecipeReview($request->user(), array_merge($validated, ['images' => $images]));
 
             return $this->successResponse($review, 'Recipe review submitted', 201);
         } catch (ValidationException $e) {
@@ -84,12 +91,17 @@ class ReviewController extends Controller
     /**
      * Update one of the customer's own reviews.
      *
-     * PUT /reviews/{review}
-     * Body: { rating, comment? }
+     * PUT/POST /reviews/{review}
+     * Body: { rating, comment?, remove_images?, images? }
      */
     public function update(Request $request, Review $review): JsonResponse
     {
         $validated = $this->validateReview($request);
+        $images = $this->validateAndExtractImages($request);
+
+        if (! empty($images)) {
+            $validated['images'] = $images;
+        }
 
         try {
             $updated = $this->reviewService->updateReview($request->user(), $review, $validated);
@@ -171,18 +183,6 @@ class ReviewController extends Controller
     }
 
     /**
-     * Shared rating validation + the target-specific rules.
-     */
-    private function validateReview(Request $request, array $rules = []): array
-    {
-        return $request->validate(array_merge($rules, [
-            'rating' => 'required|integer|between:1,5',
-            'comment' => 'nullable|string|max:1000',
-            'order_id' => 'nullable|integer|exists:orders,id',
-        ]));
-    }
-
-    /**
      * Get ratings and feedback for the authenticated vendor's stall and products.
      *
      * GET /vendor/reviews
@@ -193,5 +193,60 @@ class ReviewController extends Controller
             $this->reviewService->getVendorReviewsDashboard($request->user()),
             'Vendor reviews dashboard retrieved'
         );
+    }
+
+    /**
+     * Shared rating validation + the target-specific rules.
+     */
+    private function validateReview(Request $request, array $rules = []): array
+    {
+        $imageRules = [];
+        if ($request->hasFile('images')) {
+            if (is_array($request->file('images'))) {
+                $imageRules = [
+                    'images' => 'nullable|array|max:5',
+                    'images.*' => 'image|mimes:jpeg,png,jpg|max:5120',
+                ];
+            } else {
+                $imageRules = [
+                    'images' => 'nullable|image|mimes:jpeg,png,jpg|max:5120',
+                ];
+            }
+        }
+
+        return $request->validate(array_merge($rules, $imageRules, [
+            'rating' => 'required|integer|between:1,5',
+            'comment' => 'nullable|string|max:1000',
+            'order_id' => 'nullable|integer|exists:orders,id',
+            'remove_images' => 'nullable|boolean',
+        ]));
+    }
+
+    /**
+     * Validate and extract image files from the request.
+     *
+     * @return array{path: string, order: int}[]
+     */
+    private function validateAndExtractImages(Request $request): array
+    {
+        $images = [];
+
+        if ($request->hasFile('images')) {
+            $files = $request->file('images');
+            $fileArray = is_array($files) ? $files : [$files];
+
+            foreach ($fileArray as $index => $file) {
+                if ($file instanceof UploadedFile && $file->isValid()) {
+                    $path = $file->store('feedback-images/' . $request->user()->id, 'public');
+
+                    $images[] = [
+                        'path' => $path,
+                        'order' => $index,
+                    ];
+                }
+            }
+        }
+
+        return $images;
     }
 }
