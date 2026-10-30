@@ -27,10 +27,30 @@ type StatusHistoryItem = {
     created_at: string;
 };
 
+type ChatMessageItem = {
+    id: number;
+    sender_name: string;
+    sender_type: string;
+    message: string;
+    message_type: string;
+    metadata?: any;
+    created_at: string;
+};
+
+type ConversationItem = {
+    id: number;
+    vendor_id: number;
+    vendor_stall: string;
+    confirmation_status: string;
+    last_message_at: string | null;
+    messages: ChatMessageItem[];
+};
+
 type AdminOrder = {
     id: number;
     order_number: string;
     status: string;
+    confirmation_status?: string;
     payment_method: string;
     payment_status?: string;
     notes?: string | null;
@@ -39,6 +59,7 @@ type AdminOrder = {
     vendors: string[];
     items: AdminOrderItem[];
     status_history?: StatusHistoryItem[];
+    conversations?: ConversationItem[];
 };
 
 type MethodBreakdown = {
@@ -446,6 +467,64 @@ export default function CombinedOrdersAndPaymentsIndex({
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* Dispute & Order Chat History (Retained in DB) */}
+                            <div>
+                                <div className="mb-2 flex items-center justify-between">
+                                    <span className="text-xs font-bold text-gray-900">
+                                        Dispute & Chat History Reference
+                                    </span>
+                                    {selectedOrder.confirmation_status && (
+                                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                                            COD: {selectedOrder.confirmation_status.replace('_', ' ')}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {selectedOrder.conversations && selectedOrder.conversations.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {selectedOrder.conversations.map((conv) => (
+                                            <div key={conv.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                                <div className="mb-2 flex items-center justify-between text-xs">
+                                                    <span className="font-bold text-gray-800">{conv.vendor_stall ?? 'Vendor'}</span>
+                                                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500 border border-gray-200">
+                                                        Confirmation: {conv.confirmation_status}
+                                                    </span>
+                                                </div>
+
+                                                {conv.messages && conv.messages.length > 0 ? (
+                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                        {conv.messages.map((m) => (
+                                                            <div
+                                                                key={m.id}
+                                                                className={`rounded-lg p-2 text-xs ${
+                                                                    m.sender_type === 'customer'
+                                                                        ? 'bg-emerald-50 text-emerald-900 border border-emerald-100 ml-4'
+                                                                        : m.sender_type === 'vendor'
+                                                                        ? 'bg-white text-gray-900 border border-gray-200 mr-4'
+                                                                        : 'bg-amber-50 text-amber-900 border border-amber-200 mx-2 text-center'
+                                                                }`}
+                                                            >
+                                                                <div className="mb-0.5 flex items-center justify-between text-[10px] opacity-75">
+                                                                    <span className="font-semibold capitalize">{m.sender_name} ({m.sender_type})</span>
+                                                                    <span>{formatDate(m.created_at)}</span>
+                                                                </div>
+                                                                <p className="leading-relaxed">{m.message}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-[11px] text-gray-400 italic">No messages sent in this conversation.</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl bg-gray-50 p-3 text-center text-xs text-gray-400">
+                                        No chat messages recorded for this order.
+                                    </div>
+                                )}
                             </div>
                         </div>
 

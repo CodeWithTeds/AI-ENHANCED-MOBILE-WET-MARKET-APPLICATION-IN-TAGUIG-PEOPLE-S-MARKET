@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CustomerReportController;
 use App\Http\Controllers\Api\CustomerVerificationController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\OrderChatController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RecipeController;
@@ -19,7 +20,11 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\VendorPaymentSettingsController;
 use App\Http\Controllers\Api\VendorProfileController;
 use App\Http\Controllers\Api\VendorRegistrationController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
+
+// Broadcasting authentication for Sanctum API
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
@@ -101,6 +106,16 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/track', [OrderController::class, 'track']);
     Route::post('/orders/{id}/payment-reference', [OrderController::class, 'submitPaymentReference']);
+
+    // Customer–Vendor In-App Order Messaging & Confirmation
+    Route::get('/orders/{id}/chats', [OrderChatController::class, 'index']);
+    Route::get('/orders/{id}/vendors/{vendorId}/chat', [OrderChatController::class, 'show']);
+    Route::post('/orders/{id}/vendors/{vendorId}/chat/messages', [OrderChatController::class, 'sendMessage']);
+    Route::post('/orders/{id}/vendors/{vendorId}/chat/request-confirmation', [OrderChatController::class, 'requestConfirmation']);
+    Route::post('/orders/{id}/vendors/{vendorId}/chat/confirm', [OrderChatController::class, 'confirmOrder']);
+    Route::post('/orders/{id}/vendors/{vendorId}/chat/cancel', [OrderChatController::class, 'cancelOrder']);
+    Route::get('/chats/unread', [OrderChatController::class, 'unreadCount']);
+    Route::post('/chats/{conversationId}/read', [OrderChatController::class, 'markRead']);
 
     // Customer Reports — purchases & spending
     Route::get('/customer/reports', [CustomerReportController::class, 'index']);

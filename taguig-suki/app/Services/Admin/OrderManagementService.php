@@ -14,6 +14,8 @@ class OrderManagementService
             'items:id,order_id,vendor_id,product_name,category,unit,quantity,unit_price,subtotal,status',
             'items.vendor:id,stall_name',
             'statusHistory',
+            'conversations.vendor:id,stall_name',
+            'conversations.messages.sender:id,name',
         ]);
 
         $this->applyFilters($query, $filters);
@@ -65,9 +67,15 @@ class OrderManagementService
             'id' => $order->id,
             'order_number' => $order->order_number,
             'status' => $order->status,
+            'confirmation_status' => $order->confirmation_status ?? 'not_required',
+            'total_amount' => (string) number_format((float) $order->total_amount, 2, '.', ''),
             'payment_method' => $order->payment_method,
             'payment_status' => $order->payment_status ?? ($order->status === 'completed' ? 'paid' : ($order->status === 'cancelled' ? 'rejected' : 'unpaid')),
             'notes' => $order->notes,
+            'customer' => [
+                'name' => $order->user?->name ?? 'Customer',
+                'email' => $order->user?->email ?? '',
+            ],
             'created_at' => $order->created_at,
             'item_count' => $order->items->count(),
             'vendors' => $order->items->pluck('vendor.stall_name')->filter()->unique()->values(),
@@ -84,6 +92,22 @@ class OrderManagementService
                 'note' => $history->note,
                 'created_at' => $history->created_at,
             ]),
+            'conversations' => $order->conversations->map(fn ($conv) => [
+                'id' => $conv->id,
+                'vendor_id' => $conv->vendor_id,
+                'vendor_stall' => $conv->vendor?->stall_name,
+                'confirmation_status' => $conv->confirmation_status,
+                'last_message_at' => $conv->last_message_at?->toIso8601String(),
+                'messages' => $conv->messages->map(fn ($msg) => [
+                    'id' => $msg->id,
+                    'sender_name' => $msg->sender?->name ?? 'System',
+                    'sender_type' => $msg->sender_type,
+                    'message' => $msg->message,
+                    'message_type' => $msg->message_type,
+                    'metadata' => $msg->metadata,
+                    'created_at' => $msg->created_at?->toIso8601String(),
+                ]),
+            ]),
         ];
     }
 
@@ -99,7 +123,10 @@ class OrderManagementService
 
         if (! empty($filters['search'])) {
             $term = $filters['search'];
-            $query->where('order_number', 'like', "%{$term}%");
+            $query->where(function ($q) use ($term) {
+                $q->where('order_number', 'like', "%{$term}%")
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$term}%"));
+            });
         }
     }
 

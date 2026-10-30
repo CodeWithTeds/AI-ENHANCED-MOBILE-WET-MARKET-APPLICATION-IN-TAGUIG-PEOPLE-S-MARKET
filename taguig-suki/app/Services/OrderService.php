@@ -143,10 +143,14 @@ class OrderService
             }
 
             // ── 5. Create Order ────────────────────────────────────────────
+            $isCod = $paymentMethod === 'cash';
+            $confirmationStatus = $isCod ? 'pending_confirmation' : 'not_required';
+
             $order = Order::create([
                 'user_id' => $user->id,
                 'order_number' => Order::generateOrderNumber(),
                 'status' => 'pending',
+                'confirmation_status' => $confirmationStatus,
                 'total_amount' => round($totalAmount, 2),
                 'payment_method' => $paymentMethod,
                 'payment_reference_number' => $reference,
@@ -189,6 +193,7 @@ class OrderService
                     'unit_price' => $unitPrice,
                     'subtotal' => round($unitPrice * $qty, 2),
                     'status' => 'pending',
+                    'confirmation_status' => $confirmationStatus,
                 ]);
 
                 // Deduct stock and log the sale
@@ -214,7 +219,36 @@ class OrderService
                 }
             }
 
-            return $order->load('items');
+            // ── 7. Initialize Order Conversations for each vendor ──────────
+            $vendorIds = $order->items->pluck('vendor_id')->unique()->filter()->values();
+            foreach ($vendorIds as $vId) {
+                $conv = \App\Models\OrderConversation::firstOrCreate([
+                    'order_id' => $order->id,
+                    'vendor_id' => $vId,
+                    'customer_id' => $user->id,
+                ], [
+                    'confirmation_status' => $confirmationStatus !== 'not_required' ? $confirmationStatus : 'none',
+                    'last_message_at' => now(),
+                ]);
+
+                if ($isCod) {
+                    \App\Models\OrderMessage::create([
+                        'order_conversation_id' => $conv->id,
+                        'sender_id' => $user->id,
+                        'sender_type' => 'system',
+                        'message' => "Cash on Delivery (COD) order placed. The vendor may request order confirmation before preparing items.",
+                        'message_type' => 'confirmation_request',
+                        'metadata' => [
+                            'action' => 'cod_order_placed',
+                            'order_number' => $order->order_number,
+                            'total_amount' => (float) $order->total_amount,
+                        ],
+                        'is_read' => false,
+                    ]);
+                }
+            }
+
+            return $order->load(['items.product:id,image', 'items.vendor:id,stall_name,stall_location']);
         });
     }
 
@@ -314,7 +348,10 @@ class OrderService
     public function getCustomerOrders(User $user, int $perPage = 20)
     {
         return Order::where('user_id', $user->id)
-            ->with(['items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path'])
+            ->with([
+                'items.product:id,image',
+                'items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path',
+            ])
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }
@@ -325,7 +362,10 @@ class OrderService
     public function getOrder(User $user, int $orderId): Order
     {
         return Order::where('user_id', $user->id)
-            ->with(['items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path'])
+            ->with([
+                'items.product:id,image',
+                'items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path',
+            ])
             ->findOrFail($orderId);
     }
 
@@ -337,6 +377,7 @@ class OrderService
     {
         return Order::where('user_id', $user->id)
             ->with([
+                'items.product:id,image',
                 'items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path',
                 'statusHistory',
             ])
@@ -392,6 +433,7 @@ class OrderService
     private const PORTION_STATUS_RANKS = [
         'cancelled' => -1,
         'pending' => 0,
+        'pending_confirmation' => 0,
         'confirmed' => 1,
         'ready' => 2,
         'completed' => 3,

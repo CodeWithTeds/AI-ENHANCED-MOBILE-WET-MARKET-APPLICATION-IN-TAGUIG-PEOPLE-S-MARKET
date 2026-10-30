@@ -18,7 +18,7 @@ class RecipeService
     {
         try {
             $availableProducts = Product::where('is_available', true)
-                ->select('id', 'name', 'category', 'price', 'unit')
+                ->select('id', 'name', 'category', 'price', 'unit', 'image')
                 ->get()
                 ->toArray();
 
@@ -258,6 +258,7 @@ PROMPT;
                         'price' => $bestProduct['price'],
                         'unit' => $bestProduct['unit'],
                         'category' => $bestProduct['category'],
+                        'image' => $bestProduct['image'] ?? null,
                     ];
                     $matchedIngredientNames[] = $rawIng;
                 }
