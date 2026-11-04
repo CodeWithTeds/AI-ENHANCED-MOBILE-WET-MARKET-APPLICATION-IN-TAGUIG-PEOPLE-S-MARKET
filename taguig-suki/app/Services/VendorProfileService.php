@@ -47,6 +47,8 @@ class VendorProfileService
 
         $vendor->update(array_filter([
             'stall_name' => $data['stall_name'] ?? null,
+            'opening_time' => $data['opening_time'] ?? null,
+            'closing_time' => $data['closing_time'] ?? null,
             'product_categories' => $data['product_categories'] ?? null,
         ]));
 

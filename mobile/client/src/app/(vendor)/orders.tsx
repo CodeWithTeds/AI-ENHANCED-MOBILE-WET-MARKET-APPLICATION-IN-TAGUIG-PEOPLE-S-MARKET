@@ -25,7 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
@@ -59,6 +59,7 @@ const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
 
 export default function VendorOrdersScreen() {
   const router = useRouter();
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
   const { token } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +90,17 @@ export default function VendorOrdersScreen() {
   }, [token]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Open the order linked from a notification tap.
+  useEffect(() => {
+    const orderId = Number(focus);
+    if (!Number.isFinite(orderId) || orderId <= 0) return;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab('all');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExpandedId(orderId);
+  }, [focus]);
 
   function onRefresh() {
     setRefreshing(true);
@@ -185,12 +197,13 @@ export default function VendorOrdersScreen() {
     const authToken = token ?? await getToken();
     if (!authToken) return;
 
+    const portionTotal = order.items.reduce((sum, i) => sum + Number(i.subtotal), 0);
     const isVerify = action === 'verify';
     Alert.alert(
       isVerify ? 'Verify Payment' : 'Reject Payment',
       isVerify
-        ? `Confirm that ${order.payment_method.toUpperCase()} payment Ref: ${order.payment_reference_number} is valid? This will mark it as Paid.`
-        : `Reject payment Ref: ${order.payment_reference_number}? Customer will need to resubmit.`,
+        ? `Confirm that ${order.payment_method.toUpperCase()} payment of ₱${portionTotal.toFixed(2)} (Ref: ${order.payment_reference_number ?? '—'}) is received in your account? This will mark your portion as Paid.`
+        : `Reject payment Ref: ${order.payment_reference_number ?? '—'}? Customer will need to resubmit.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -520,6 +533,12 @@ function VendorOrderCard({
                 <View style={[styles.paymentStatusPill, { backgroundColor: paymentCfg.color }]}>
                   <Text style={styles.paymentStatusPillText}>{paymentCfg.label}</Text>
                 </View>
+              </View>
+              <View style={styles.paymentBoxRow}>
+                <Text style={styles.paymentBoxLabel}>Portion Amount</Text>
+                <Text style={[styles.paymentBoxValue, { color: '#1B6B45', fontWeight: '800' }]}>
+                  ₱{portionTotal.toFixed(2)}
+                </Text>
               </View>
               <View style={styles.paymentBoxRow}>
                 <Text style={styles.paymentBoxLabel}>Reference</Text>

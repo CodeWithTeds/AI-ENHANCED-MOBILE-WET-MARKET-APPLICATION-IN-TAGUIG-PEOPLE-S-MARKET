@@ -39,7 +39,7 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
         <View style={styles.card}>
           <InfoRow label="Full Name" value={data.personal.fullName} />
           <InfoRow label="Phone" value={data.personal.phone} />
-          <InfoRow label="Email" value={data.personal.email || 'Not provided'} />
+          <InfoRow label="Email" value={data.personal.email} />
         </View>
       </View>
 

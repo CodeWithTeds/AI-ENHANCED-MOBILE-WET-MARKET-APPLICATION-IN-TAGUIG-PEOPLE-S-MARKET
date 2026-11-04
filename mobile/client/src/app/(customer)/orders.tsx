@@ -202,6 +202,7 @@ function OrderCard({
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [refInput, setRefInput] = useState('');
+  const [portionRefInputs, setPortionRefInputs] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -220,8 +221,9 @@ function OrderCard({
     hour: '2-digit', minute: '2-digit',
   });
 
-  async function handleSubmitReference() {
-    if (!refInput.trim()) {
+  async function handleSubmitReference(targetVendorId?: number, customRef?: string) {
+    const valueToSubmit = (customRef ?? refInput).trim();
+    if (!valueToSubmit) {
       setSubmitError('Enter your GCash/Maya reference number.');
       return;
     }
@@ -230,10 +232,14 @@ function OrderCard({
     try {
       const token = await getToken();
       if (!token) throw new Error('Not authenticated');
-      const updated = await submitPaymentReference(order.id, refInput.trim(), token);
+      const updated = await submitPaymentReference(order.id, valueToSubmit, token, targetVendorId);
       setOrder(updated);
       onUpdated(updated);
-      setRefInput('');
+      if (targetVendorId) {
+        setPortionRefInputs((prev) => ({ ...prev, [targetVendorId]: '' }));
+      } else {
+        setRefInput('');
+      }
       Alert.alert('Submitted', 'Payment proof submitted — pending vendor verification.');
     } catch (err: any) {
       const msg = err instanceof ApiError ? err.message : err.message || 'Failed to submit reference';
@@ -328,56 +334,139 @@ function OrderCard({
             </View>
           )}
 
-          {/* Submit reference form when unpaid or rejected */}
-          {isEwallet && (paymentStatus === 'unpaid' || paymentStatus === 'rejected') && (
-            <View style={styles.submitRefBox}>
-              <Text style={styles.submitRefTitle}>
-                {paymentStatus === 'rejected' ? 'Resubmit Reference Number' : 'Submit Payment Reference'}
-              </Text>
-              <Text style={styles.submitRefHint}>
-                Enter the reference/transaction ID from your {order.payment_method.toUpperCase()} app after sending ₱{Number(order.total_amount).toFixed(2)}.
-              </Text>
-              <TextInput
-                style={styles.submitRefInput}
-                value={refInput}
-                onChangeText={setRefInput}
-                placeholder={`e.g., 1234567890123`}
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="characters"
-                autoCorrect={false}
-              />
-              {submitError && (
-                <View style={styles.submitError}>
-                  <Ionicons name="alert-circle-outline" size={13} color="#DC2626" />
-                  <Text style={styles.submitErrorText}>{submitError}</Text>
+          {/* Multi-Vendor Portions breakdown */}
+          {order.vendor_portions && order.vendor_portions.length > 1 ? (
+            <View style={{ gap: 10 }}>
+              <Text style={styles.vendorBreakdownTitle}>Vendor Portions & Payment Statuses</Text>
+              {order.vendor_portions.map((portion) => {
+                const pCfg = PAYMENT_STATUS_CONFIG[portion.payment_status] ?? PAYMENT_STATUS_CONFIG.unpaid;
+                const canSubmit = isEwallet && (portion.payment_status === 'unpaid' || portion.payment_status === 'rejected');
+
+                return (
+                  <View key={portion.vendor_id} style={styles.portionSectionCard}>
+                    <View style={styles.portionHeader}>
+                      <View style={styles.portionStallInfo}>
+                        <Text style={styles.portionStallName} numberOfLines={1}>{portion.stall_name}</Text>
+                        {portion.stall_location ? (
+                          <Text style={styles.portionStallLocation} numberOfLines={1}>{portion.stall_location}</Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.portionAmountBadge}>
+                        <Text style={styles.portionAmountText}>₱{Number(portion.subtotal).toFixed(2)}</Text>
+                      </View>
+                    </View>
+
+                    {/* Status row */}
+                    <View style={styles.portionStatusRow}>
+                      <View style={[styles.paymentBadge, { backgroundColor: pCfg.bg }]}>
+                        <Ionicons name={pCfg.icon as any} size={11} color={pCfg.color} />
+                        <Text style={[styles.paymentBadgeText, { color: pCfg.color }]}>{pCfg.label}</Text>
+                      </View>
+                      {portion.payment_reference_number ? (
+                        <Text style={styles.portionRefText}>Ref: {portion.payment_reference_number}</Text>
+                      ) : null}
+                    </View>
+
+                    {/* Inline Submit reference for this vendor if unpaid or rejected */}
+                    {canSubmit && (
+                      <View style={styles.portionSubmitBox}>
+                        <Text style={styles.portionSubmitLabel}>
+                          {portion.payment_status === 'rejected' ? 'Resubmit' : 'Submit'} Reference for {portion.stall_name}
+                        </Text>
+                        <View style={styles.portionSubmitRow}>
+                          <TextInput
+                            style={styles.portionSubmitInput}
+                            value={portionRefInputs[portion.vendor_id] || ''}
+                            onChangeText={(val) => setPortionRefInputs((prev) => ({ ...prev, [portion.vendor_id]: val }))}
+                            placeholder={`e.g. GCash Ref`}
+                            placeholderTextColor="#9CA3AF"
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                          />
+                          <TouchableOpacity
+                            style={[styles.portionSubmitBtn, submitting && styles.submitBtnDisabled]}
+                            onPress={() => handleSubmitReference(portion.vendor_id, portionRefInputs[portion.vendor_id])}
+                            disabled={submitting}
+                          >
+                            <Text style={styles.portionSubmitBtnText}>{submitting ? '…' : 'Submit'}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Items belonging to this vendor */}
+                    {portion.items.map((item) => (
+                      <View key={item.id} style={styles.itemRow}>
+                        <OrderItemThumbnail image={item.product?.image} category={item.category} />
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
+                          <Text style={styles.itemMeta}>
+                            ×{item.quantity} {item.unit} · ₱{Number(item.unit_price).toFixed(2)}/unit
+                          </Text>
+                        </View>
+                        <Text style={styles.itemSubtotal}>
+                          ₱{Number(item.subtotal).toFixed(2)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <>
+              {/* Submit reference form when unpaid or rejected (Single Vendor) */}
+              {isEwallet && (paymentStatus === 'unpaid' || paymentStatus === 'rejected') && (
+                <View style={styles.submitRefBox}>
+                  <Text style={styles.submitRefTitle}>
+                    {paymentStatus === 'rejected' ? 'Resubmit Reference Number' : 'Submit Payment Reference'}
+                  </Text>
+                  <Text style={styles.submitRefHint}>
+                    Enter the reference/transaction ID from your {order.payment_method.toUpperCase()} app after sending ₱{Number(order.total_amount).toFixed(2)}.
+                  </Text>
+                  <TextInput
+                    style={styles.submitRefInput}
+                    value={refInput}
+                    onChangeText={setRefInput}
+                    placeholder={`e.g., 1234567890123`}
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                  {submitError && (
+                    <View style={styles.submitError}>
+                      <Ionicons name="alert-circle-outline" size={13} color="#DC2626" />
+                      <Text style={styles.submitErrorText}>{submitError}</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+                    onPress={() => handleSubmitReference()}
+                    disabled={submitting}
+                    activeOpacity={0.85}
+                  >
+                    {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send-outline" size={14} color="#FFF" />}
+                    <Text style={styles.submitBtnText}>{submitting ? 'Submitting…' : 'Submit Reference'}</Text>
+                  </TouchableOpacity>
                 </View>
               )}
-              <TouchableOpacity
-                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-                onPress={handleSubmitReference}
-                disabled={submitting}
-                activeOpacity={0.85}
-              >
-                {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send-outline" size={14} color="#FFF" />}
-                <Text style={styles.submitBtnText}>{submitting ? 'Submitting…' : 'Submit Reference'}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
-          {order.items.map((item) => (
-            <View key={item.id} style={styles.itemRow}>
-              <OrderItemThumbnail image={item.product?.image} category={item.category} />
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
-                <Text style={styles.itemMeta}>
-                  ×{item.quantity} {item.unit} · ₱{Number(item.unit_price).toFixed(2)}/unit
-                </Text>
-              </View>
-              <Text style={styles.itemSubtotal}>
-                ₱{Number(item.subtotal).toFixed(2)}
-              </Text>
-            </View>
-          ))}
+              {order.items.map((item) => (
+                <View key={item.id} style={styles.itemRow}>
+                  <OrderItemThumbnail image={item.product?.image} category={item.category} />
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
+                    <Text style={styles.itemMeta}>
+                      ×{item.quantity} {item.unit} · ₱{Number(item.unit_price).toFixed(2)}/unit
+                    </Text>
+                  </View>
+                  <Text style={styles.itemSubtotal}>
+                    ₱{Number(item.subtotal).toFixed(2)}
+                  </Text>
+                </View>
+              ))}
+            </>
+          )}
           <View style={styles.itemsTotalRow}>
             <Text style={styles.itemsTotalLabel}>Total</Text>
             <Text style={styles.itemsTotalValue}>
@@ -571,6 +660,105 @@ const styles = StyleSheet.create({
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 
+  vendorBreakdownTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  portionSectionCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  portionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  portionStallInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  portionStallName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  portionStallLocation: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  portionAmountBadge: {
+    alignItems: 'flex-end',
+  },
+  portionAmountText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1B6B45',
+  },
+  portionStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  portionRefText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  portionSubmitBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  portionSubmitLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  portionSubmitRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  portionSubmitInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: '#111827',
+  },
+  portionSubmitBtn: {
+    backgroundColor: '#D97706',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  portionSubmitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   itemRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7,
     borderBottomWidth: 1, borderBottomColor: '#F9FAFB',

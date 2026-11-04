@@ -28,6 +28,7 @@ import {
   NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { API_BASE_URL } from '@/config/api';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
@@ -44,6 +45,7 @@ interface Props {
   product: MarketProduct | null;
   visible: boolean;
   onClose: () => void;
+  onOpenVendorStore?: (vendorId: number) => void;
 }
 
 /* ─── Snackbar Component ─── */
@@ -158,7 +160,7 @@ const dotStyles = StyleSheet.create({
 
 /* ─── Main Component ─── */
 
-export function ProductDetailModal({ product, visible, onClose }: Props) {
+export function ProductDetailModal({ product, visible, onClose, onOpenVendorStore }: Props) {
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
   const btnScaleAnim = useRef(new Animated.Value(1)).current;
@@ -170,7 +172,7 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
 
-  const { addItem, isInCart, items } = useCart();
+  const { addItem, isInCart, items, startBuyNow } = useCart();
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
 
   const inCart = product ? isInCart(product.id) : false;
@@ -179,6 +181,9 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
   const isWeightProduct = product ? product.unit.toLowerCase() === 'kg' : false;
   const step = isWeightProduct ? 0.5 : 1;
   const minQty = isWeightProduct ? 0.5 : 1;
+
+  const vendorHours = product?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM';
+  const isStoreOpen = product?.vendor?.is_open ?? computeIsOpen(product?.vendor?.opening_time, product?.vendor?.closing_time);
 
   function formatQty(q: number): string {
     return Number.isInteger(q) ? String(q) : q.toFixed(1).replace(/\.0$/, '');
@@ -256,6 +261,22 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
     setSnackVisible(true);
     if (snackTimer.current) clearTimeout(snackTimer.current);
     snackTimer.current = setTimeout(() => setSnackVisible(false), 2200);
+  }
+
+  function handleBuyNow() {
+    if (!product || !product.is_available) return;
+
+    startBuyNow({
+      product_id: product.id,
+      product_name: product.name,
+      price: product.price,
+      unit: product.unit,
+      category: product.category,
+      image: product.image,
+    }, quantity);
+
+    onClose();
+    router.push('/(customer)/cart' as any);
   }
 
   function handleToggleFavorite() {
@@ -374,20 +395,53 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
           {/* Product Name */}
           <Text style={styles.productName}>{product.name}</Text>
 
-          {/* Vendor / Stall Info */}
-          <View style={styles.vendorRow}>
-            <Ionicons name="storefront-outline" size={14} color="#9CA3AF" />
-            <Text style={styles.vendorText}>
-              {product.vendor?.stall_name ?? 'Taguig People\'s Market'}
-            </Text>
-            {product.vendor?.stall_location ? (
-              <>
-                <Text style={styles.vendorDot}>·</Text>
-                <Ionicons name="location-outline" size={13} color="#9CA3AF" />
-                <Text style={styles.vendorText}>{product.vendor.stall_location}</Text>
-              </>
-            ) : null}
-          </View>
+          {/* Vendor / Stall Info & Operating Hours */}
+          <TouchableOpacity
+            style={styles.vendorStoreCard}
+            onPress={() => product.vendor?.id && onOpenVendorStore?.(product.vendor.id)}
+            disabled={!product.vendor?.id || !onOpenVendorStore}
+            activeOpacity={0.8}
+          >
+            <View style={styles.vendorStoreTop}>
+              <View style={styles.vendorStoreLeft}>
+                <View style={styles.vendorStoreIcon}>
+                  <Ionicons name="storefront" size={15} color="#1B6B45" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.vendorStoreName}>
+                    {product.vendor?.stall_name ?? 'Taguig People\'s Market'}
+                  </Text>
+                  {product.vendor?.stall_location ? (
+                    <Text style={styles.vendorStoreLoc}>{product.vendor.stall_location}</Text>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={[styles.storeBadge, isStoreOpen ? styles.storeBadgeOpen : styles.storeBadgeClosed]}>
+                <View style={[styles.storeBadgeDot, isStoreOpen ? styles.storeDotOpen : styles.storeDotClosed]} />
+                <Text style={[styles.storeBadgeText, isStoreOpen ? styles.storeTextOpen : styles.storeTextClosed]}>
+                  {isStoreOpen ? 'Open' : 'Closed'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.vendorHoursRow}>
+              <Ionicons name="time-outline" size={12} color="#6B7280" />
+              <Text style={styles.vendorHoursText}>Hours: {vendorHours}</Text>
+              {onOpenVendorStore && product.vendor?.id ? (
+                <Text style={styles.viewStoreLink}>View Store →</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+
+          {!isStoreOpen && (
+            <View style={styles.closedNoticeBox}>
+              <Ionicons name="information-circle-outline" size={15} color="#B45309" />
+              <Text style={styles.closedNoticeText}>
+                Store is currently closed ({vendorHours}). Orders placed will be received when the store opens.
+              </Text>
+            </View>
+          )}
 
           {/* Price + In-cart badge */}
           <View style={styles.priceRow}>
@@ -507,33 +561,57 @@ export function ProductDetailModal({ product, visible, onClose }: Props) {
             <Text style={styles.subtotalValue}>₱{subtotal.toFixed(2)}</Text>
           </View>
 
-          {/* Add to Cart Button */}
-          <Animated.View style={{ transform: [{ scale: btnScaleAnim }] }}>
+          {/* Action Buttons: Add to Cart and Buy Now side-by-side */}
+          <View style={styles.actionButtonsRow}>
+            {/* Add to Cart Button */}
+            <Animated.View style={[{ flex: 1 }, { transform: [{ scale: btnScaleAnim }] }]}>
+              <TouchableOpacity
+                style={[
+                  styles.addToCartBtn,
+                  inCart && styles.addToCartBtnActive,
+                  !product.is_available && styles.addToCartBtnDisabled,
+                ]}
+                onPress={handleAddToCart}
+                disabled={!product.is_available}
+                activeOpacity={0.85}
+                accessibilityLabel={inCart ? 'Add more to cart' : 'Add to cart'}
+              >
+                <Ionicons
+                  name={inCart ? 'cart' : 'cart-outline'}
+                  size={19}
+                  color={inCart ? '#FFFFFF' : '#1B6B45'}
+                />
+                <Text
+                  style={[
+                    styles.addToCartBtnText,
+                    !inCart && product.is_available && styles.addToCartBtnTextOutline,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {!product.is_available
+                    ? 'Unavailable'
+                    : inCart
+                    ? 'Add More'
+                    : 'Add to Cart'}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* Buy Now Button */}
             <TouchableOpacity
               style={[
-                styles.addToCartBtn,
-                inCart && styles.addToCartBtnActive,
-                !product.is_available && styles.addToCartBtnDisabled,
+                styles.buyNowBtn,
+                !product.is_available && styles.buyNowBtnDisabled,
               ]}
-              onPress={handleAddToCart}
+              onPress={handleBuyNow}
               disabled={!product.is_available}
               activeOpacity={0.85}
-              accessibilityLabel={inCart ? 'Add more to cart' : 'Add to cart'}
+              accessibilityLabel="Buy now and checkout directly"
             >
-              <Ionicons
-                name={inCart ? 'cart' : 'cart-outline'}
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.addToCartBtnText}>
-                {!product.is_available
-                  ? 'Currently Unavailable'
-                  : inCart
-                  ? 'Add More to Cart'
-                  : 'Add to Cart'}
-              </Text>
+              <Ionicons name="flash" size={18} color="#FFFFFF" />
+              <Text style={styles.buyNowBtnText} numberOfLines={1}>Buy Now</Text>
             </TouchableOpacity>
-          </Animated.View>
+          </View>
 
           {/* Bottom spacer */}
           <View style={{ height: 16 }} />
@@ -722,6 +800,115 @@ const styles = StyleSheet.create({
   vendorText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
   vendorDot: { fontSize: 12, color: '#D1D5DB' },
 
+  vendorStoreCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  vendorStoreTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  vendorStoreLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  vendorStoreIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vendorStoreName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  vendorStoreLoc: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  storeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+  storeBadgeOpen: {
+    backgroundColor: '#DCFCE7',
+  },
+  storeBadgeClosed: {
+    backgroundColor: '#FEE2E2',
+  },
+  storeBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  storeDotOpen: {
+    backgroundColor: '#16A34A',
+  },
+  storeDotClosed: {
+    backgroundColor: '#DC2626',
+  },
+  storeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  storeTextOpen: {
+    color: '#16A34A',
+  },
+  storeTextClosed: {
+    color: '#DC2626',
+  },
+  vendorHoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 4,
+  },
+  vendorHoursText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+    flex: 1,
+  },
+  viewStoreLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1B6B45',
+  },
+  closedNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  closedNoticeText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
+  },
+
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -858,26 +1045,81 @@ const styles = StyleSheet.create({
   subtotalLabel: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
   subtotalValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
 
-  /* ── Add to Cart ── */
+  /* ── Action Buttons ── */
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 2,
+  },
   addToCartBtn: {
-    backgroundColor: '#1B6B45',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#1B6B45',
     borderRadius: 16,
-    height: 56,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    shadowColor: '#1B6B45',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.32,
-    shadowRadius: 12,
-    elevation: 7,
+    gap: 8,
+    paddingHorizontal: 8,
   },
-  addToCartBtnActive: { backgroundColor: '#15803D' },
+  addToCartBtnActive: {
+    backgroundColor: '#15803D',
+    borderColor: '#15803D',
+  },
   addToCartBtnDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+  },
+  addToCartBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  addToCartBtnTextOutline: {
+    color: '#1B6B45',
+  },
+
+  buyNowBtn: {
+    flex: 1,
+    backgroundColor: '#EA580C',
+    borderRadius: 16,
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 8,
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  buyNowBtnDisabled: {
     backgroundColor: '#D1D5DB',
     shadowOpacity: 0,
     elevation: 0,
   },
-  addToCartBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  buyNowBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
 });
+
+function computeIsOpen(openingTime = '04:00', closingTime = '20:00'): boolean {
+  try {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const manilaTime = new Date(utc + 8 * 3600000);
+    const currentMins = manilaTime.getHours() * 60 + manilaTime.getMinutes();
+    const [openH, openM] = openingTime.split(':').map(Number);
+    const [closeH, closeM] = closingTime.split(':').map(Number);
+    return currentMins >= openH * 60 + (openM || 0) && currentMins <= closeH * 60 + (closeM || 0);
+  } catch {
+    return true;
+  }
+}

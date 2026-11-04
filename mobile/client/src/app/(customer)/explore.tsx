@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFavorites, type FavoriteRecipe, type FavoriteProduct } from '@/context/FavoritesContext';
 import { useCart } from '@/context/CartContext';
@@ -131,7 +132,19 @@ function RecipeCard({ recipe }: { recipe: FavoriteRecipe }) {
 }
 
 function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
-  const { addItem, isInCart } = useCart();
+  const { addItem, isInCart, startBuyNow } = useCart();
+
+  function handleBuyNow(mp: NonNullable<FavoriteRecipe['matching_products']>[number]) {
+    startBuyNow({
+      product_id: mp.product_id,
+      product_name: mp.product_name,
+      price: mp.price,
+      unit: mp.unit,
+      category: mp.category,
+      image: mp.image,
+    }, 1);
+    router.push('/(customer)/cart' as any);
+  }
 
   return (
     <View style={styles.expanded}>
@@ -161,12 +174,22 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
                   <Text style={styles.marketMeta}>{mp.category} · per {mp.unit}</Text>
                 </View>
                 <Text style={styles.marketPrice}>₱{Number(mp.price).toFixed(0)}</Text>
-                <TouchableOpacity
-                  style={[styles.addBtn, inCart && styles.addBtnAdded]}
-                  onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, image: mp.image })}
-                >
-                  <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
-                </TouchableOpacity>
+                <View style={styles.marketRowActions}>
+                  <TouchableOpacity
+                    style={[styles.addBtn, inCart && styles.addBtnAdded]}
+                    onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, image: mp.image })}
+                    accessibilityLabel="Add to cart"
+                  >
+                    <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.buyBtn}
+                    onPress={() => handleBuyNow(mp)}
+                    accessibilityLabel="Buy now directly"
+                  >
+                    <Ionicons name="flash" size={13} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           })}
@@ -199,7 +222,7 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
 
 function ProductCard({ product }: { product: FavoriteProduct }) {
   const { removeProduct } = useFavorites();
-  const { addItem, isInCart } = useCart();
+  const { addItem, isInCart, startBuyNow } = useCart();
   const heartAnim = useRef(new Animated.Value(1)).current;
   const inCart = isInCart(product.id);
 
@@ -208,6 +231,18 @@ function ProductCard({ product }: { product: FavoriteProduct }) {
       Animated.spring(heartAnim, { toValue: 1.35, useNativeDriver: true, speed: 50 }),
       Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 30 }),
     ]).start(() => removeProduct(product.id));
+  }
+
+  function handleBuyNow() {
+    startBuyNow({
+      product_id: product.id,
+      product_name: product.name,
+      price: product.price,
+      unit: product.unit,
+      category: product.category,
+      image: product.image,
+    }, 1);
+    router.push('/(customer)/cart' as any);
   }
 
   const savedDate = new Date(product.saved_at).toLocaleDateString('en-PH', {
@@ -235,10 +270,18 @@ function ProductCard({ product }: { product: FavoriteProduct }) {
           <TouchableOpacity
             style={[styles.addBtn, inCart && styles.addBtnAdded]}
             onPress={() => !inCart && addItem({ product_id: product.id, product_name: product.name, price: product.price, unit: product.unit, category: product.category, image: product.image })}
+            accessibilityLabel="Add to cart"
           >
             <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleRemove}>
+          <TouchableOpacity
+            style={styles.buyBtn}
+            onPress={handleBuyNow}
+            accessibilityLabel="Buy now directly"
+          >
+            <Ionicons name="flash" size={13} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleRemove} accessibilityLabel="Remove from favorites">
             <Animated.View style={{ transform: [{ scale: heartAnim }] }}>
               <Ionicons name="heart" size={18} color="#E11D48" />
             </Animated.View>
@@ -345,8 +388,10 @@ const styles = StyleSheet.create({
   marketName: { fontSize: 13, fontWeight: '600', color: '#111827' },
   marketMeta: { fontSize: 11, color: '#9CA3AF' },
   marketPrice: { fontSize: 14, fontWeight: '800', color: '#1B6B45', marginRight: 8 },
+  marketRowActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   addBtn: { width: 28, height: 28, borderRadius: 9, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
   addBtnAdded: { backgroundColor: '#16A34A' },
+  buyBtn: { width: 28, height: 28, borderRadius: 9, backgroundColor: '#EA580C', alignItems: 'center', justifyContent: 'center' },
   stepRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   stepNum: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
   stepNumText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF' },

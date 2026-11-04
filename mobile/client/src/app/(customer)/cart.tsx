@@ -53,11 +53,27 @@ const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: string; colo
 ];
 
 export default function CartScreen() {
-  const { items, totalItems, totalPrice, clearCart } = useCart();
+  const {
+    items: cartItems,
+    totalItems: cartTotalItems,
+    totalPrice: cartTotalPrice,
+    clearCart,
+    buyNowItem,
+    updateBuyNowQuantity,
+    clearBuyNow,
+  } = useCart();
   const { token } = useCustomerAuth();
+
+  const isBuyNow = !!buyNowItem;
+  const items = isBuyNow ? [buyNowItem] : cartItems;
+  const totalItems = isBuyNow ? buyNowItem.quantity : cartTotalItems;
+  const totalPrice = isBuyNow
+    ? Math.round(buyNowItem.price * buyNowItem.quantity * 100) / 100
+    : cartTotalPrice;
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [vendorReferences, setVendorReferences] = useState<Record<number, string>>({});
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
@@ -88,8 +104,8 @@ export default function CartScreen() {
           setVendorPaymentsError('Sign in to load vendor payment details.');
           return;
         }
-        const productIds = items.map((i) => i.product_id);
-        const details = await getVendorsPaymentDetails(productIds, authToken);
+        const itemPayload = items.map((i) => ({ product_id: i.product_id, quantity: i.quantity }));
+        const details = await getVendorsPaymentDetails(itemPayload, authToken);
         if (!cancelled) setVendorPayments(details);
       } catch (err: any) {
         if (!cancelled) setVendorPaymentsError(err.message || 'Failed to load vendor payment details.');
@@ -111,16 +127,40 @@ export default function CartScreen() {
     }
     if (items.length === 0) return;
 
+    const isEwallet = paymentMethod === 'gcash' || paymentMethod === 'maya';
+    const isMultiVendor = vendorPayments && vendorPayments.length > 1;
+
     // Validate reference for e-wallet
-    if ((paymentMethod === 'gcash' || paymentMethod === 'maya') && !referenceNumber.trim()) {
-      setErrorMsg('Please enter your payment reference number for ' + paymentMethod.toUpperCase() + '. You can find it in your GCash/Maya app after sending payment.');
-      return;
+    if (isEwallet) {
+      if (isMultiVendor) {
+        for (const v of vendorPayments) {
+          const hasMethod = paymentMethod === 'gcash' ? v.has_gcash : v.has_maya;
+          const ref = (vendorReferences[v.vendor_id] || referenceNumber || '').trim();
+          if (hasMethod && !ref) {
+            setErrorMsg(`Please enter the ${paymentMethod.toUpperCase()} reference number for ${v.stall_name} (₱${(v.subtotal ?? 0).toFixed(2)}).`);
+            return;
+          }
+        }
+      } else {
+        const singleRef = referenceNumber.trim() || Object.values(vendorReferences)[0]?.trim();
+        if (!singleRef) {
+          setErrorMsg(`Please enter your payment reference number for ${paymentMethod.toUpperCase()}. You can find it in your ${paymentMethod.toUpperCase()} app after sending payment.`);
+          return;
+        }
+      }
     }
 
     setPlacing(true);
     setErrorMsg(null);
 
     try {
+      const vendorPaymentsPayload = (vendorPayments || []).map((v) => ({
+        vendor_id: v.vendor_id,
+        payment_reference_number: (vendorReferences[v.vendor_id] || referenceNumber || '').trim(),
+      }));
+
+      const topRef = referenceNumber.trim() || Object.values(vendorReferences).filter(Boolean).join(', ');
+
       const order = await placeOrder(
         {
           items: items.map((i) => ({
@@ -129,13 +169,19 @@ export default function CartScreen() {
             quantity:     i.quantity,
           })),
           payment_method: paymentMethod,
-          payment_reference_number: (paymentMethod === 'gcash' || paymentMethod === 'maya') ? referenceNumber.trim() : undefined,
+          payment_reference_number: isEwallet ? topRef : undefined,
+          vendor_payments: isEwallet && vendorPaymentsPayload.length > 0 ? vendorPaymentsPayload : undefined,
         },
         authToken,
       );
 
-      clearCart();
+      if (isBuyNow) {
+        clearBuyNow();
+      } else {
+        clearCart();
+      }
       setReferenceNumber('');
+      setVendorReferences({});
       setConfirmedOrder(order);
     } catch (err) {
       const msg =
@@ -171,18 +217,68 @@ export default function CartScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Cart</Text>
-        <TouchableOpacity style={styles.clearBtn} onPress={clearCart} disabled={placing}>
-          <Ionicons name="trash-outline" size={16} color="#DC2626" />
-          <Text style={styles.clearBtnText}>Clear</Text>
-        </TouchableOpacity>
+        <View style={styles.headerTitleRow}>
+          {isBuyNow && (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={clearBuyNow}
+              accessibilityLabel="Cancel Buy Now and return to regular cart"
+            >
+              <Ionicons name="arrow-back" size={20} color="#1F2937" />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.headerTitle}>{isBuyNow ? 'Buy Now' : 'My Cart'}</Text>
+        </View>
+        {isBuyNow ? (
+          <TouchableOpacity
+            style={styles.cancelBuyNowBtn}
+            onPress={clearBuyNow}
+            disabled={placing}
+          >
+            <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
+            <Text style={styles.cancelBuyNowBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.clearBtn} onPress={clearCart} disabled={placing}>
+            <Ionicons name="trash-outline" size={16} color="#DC2626" />
+            <Text style={styles.clearBtnText}>Clear</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Buy Now Notification Banner */}
+      {isBuyNow && (
+        <View style={styles.buyNowNoticeBanner}>
+          <View style={styles.buyNowNoticeHeader}>
+            <View style={styles.buyNowNoticeBadge}>
+              <Ionicons name="flash" size={12} color="#FFFFFF" />
+              <Text style={styles.buyNowNoticeBadgeText}>DIRECT PURCHASE</Text>
+            </View>
+            <TouchableOpacity onPress={clearBuyNow}>
+              <Text style={styles.buyNowSwitchText}>
+                {cartItems.length > 0
+                  ? `Switch to Cart (${cartItems.length}) →`
+                  : 'Cancel Direct Purchase'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.buyNowNoticeDesc}>
+            Purchasing this product directly. Your regular shopping cart ({cartItems.length} item{cartItems.length !== 1 ? 's' : ''}) is saved and untouched.
+          </Text>
+        </View>
+      )}
 
       {/* Item count */}
       <View style={styles.itemCountRow}>
-        <Ionicons name="bag-outline" size={15} color="#6B7280" />
-        <Text style={styles.itemCountText}>
-          {Number.isInteger(totalItems) ? totalItems : totalItems.toFixed(1).replace(/\.0$/, '')} item{totalItems !== 1 ? 's' : ''} · Taguig People's Market
+        <Ionicons
+          name={isBuyNow ? 'flash-outline' : 'bag-outline'}
+          size={15}
+          color={isBuyNow ? '#EA580C' : '#6B7280'}
+        />
+        <Text style={[styles.itemCountText, isBuyNow && { color: '#EA580C', fontWeight: '700' }]}>
+          {isBuyNow
+            ? `Buy Now direct purchase · 1 product (${Number.isInteger(totalItems) ? totalItems : totalItems.toFixed(1).replace(/\.0$/, '')} ${buyNowItem?.unit || 'unit'})`
+            : `${Number.isInteger(totalItems) ? totalItems : totalItems.toFixed(1).replace(/\.0$/, '')} item${totalItems !== 1 ? 's' : ''} · Taguig People's Market`}
         </Text>
       </View>
 
@@ -204,7 +300,12 @@ export default function CartScreen() {
       >
         {/* Cart Items */}
         {items.map((item) => (
-          <CartItemCard key={item.product_id} item={item} disabled={placing} />
+          <CartItemCard
+            key={item.product_id}
+            item={item}
+            disabled={placing}
+            isBuyNow={isBuyNow}
+          />
         ))}
 
         {/* Payment Method */}
@@ -276,11 +377,26 @@ export default function CartScreen() {
                 </View>
               ) : vendorPayments && vendorPayments.length > 0 ? (
                 <View style={styles.vendorPaymentList}>
+                  {vendorPayments.length > 1 && (
+                    <View style={styles.multiVendorAlert}>
+                      <Ionicons name="storefront" size={18} color="#2563EB" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.multiVendorAlertTitle}>
+                          Multi-Vendor {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} Payment ({vendorPayments.length} Vendors)
+                        </Text>
+                        <Text style={styles.multiVendorAlertText}>
+                          Each vendor operates their own stall account. Please transfer each vendor's exact subtotal below, then enter their reference number.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
                   {vendorPayments.map((vendor) => {
                     const methodData = paymentMethod === 'gcash' ? vendor.gcash ?? { number: vendor.gcash_number, qr_url: vendor.gcash_qr_url, has_qr: !!vendor.gcash_qr_url } : vendor.maya ?? { number: vendor.maya_number, qr_url: vendor.maya_qr_url, has_qr: !!vendor.maya_qr_url };
                     const hasNumber = !!methodData?.number;
                     const hasQr = !!methodData?.qr_url;
                     const hasAny = hasNumber || hasQr;
+                    const isMulti = vendorPayments.length > 1;
 
                     return (
                       <View key={vendor.vendor_id} style={styles.vendorPaymentCard}>
@@ -291,6 +407,26 @@ export default function CartScreen() {
                             <Text style={styles.vendorPaymentLocation} numberOfLines={1}>· {vendor.stall_location}</Text>
                           ) : null}
                         </View>
+
+                        {/* Vendor Subtotal Badge */}
+                        <View style={styles.vendorCardSubtotalRow}>
+                          <Text style={styles.vendorCardSubtotalLabel}>Portion Subtotal to Pay:</Text>
+                          <Text style={styles.vendorCardSubtotalAmount}>
+                            ₱{(vendor.subtotal ?? 0).toFixed(2)}
+                          </Text>
+                        </View>
+
+                        {/* Vendor items list */}
+                        {vendor.items && vendor.items.length > 0 && (
+                          <View style={styles.vendorCardItemsList}>
+                            {vendor.items.map((it) => (
+                              <Text key={it.product_id} style={styles.vendorCardItemText} numberOfLines={1}>
+                                • {it.product_name} × {it.quantity} {it.unit} (₱{it.subtotal.toFixed(2)})
+                              </Text>
+                            ))}
+                          </View>
+                        )}
+
                         {!hasAny ? (
                           <View style={styles.noEwalletBox}>
                             <Ionicons name="warning-outline" size={14} color="#D97706" />
@@ -302,7 +438,7 @@ export default function CartScreen() {
                               {hasNumber && (
                                 <View style={styles.accountRow}>
                                   <Text style={styles.accountLabel}>{paymentMethod === 'gcash' ? 'GCash' : 'Maya'} Number</Text>
-                                  <Text style={styles.accountNumber}>{methodData.number}</Text>
+                                  <Text selectable style={styles.accountNumber}>{methodData.number}</Text>
                                 </View>
                               )}
                               {!hasNumber && hasQr && (
@@ -329,6 +465,24 @@ export default function CartScreen() {
                             )}
                           </View>
                         )}
+
+                        {/* Dedicated Per-Vendor Reference Input if Multi-Vendor */}
+                        {isMulti && hasAny && (
+                          <View style={styles.vendorSpecificRefBox}>
+                            <Text style={styles.vendorSpecificRefLabel}>
+                              {paymentMethod.toUpperCase()} Ref for {vendor.stall_name} <Text style={styles.requiredStar}>*</Text>
+                            </Text>
+                            <TextInput
+                              style={styles.vendorSpecificRefInput}
+                              value={vendorReferences[vendor.vendor_id] || ''}
+                              onChangeText={(val) => setVendorReferences((prev) => ({ ...prev, [vendor.vendor_id]: val }))}
+                              placeholder={`Enter reference for ₱${(vendor.subtotal ?? 0).toFixed(2)} transfer`}
+                              placeholderTextColor="#9CA3AF"
+                              autoCapitalize="characters"
+                              autoCorrect={false}
+                            />
+                          </View>
+                        )}
                       </View>
                     );
                   })}
@@ -340,30 +494,42 @@ export default function CartScreen() {
                 </View>
               )}
 
-              {/* Reference Number Input */}
-              <View style={styles.referenceBox}>
-                <Text style={styles.referenceLabel}>
-                  Payment Reference Number <Text style={styles.requiredStar}>*</Text>
-                </Text>
-                <Text style={styles.referenceHint}>
-                  Find this in your {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} app after sending payment (e.g., 1234567890123)
-                </Text>
-                <TextInput
-                  style={styles.referenceInput}
-                  value={referenceNumber}
-                  onChangeText={setReferenceNumber}
-                  placeholder={`Enter ${paymentMethod.toUpperCase()} reference number`}
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                />
+              {/* Single Vendor Reference Number Input */}
+              {(!vendorPayments || vendorPayments.length <= 1) && (
+                <View style={styles.referenceBox}>
+                  <Text style={styles.referenceLabel}>
+                    Payment Reference Number <Text style={styles.requiredStar}>*</Text>
+                  </Text>
+                  <Text style={styles.referenceHint}>
+                    Find this in your {paymentMethod === 'gcash' ? 'GCash' : 'Maya'} app after sending payment (e.g., 1234567890123)
+                  </Text>
+                  <TextInput
+                    style={styles.referenceInput}
+                    value={referenceNumber}
+                    onChangeText={setReferenceNumber}
+                    placeholder={`Enter ${paymentMethod.toUpperCase()} reference number`}
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                  <View style={styles.pendingNotice}>
+                    <Ionicons name="hourglass-outline" size={14} color="#D97706" />
+                    <Text style={styles.pendingNoticeText}>
+                      Your payment will be <Text style={{ fontWeight: '700' }}>Pending Verification</Text> until the vendor confirms it. Status becomes <Text style={{ fontWeight: '700' }}>Paid</Text> only after verification — not automatically.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Multi-Vendor Pending Notice */}
+              {vendorPayments && vendorPayments.length > 1 && (
                 <View style={styles.pendingNotice}>
                   <Ionicons name="hourglass-outline" size={14} color="#D97706" />
                   <Text style={styles.pendingNoticeText}>
-                    Your payment will be <Text style={{ fontWeight: '700' }}>Pending Verification</Text> until the vendor confirms it. Status becomes <Text style={{ fontWeight: '700' }}>Paid</Text> only after verification — not automatically.
+                    Each vendor will independently verify their own received payment. You can track individual vendor payment statuses in your order history.
                   </Text>
                 </View>
-              </View>
+              )}
             </View>
           )}
         </View>
@@ -389,7 +555,11 @@ export default function CartScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.checkoutBtn, placing && styles.checkoutBtnDisabled]}
+          style={[
+            styles.checkoutBtn,
+            isBuyNow && styles.checkoutBtnBuyNow,
+            placing && styles.checkoutBtnDisabled,
+          ]}
           onPress={handlePlaceOrder}
           disabled={placing}
           activeOpacity={0.85}
@@ -401,8 +571,14 @@ export default function CartScreen() {
             </>
           ) : (
             <>
-              <Ionicons name="bag-check-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.checkoutBtnText}>Place Order</Text>
+              <Ionicons
+                name={isBuyNow ? 'flash' : 'bag-check-outline'}
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.checkoutBtnText}>
+                {isBuyNow ? 'Buy Now · Place Order' : 'Place Order'}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -458,8 +634,16 @@ export default function CartScreen() {
 
 /* ─── Cart Item Card ─── */
 
-function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean }) {
-  const { updateQuantity, removeItem } = useCart();
+function CartItemCard({
+  item,
+  disabled,
+  isBuyNow,
+}: {
+  item: CartItem;
+  disabled: boolean;
+  isBuyNow?: boolean;
+}) {
+  const { updateQuantity, removeItem, updateBuyNowQuantity, clearBuyNow } = useCart();
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const isWeight = item.unit.toLowerCase() === 'kg';
   const step = isWeight ? 0.5 : 1;
@@ -493,19 +677,34 @@ function CartItemCard({ item, disabled }: { item: CartItem; disabled: boolean })
 
   function handleRemove() {
     Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(
-      () => removeItem(item.product_id),
+      () => {
+        if (isBuyNow) {
+          clearBuyNow();
+        } else {
+          removeItem(item.product_id);
+        }
+      },
     );
   }
 
   function handleDecrement() {
     const next = Math.round((item.quantity - step) * 100) / 100;
-    if (next < minQty - 0.001) handleRemove();
-    else updateQuantity(item.product_id, next);
+    if (next < minQty - 0.001) {
+      handleRemove();
+    } else if (isBuyNow) {
+      updateBuyNowQuantity(next);
+    } else {
+      updateQuantity(item.product_id, next);
+    }
   }
 
   function handleIncrement() {
     const next = Math.round((item.quantity + step) * 100) / 100;
-    updateQuantity(item.product_id, next);
+    if (isBuyNow) {
+      updateBuyNowQuantity(next);
+    } else {
+      updateQuantity(item.product_id, next);
+    }
   }
 
   const isAtMin = item.quantity <= minQty + 0.001;
@@ -756,12 +955,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
   },
+  headerTitleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  backBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
   headerTitle: { fontSize: 24, fontWeight: '800', color: '#111827' },
   clearBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
   },
   clearBtnText: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
+  cancelBuyNowBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  cancelBuyNowBtnText: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
+
+  buyNowNoticeBanner: {
+    backgroundColor: '#FFF7ED', borderRadius: 14,
+    marginHorizontal: 16, marginBottom: 12, padding: 12,
+    borderWidth: 1, borderColor: '#FFEDD5',
+  },
+  buyNowNoticeHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 6,
+  },
+  buyNowNoticeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#EA580C', borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  buyNowNoticeBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
+  buyNowSwitchText: { fontSize: 12, fontWeight: '700', color: '#EA580C' },
+  buyNowNoticeDesc: { fontSize: 12, color: '#9A3412', lineHeight: 16 },
 
   itemCountRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -849,6 +1079,36 @@ const styles = StyleSheet.create({
   },
   ewalletErrorText: { flex: 1, fontSize: 12, color: '#DC2626', lineHeight: 16 },
   vendorPaymentList: { gap: 10 },
+  multiVendorAlert: {
+    flexDirection: 'row', gap: 10, backgroundColor: '#EFF6FF',
+    borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#BFDBFE',
+    alignItems: 'flex-start',
+  },
+  multiVendorAlertTitle: { fontSize: 13, fontWeight: '700', color: '#1E40AF', marginBottom: 2 },
+  multiVendorAlertText: { fontSize: 11, color: '#1E3A8A', lineHeight: 15 },
+
+  vendorCardSubtotalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    marginBottom: 8, borderWidth: 1, borderColor: '#DBEAFE',
+  },
+  vendorCardSubtotalLabel: { fontSize: 12, fontWeight: '600', color: '#1E40AF' },
+  vendorCardSubtotalAmount: { fontSize: 14, fontWeight: '800', color: '#1D4ED8' },
+
+  vendorCardItemsList: {
+    backgroundColor: '#F3F4F6', borderRadius: 8, padding: 8, marginBottom: 8, gap: 3,
+  },
+  vendorCardItemText: { fontSize: 11, color: '#4B5563', lineHeight: 15 },
+
+  vendorSpecificRefBox: {
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E7EB',
+  },
+  vendorSpecificRefLabel: { fontSize: 12, fontWeight: '700', color: '#1F2937', marginBottom: 4 },
+  vendorSpecificRefInput: {
+    backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
+    paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: '#111827',
+    fontWeight: '600',
+  },
   vendorPaymentCard: {
     backgroundColor: '#F9FAFB', borderRadius: 12, padding: 12,
     borderWidth: 1, borderColor: '#F3F4F6',
@@ -949,6 +1209,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14,
     shadowColor: '#1B6B45', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 10, elevation: 6,
+  },
+  checkoutBtnBuyNow: {
+    backgroundColor: '#EA580C',
+    shadowColor: '#EA580C',
   },
   checkoutBtnDisabled: { backgroundColor: '#6B7280', shadowOpacity: 0, elevation: 0 },
   checkoutBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },

@@ -27,6 +27,8 @@ class VendorProfileController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'stall_name' => 'sometimes|string|max:255',
+            'opening_time' => 'sometimes|string|max:10',
+            'closing_time' => 'sometimes|string|max:10',
             'product_categories' => 'sometimes|array',
             'product_categories.*' => 'string',
         ]);

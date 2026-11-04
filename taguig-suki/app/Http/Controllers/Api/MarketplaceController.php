@@ -55,4 +55,12 @@ class MarketplaceController extends Controller
             'Product detail retrieved'
         );
     }
+
+    public function vendorStore(int $vendor): JsonResponse
+    {
+        return $this->successResponse(
+            $this->marketplaceService->getVendorStore($vendor),
+            'Vendor store details retrieved'
+        );
+    }
 }

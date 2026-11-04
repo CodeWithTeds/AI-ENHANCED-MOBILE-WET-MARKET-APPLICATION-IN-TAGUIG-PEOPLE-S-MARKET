@@ -19,14 +19,21 @@ class OrderItem extends Model
         'subtotal',
         'status',
         'confirmation_status',
+        'payment_status',
+        'payment_reference_number',
+        'payment_submitted_at',
+        'payment_verified_at',
+        'payment_verified_by',
     ];
 
     protected function casts(): array
     {
         return [
-            'quantity'   => 'decimal:2',
-            'unit_price' => 'decimal:2',
-            'subtotal'   => 'decimal:2',
+            'quantity'             => 'decimal:2',
+            'unit_price'           => 'decimal:2',
+            'subtotal'             => 'decimal:2',
+            'payment_submitted_at' => 'datetime',
+            'payment_verified_at'  => 'datetime',
         ];
     }
 
@@ -43,5 +50,10 @@ class OrderItem extends Model
     public function vendor(): BelongsTo
     {
         return $this->belongsTo(Vendor::class);
+    }
+
+    public function paymentVerifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'payment_verified_by');
     }
 }

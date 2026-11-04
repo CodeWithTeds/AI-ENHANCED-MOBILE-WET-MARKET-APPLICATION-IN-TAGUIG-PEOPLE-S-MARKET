@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\VendorStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +14,8 @@ class Vendor extends Model
         'user_id',
         'stall_name',
         'stall_location',
+        'opening_time',
+        'closing_time',
         'gcash_number',
         'gcash_qr_path',
         'maya_number',
@@ -22,6 +25,16 @@ class Vendor extends Model
         'rejection_reason',
         'approved_at',
         'notification_preferences',
+    ];
+
+    protected $attributes = [
+        'opening_time' => '04:00',
+        'closing_time' => '20:00',
+    ];
+
+    protected $appends = [
+        'operating_hours',
+        'is_open',
     ];
 
     protected function casts(): array
@@ -90,5 +103,36 @@ class Vendor extends Model
     public function hasEwalletConfigured(): bool
     {
         return !empty($this->gcash_number) || !empty($this->gcash_qr_path) || !empty($this->maya_number) || !empty($this->maya_qr_path);
+    }
+
+    /**
+     * Formatted store operating hours (e.g. "4:00 AM - 8:00 PM").
+     */
+    public function getOperatingHoursAttribute(): string
+    {
+        $open = Carbon::createFromTimeString($this->opening_time ?: '04:00', 'Asia/Manila')->format('g:i A');
+        $close = Carbon::createFromTimeString($this->closing_time ?: '20:00', 'Asia/Manila')->format('g:i A');
+
+        return "{$open} - {$close}";
+    }
+
+    /**
+     * Check if the vendor store is currently open based on Manila time.
+     */
+    public function isOpen(): bool
+    {
+        $now = Carbon::now('Asia/Manila');
+        $open = Carbon::createFromTimeString($this->opening_time ?: '04:00', 'Asia/Manila');
+        $close = Carbon::createFromTimeString($this->closing_time ?: '20:00', 'Asia/Manila');
+
+        return $now->between($open, $close);
+    }
+
+    /**
+     * Store availability status attribute.
+     */
+    public function getIsOpenAttribute(): bool
+    {
+        return $this->isOpen();
     }
 }

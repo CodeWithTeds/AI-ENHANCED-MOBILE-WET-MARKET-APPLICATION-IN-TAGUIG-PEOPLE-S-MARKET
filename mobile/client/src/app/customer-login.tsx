@@ -217,8 +217,21 @@ function RegisterForm() {
   }
 
   async function handleRegister() {
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Required', 'Please fill in all fields.');
+    if (!name.trim()) {
+      Alert.alert('Required', 'Please enter your full name.');
+      return;
+    }
+    if (!email.trim()) {
+      Alert.alert('Required', 'Please enter your email address.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+    if (!password.trim()) {
+      Alert.alert('Required', 'Please enter your password.');
       return;
     }
     if (password !== confirmPassword) {

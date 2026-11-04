@@ -17,7 +17,18 @@ class VendorRegisterRequest extends FormRequest
         return [
             // Personal info
             'full_name' => ['required', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'unique:users,email'],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:255',
+                'unique:users,email',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    if (\App\Models\RejectedEmail::isBlocked($value)) {
+                        $fail(\App\Models\RejectedEmail::blockedMessage($value));
+                    }
+                },
+            ],
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', Password::min(8)],
 
@@ -31,6 +42,15 @@ class VendorRegisterRequest extends FormRequest
             'business_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'stall_lease' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'valid_id' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'This email address is already registered.',
         ];
     }
 }

@@ -13,7 +13,7 @@ Vendors must register through the mobile app and submit proof of business for ad
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | Full Name | Text | Yes | Vendor's complete name |
-| Email | Email | Optional | For notifications and password recovery |
+| Email | Email | Required | For notifications and password recovery |
 | Password | Password | Yes | Minimum 8 characters |
 
 ### Business Information

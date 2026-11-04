@@ -134,6 +134,7 @@ export default function ProfileScreen() {
           <MenuItem icon="trending-up-outline" label="Sales History & Revenue" subtitle="Analytics, revenue reports & transactions" onPress={() => router.push('/(vendor)/sales' as any)} />
           <MenuItem icon="star-outline" label="Customer Reviews & Feedback" subtitle="Ratings and comments from customers" onPress={() => router.push('/(vendor)/reviews' as any)} />
           <MenuItem icon="storefront-outline" label="Business Info" subtitle={profile?.vendor?.stall_name} onPress={() => setActiveSection('editBusiness')} />
+          <MenuItem icon="time-outline" label="Operating Hours" subtitle={profile?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM'} onPress={() => setActiveSection('editBusiness')} />
           <MenuItem icon="pricetags-outline" label="Product Categories" subtitle={profile?.vendor?.product_categories?.join(', ') || 'None set'} />
           <MenuItem icon="location-outline" label="Stall Location" subtitle={profile?.vendor?.stall_location ?? 'Not set'} />
         </View>
@@ -182,12 +183,19 @@ function EditBusinessSection({ profile, token, onBack }: {
 }) {
   const [name, setName] = useState(profile?.user.name ?? '');
   const [stallName, setStallName] = useState(profile?.vendor?.stall_name ?? '');
+  const [openingTime, setOpeningTime] = useState(profile?.vendor?.opening_time ?? '04:00');
+  const [closingTime, setClosingTime] = useState(profile?.vendor?.closing_time ?? '20:00');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     try {
-      await updateBusinessInfo(token, { name, stall_name: stallName });
+      await updateBusinessInfo(token, {
+        name,
+        stall_name: stallName,
+        opening_time: openingTime.trim(),
+        closing_time: closingTime.trim(),
+      });
       Alert.alert('Success', 'Business info updated.');
       onBack();
     } catch (err: any) {
@@ -212,6 +220,31 @@ function EditBusinessSection({ profile, token, onBack }: {
 
         <Text style={styles.inputLabel}>Stall Name</Text>
         <TextInput style={styles.input} value={stallName} onChangeText={setStallName} placeholder="Stall name" />
+
+        <Text style={styles.inputLabel}>Store Operating Hours</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 4 }}>Opening (e.g. 04:00)</Text>
+            <TextInput
+              style={styles.input}
+              value={openingTime}
+              onChangeText={setOpeningTime}
+              placeholder="04:00"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, color: Colors.textSecondary, marginBottom: 4 }}>Closing (e.g. 20:00)</Text>
+            <TextInput
+              style={styles.input}
+              value={closingTime}
+              onChangeText={setClosingTime}
+              placeholder="20:00"
+            />
+          </View>
+        </View>
+        <Text style={{ fontSize: 12, color: Colors.textSecondary, marginBottom: 16 }}>
+          Default store operating hours are 4:00 AM to 8:00 PM (04:00 - 20:00). Customers will see your store availability status update automatically based on this schedule.
+        </Text>
 
         <TouchableOpacity style={[styles.saveButton, saving && styles.saveButtonDisabled]} onPress={handleSave} disabled={saving}>
           {saving ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}

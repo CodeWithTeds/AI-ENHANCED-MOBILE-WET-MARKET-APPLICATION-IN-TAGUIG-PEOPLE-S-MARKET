@@ -16,7 +16,7 @@ export type OrderStatus =
 
 export type PaymentMethod = 'cash' | 'gcash' | 'maya';
 
-export type PaymentStatus = 'unpaid' | 'pending_verification' | 'paid' | 'rejected';
+export type PaymentStatus = 'unpaid' | 'pending_verification' | 'partially_paid' | 'paid' | 'rejected';
 
 export type ConfirmationStatus = 'pending_confirmation' | 'confirmed' | 'cancelled' | 'not_required' | 'none';
 
@@ -33,6 +33,8 @@ export interface OrderItem {
   /** Per-vendor fulfillment status of this item's portion (vendor-scoped responses). */
   status?: OrderStatus;
   confirmation_status?: ConfirmationStatus;
+  payment_status?: PaymentStatus;
+  payment_reference_number?: string | null;
   vendor?: {
     id: number;
     stall_name: string;
@@ -46,6 +48,26 @@ export interface OrderItem {
     id: number;
     image: string | null;
   } | null;
+}
+
+export interface VendorOrderPortion {
+  vendor_id: number;
+  stall_name: string;
+  stall_location?: string | null;
+  subtotal: number;
+  status: OrderStatus;
+  confirmation_status?: ConfirmationStatus;
+  payment_status: PaymentStatus;
+  payment_reference_number?: string | null;
+  payment_submitted_at?: string | null;
+  payment_verified_at?: string | null;
+  gcash_number?: string | null;
+  gcash_qr_url?: string | null;
+  maya_number?: string | null;
+  maya_qr_url?: string | null;
+  has_gcash?: boolean;
+  has_maya?: boolean;
+  items: OrderItem[];
 }
 
 /** One step in the order status timeline (recorded server-side). */
@@ -73,6 +95,7 @@ export interface Order {
   created_at: string;
   updated_at: string;
   items: OrderItem[];
+  vendor_portions?: VendorOrderPortion[];
   status_history?: OrderStatusHistory[];
   user?: { id: number; name: string; email: string };
 }
@@ -85,6 +108,10 @@ export interface PlaceOrderPayload {
   }[];
   payment_method?: 'cash' | 'gcash' | 'maya';
   payment_reference_number?: string;
+  vendor_payments?: {
+    vendor_id: number;
+    payment_reference_number: string;
+  }[];
   notes?: string;
 }
 
@@ -96,10 +123,22 @@ export interface PaginatedOrders {
   total: number;
 }
 
+export interface VendorPaymentItem {
+  product_id: number;
+  product_name: string;
+  price: number;
+  unit: string;
+  quantity: number;
+  subtotal: number;
+}
+
 export interface VendorPaymentDetail {
   vendor_id: number;
   stall_name: string;
   stall_location?: string;
+  subtotal?: number;
+  items?: VendorPaymentItem[];
+  items_count?: number;
   gcash_number?: string | null;
   gcash_qr_url?: string | null;
   maya_number?: string | null;
@@ -203,22 +242,31 @@ export async function submitPaymentReference(
   orderId: number,
   reference: string,
   token: string,
+  vendorId?: number,
 ): Promise<Order> {
   const response = await api.request<Order>(`/orders/${orderId}/payment-reference`, {
     method: 'POST',
-    body: { payment_reference_number: reference } as unknown as Record<string, unknown>,
+    body: {
+      payment_reference_number: reference,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
+    } as unknown as Record<string, unknown>,
     token,
   });
   return response.data;
 }
 
 export async function getVendorsPaymentDetails(
-  productIds: number[],
+  productIdsOrItems: number[] | { product_id: number; quantity: number }[],
   token: string,
 ): Promise<VendorPaymentDetail[]> {
+  const isItems = productIdsOrItems.length > 0 && typeof productIdsOrItems[0] === 'object';
+  const body = isItems
+    ? { items: productIdsOrItems }
+    : { product_ids: productIdsOrItems };
+
   const response = await api.request<VendorPaymentDetail[]>('/orders/payment-details', {
     method: 'POST',
-    body: { product_ids: productIds } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     token,
   });
   return response.data;
@@ -298,6 +346,7 @@ export const PAYMENT_STATUS_CONFIG: Record<
 > = {
   unpaid:              { label: 'Unpaid',              color: '#6B7280', bg: '#F3F4F6', icon: 'cash-outline' },
   pending_verification:{ label: 'Pending Verification',color: '#D97706', bg: '#FEF3C7', icon: 'hourglass-outline' },
+  partially_paid:      { label: 'Partially Paid',      color: '#2563EB', bg: '#DBEAFE', icon: 'pie-chart-outline' },
   paid:                { label: 'Paid',                color: '#16A34A', bg: '#DCFCE7', icon: 'checkmark-done-outline' },
   rejected:            { label: 'Rejected',            color: '#DC2626', bg: '#FEE2E2', icon: 'close-circle-outline' },
 };

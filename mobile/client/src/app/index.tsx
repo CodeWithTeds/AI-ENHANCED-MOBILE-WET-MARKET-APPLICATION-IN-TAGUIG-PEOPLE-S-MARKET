@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Feather, FontAwesome, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
 import { ApiError } from '@/services/api';
@@ -209,24 +209,6 @@ function SignInForm() {
         {!loading && <Feather name="chevron-right" size={20} color="#FFFFFF" />}
       </TouchableOpacity>
 
-      {/* Divider */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or continue with</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      {/* Social Buttons */}
-      <View style={styles.socialRow}>
-        <TouchableOpacity style={styles.socialButton} accessibilityRole="button">
-          <FontAwesome name="google" size={16} color="#DB4437" />
-          <Text style={styles.socialLabel}>Google</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.socialButton} accessibilityRole="button">
-          <FontAwesome name="facebook" size={16} color="#4267B2" />
-          <Text style={styles.socialLabel}>Facebook</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Terms */}
       <Text style={styles.termsText}>
@@ -529,29 +511,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
 
-  // Social buttons
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    gap: 8,
-  },
-  socialLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-  },
 
   // Terms
   termsText: {

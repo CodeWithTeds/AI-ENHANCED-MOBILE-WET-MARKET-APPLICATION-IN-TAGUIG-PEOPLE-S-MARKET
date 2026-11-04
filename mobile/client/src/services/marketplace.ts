@@ -22,7 +22,25 @@ export interface MarketProduct {
     id: number;
     stall_name: string;
     stall_location: string;
+    opening_time?: string;
+    closing_time?: string;
+    operating_hours?: string;
+    is_open?: boolean;
   };
+}
+
+export interface VendorStoreData {
+  vendor: {
+    id: number;
+    stall_name: string;
+    stall_location: string;
+    opening_time?: string;
+    closing_time?: string;
+    operating_hours?: string;
+    is_open?: boolean;
+    product_categories?: string[];
+  };
+  products: MarketProduct[];
 }
 
 export interface PaginatedProducts {
@@ -86,6 +104,16 @@ export async function getCategories(): Promise<string[]> {
  */
 export async function getProductDetail(productId: number): Promise<MarketProduct> {
   const response = await api.request<MarketProduct>(`/marketplace/products/${productId}`, {
+    method: 'GET',
+  });
+  return response.data;
+}
+
+/**
+ * Get vendor store details and products.
+ */
+export async function getVendorStore(vendorId: number): Promise<VendorStoreData> {
+  const response = await api.request<VendorStoreData>(`/marketplace/vendors/${vendorId}`, {
     method: 'GET',
   });
   return response.data;

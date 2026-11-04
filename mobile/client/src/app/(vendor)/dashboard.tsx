@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { getToken } from '@/services/auth';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
@@ -139,6 +140,9 @@ export default function VendorDashboard() {
   const stallLocation = vendor?.stall_location ?? 'Taguig People\'s Market';
   const greeting = getGreeting();
 
+  const operatingHours = (vendor as any)?.operating_hours ?? '4:00 AM - 8:00 PM';
+  const isStoreOpen = (vendor as any)?.is_open ?? computeIsOpen((vendor as any)?.opening_time, (vendor as any)?.closing_time);
+
   return (
     <View style={styles.screen}>
       {/* Header */}
@@ -154,13 +158,7 @@ export default function VendorDashboard() {
                 <Text style={styles.headerEyebrow}>{stallLocation}</Text>
                 <Text style={styles.headerName} numberOfLines={1}>{stallName}</Text>
               </View>
-              <TouchableOpacity
-                style={styles.bell}
-                accessibilityLabel="Notifications"
-              >
-                <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-                {pendingCount > 0 && <View style={styles.bellDot} />}
-              </TouchableOpacity>
+              <NotificationBell token={token} role="vendor" style={styles.bell} />
             </View>
             <Text style={styles.greetingText}>{greeting} 👋</Text>
             <Text style={styles.headline}>Here&apos;s what&apos;s happening today.</Text>
@@ -184,6 +182,26 @@ export default function VendorDashboard() {
           />
         }
       >
+        {/* Store Operating Hours & Availability Status */}
+        <View style={[styles.hoursBanner, isStoreOpen ? styles.hoursBannerOpen : styles.hoursBannerClosed]}>
+          <View style={[styles.statusDot, isStoreOpen ? styles.dotOpen : styles.dotClosed]} />
+          <View style={{ flex: 1 }}>
+            <View style={styles.hoursStatusRow}>
+              <Text style={styles.hoursStatusTitle}>
+                Store {isStoreOpen ? 'Open' : 'Closed'}
+              </Text>
+              <Text style={[styles.hoursBadge, isStoreOpen ? styles.badgeOpen : styles.badgeClosed]}>
+                {operatingHours}
+              </Text>
+            </View>
+            <Text style={styles.hoursStatusSubtitle}>
+              {isStoreOpen
+                ? 'Available to receive and process orders'
+                : 'Closed · Store reopens at 4:00 AM'}
+            </Text>
+          </View>
+        </View>
+
         {/* Hero — all-time revenue & sales analytics entry */}
         <TouchableOpacity
           style={styles.heroCard}
@@ -327,15 +345,17 @@ export default function VendorDashboard() {
         {/* Market hours */}
         <View style={styles.marketBar}>
           <View style={styles.marketIcon}>
-            <MaterialCommunityIcons name="store-clock" size={18} color={C.brand} />
+            <MaterialCommunityIcons name="store-clock" size={18} color={isStoreOpen ? C.brand : '#DC2626'} />
           </View>
           <View style={styles.marketInfo}>
-            <Text style={styles.marketTime}>Open 4:00 AM – 2:00 PM</Text>
+            <Text style={styles.marketTime}>Operating Hours: {operatingHours}</Text>
             <Text style={styles.marketLocation}>{stallLocation}</Text>
           </View>
-          <View style={styles.openBadge}>
-            <View style={styles.openDot} />
-            <Text style={styles.openText}>Open now</Text>
+          <View style={[styles.openBadge, !isStoreOpen && styles.closedBadge]}>
+            <View style={[styles.openDot, !isStoreOpen && styles.closedDot]} />
+            <Text style={[styles.openText, !isStoreOpen && styles.closedText]}>
+              {isStoreOpen ? 'Open now' : 'Closed'}
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -490,17 +510,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
-  },
-  bellDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: C.orange,
-    borderWidth: 1.5,
-    borderColor: C.header,
   },
   greetingText: { fontSize: 14, color: '#D6F5E5', fontWeight: '600', marginTop: 16 },
   headline: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
@@ -734,6 +743,65 @@ const styles = StyleSheet.create({
   },
   openDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.brand },
   openText: { fontSize: 11, fontWeight: '700', color: C.brandDark },
+  closedBadge: { backgroundColor: '#FEE2E2' },
+  closedDot: { backgroundColor: '#DC2626' },
+  closedText: { color: '#DC2626' },
+
+  /* Operating hours banner */
+  hoursBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 12,
+  },
+  hoursBannerOpen: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  hoursBannerClosed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  dotOpen: { backgroundColor: '#16A34A' },
+  dotClosed: { backgroundColor: '#DC2626' },
+  hoursStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  hoursStatusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.ink,
+  },
+  hoursBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  badgeOpen: {
+    backgroundColor: '#DCFCE7',
+    color: '#16A34A',
+  },
+  badgeClosed: {
+    backgroundColor: '#FEE2E2',
+    color: '#DC2626',
+  },
+  hoursStatusSubtitle: {
+    fontSize: 12,
+    color: C.muted,
+  },
 
   /* Reviews Quick-action */
   reviewsQuickCard: {
@@ -763,3 +831,17 @@ const styles = StyleSheet.create({
   reviewsQuickTitle: { fontSize: 14, fontWeight: '700', color: C.ink },
   reviewsQuickSub: { fontSize: 11, color: C.muted, marginTop: 2 },
 });
+
+function computeIsOpen(openingTime = '04:00', closingTime = '20:00'): boolean {
+  try {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const manilaTime = new Date(utc + 8 * 3600000);
+    const currentMins = manilaTime.getHours() * 60 + manilaTime.getMinutes();
+    const [openH, openM] = openingTime.split(':').map(Number);
+    const [closeH, closeM] = closingTime.split(':').map(Number);
+    return currentMins >= openH * 60 + (openM || 0) && currentMins <= closeH * 60 + (closeM || 0);
+  } catch {
+    return true;
+  }
+}

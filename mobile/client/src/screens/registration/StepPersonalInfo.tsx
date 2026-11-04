@@ -36,8 +36,10 @@ export function StepPersonalInfo({ data, onNext }: StepPersonalInfoProps) {
       newErrors.phone = 'Phone number is required';
     }
 
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      newErrors.email = 'Please enter a valid email';
+    if (!form.email?.trim()) {
+      newErrors.email = 'Email address is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
     }
 
     if (!form.password) {
@@ -102,7 +104,8 @@ export function StepPersonalInfo({ data, onNext }: StepPersonalInfoProps) {
 
           <FormInput
             label="Email"
-            placeholder="your@email.com (optional)"
+            required
+            placeholder="your@email.com"
             value={form.email}
             onChangeText={(v) => updateField('email', v)}
             error={errors.email}

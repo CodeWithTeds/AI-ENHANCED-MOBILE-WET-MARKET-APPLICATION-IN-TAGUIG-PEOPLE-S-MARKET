@@ -41,9 +41,7 @@ export async function registerVendor(
 
   // Personal info
   formData.append('full_name', data.personal.fullName);
-  if (data.personal.email) {
-    formData.append('email', data.personal.email);
-  }
+  formData.append('email', data.personal.email.trim());
   formData.append('phone', data.personal.phone);
   formData.append('password', data.personal.password);
 

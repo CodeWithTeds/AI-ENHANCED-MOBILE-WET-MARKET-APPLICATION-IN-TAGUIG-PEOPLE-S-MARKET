@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_BASE_URL } from '@/config/api';
 import {
@@ -34,14 +35,18 @@ import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ProductDetailModal } from '@/components/customer/ProductDetailModal';
+import { VendorStoreModal } from '@/components/customer/VendorStoreModal';
+import { MarketLocationModal } from '@/components/customer/MarketLocationModal';
 import { StarRating, StarRatingDisplay } from '@/components/customer/StarRating';
 import { CategoryChip } from '@/components/customer/CategoryChip';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { PRODUCT_CATEGORIES } from '@/types/vendor';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min((SCREEN_WIDTH - 48 - 12) / 2, 240);
 
 export default function CustomerHomeScreen() {
+  const { token } = useCustomerAuth();
   const [products, setProducts] = useState<MarketProduct[]>([]);
   const [categories, setCategories] = useState<string[]>([...PRODUCT_CATEGORIES]);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -51,6 +56,8 @@ export default function CustomerHomeScreen() {
   const [recipe, setRecipe] = useState<RecipeResult | null>(null);
   const [recipeLoading, setRecipeLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<MarketProduct | null>(null);
+  const [activeVendorId, setActiveVendorId] = useState<number | null>(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
 
   const greeting = getGreeting();
 
@@ -134,16 +141,21 @@ export default function CustomerHomeScreen() {
         <SafeAreaView edges={['top']}>
           <View style={styles.headerContent}>
             <View style={styles.headerTopRow}>
-              <View>
+              <TouchableOpacity
+                onPress={() => setShowLocationModal(true)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="View Taguig People's Market location on Google Maps"
+                style={styles.locationHeaderBtn}
+              >
                 <View style={styles.locationRow}>
                   <Ionicons name="location-sharp" size={12} color="#F97316" />
                   <Text style={styles.locationLabel}>Market Location</Text>
+                  <Ionicons name="chevron-forward" size={11} color="rgba(255,255,255,0.7)" />
                 </View>
-                <Text style={styles.marketName}>Taguig People's Market</Text>
-              </View>
-              <TouchableOpacity style={styles.notifButton} accessibilityLabel="Notifications">
-                <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.marketName}>Taguig People&apos;s Market</Text>
               </TouchableOpacity>
+              <NotificationBell token={token} role="customer" style={styles.notifButton} />
             </View>
 
             <Text style={styles.greetingText}>{greeting} 🇵🇭</Text>
@@ -245,17 +257,29 @@ export default function CustomerHomeScreen() {
           </View>
         )}
 
-        {/* Market Hours */}
-        <View style={styles.marketHoursCard}>
+        {/* Market Hours & Map Entry */}
+        <TouchableOpacity
+          style={styles.marketHoursCard}
+          onPress={() => setShowLocationModal(true)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="View Taguig People's Market location on Google Maps"
+        >
           <View style={styles.marketHoursContent}>
-            <Text style={styles.marketHoursLabel}>Today's Market Hours</Text>
-            <Text style={styles.marketHoursTime}>4:00 AM – 2:00 PM</Text>
-            <Text style={styles.marketHoursNote}>Fresh deliveries every morning!</Text>
+            <View style={styles.marketHoursHeaderRow}>
+              <Text style={styles.marketHoursLabel}>Store Operating Hours</Text>
+              <View style={styles.mapBadge}>
+                <Ionicons name="map-outline" size={11} color="#FFFFFF" />
+                <Text style={styles.mapBadgeText}>Map</Text>
+              </View>
+            </View>
+            <Text style={styles.marketHoursTime}>4:00 AM – 8:00 PM</Text>
+            <Text style={styles.marketHoursNote}>Dir. A. Bunye, Lower Bicutan · Tap to view location</Text>
           </View>
           <View style={styles.marketHoursIcon}>
-            <MaterialCommunityIcons name="truck-delivery" size={24} color="#FFFFFF" />
+            <MaterialCommunityIcons name="map-marker-radius" size={24} color="#FFFFFF" />
           </View>
-        </View>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Product Detail Modal */}
@@ -263,6 +287,27 @@ export default function CustomerHomeScreen() {
         product={selectedProduct}
         visible={selectedProduct !== null}
         onClose={() => setSelectedProduct(null)}
+        onOpenVendorStore={(vendorId) => {
+          setSelectedProduct(null);
+          setActiveVendorId(vendorId);
+        }}
+      />
+
+      {/* Vendor Store Page Modal */}
+      <VendorStoreModal
+        vendorId={activeVendorId}
+        visible={activeVendorId !== null}
+        onClose={() => setActiveVendorId(null)}
+        onSelectProduct={(product) => {
+          setActiveVendorId(null);
+          setSelectedProduct(product);
+        }}
+      />
+
+      {/* Market Location & Interactive Map Modal */}
+      <MarketLocationModal
+        visible={showLocationModal}
+        onClose={() => setShowLocationModal(false)}
       />
     </View>
   );
@@ -319,9 +364,14 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
       {/* Info */}
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
-        <Text style={styles.productVendor} numberOfLines={1}>
-          {product.vendor?.stall_name ?? 'Market Vendor'}
-        </Text>
+        <View style={styles.vendorStatusRow}>
+          <Text style={styles.productVendor} numberOfLines={1}>
+            {product.vendor?.stall_name ?? 'Market Vendor'}
+          </Text>
+          {product.vendor?.is_open !== undefined && (
+            <View style={[styles.cardDot, product.vendor.is_open ? styles.cardDotOpen : styles.cardDotClosed]} />
+          )}
+        </View>
         <View style={styles.productBottom}>
           <Text style={styles.productUnit}>per {product.unit}</Text>
           <Text style={styles.productPrice}>₱{Number(product.price).toFixed(0)}</Text>
@@ -537,7 +587,7 @@ function RecipeCard({ recipe, onClose }: { recipe: RecipeResult; onClose: () => 
 }
 
 function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matching_products']>[number] }) {
-  const { addItem, isInCart } = useCart();
+  const { addItem, isInCart, startBuyNow } = useCart();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const checkAnim = useRef(new Animated.Value(0)).current;
   const [added, setAdded] = useState(isInCart(product.product_id));
@@ -571,6 +621,18 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
     setAdded(true);
   }
 
+  function handleBuyNow() {
+    startBuyNow({
+      product_id: product.product_id,
+      product_name: product.product_name,
+      price: product.price,
+      unit: product.unit,
+      category: product.category,
+      image: product.image,
+    }, 1);
+    router.push('/(customer)/cart' as any);
+  }
+
   return (
     <View style={styles.matchingProductRow}>
       <View style={styles.matchingProductInfo}>
@@ -579,27 +641,38 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
       </View>
       <Text style={styles.matchingProductPrice}>₱{Number(product.price).toFixed(0)}</Text>
 
-      <TouchableOpacity
-        onPress={handleAddToCart}
-        activeOpacity={0.8}
-        accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
-      >
-        <Animated.View
-          style={[
-            styles.addCartBtn,
-            added && styles.addCartBtnAdded,
-            { transform: [{ scale: scaleAnim }] },
-          ]}
+      <View style={styles.matchingProductActions}>
+        <TouchableOpacity
+          onPress={handleAddToCart}
+          activeOpacity={0.8}
+          accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
         >
-          <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
-            <Ionicons
-              name={added ? 'checkmark' : 'add'}
-              size={18}
-              color="#FFFFFF"
-            />
+          <Animated.View
+            style={[
+              styles.addCartBtn,
+              added && styles.addCartBtnAdded,
+              { transform: [{ scale: scaleAnim }] },
+            ]}
+          >
+            <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
+              <Ionicons
+                name={added ? 'checkmark' : 'add'}
+                size={18}
+                color="#FFFFFF"
+              />
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleBuyNow}
+          activeOpacity={0.8}
+          style={styles.buyCartBtn}
+          accessibilityLabel="Buy now directly"
+        >
+          <Ionicons name="flash" size={15} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -666,6 +739,7 @@ const styles = StyleSheet.create({
   headerBg: { backgroundColor: '#1B6B45', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, paddingBottom: 18 },
   headerContent: { paddingHorizontal: 20, paddingTop: 6 },
   headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  locationHeaderBtn: { paddingVertical: 2, paddingHorizontal: 2, borderRadius: 8 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationLabel: { fontSize: 11, color: '#86EFAC', fontWeight: '500' },
   marketName: { fontSize: 17, fontWeight: '800', color: '#FFFFFF', marginTop: 1 },
@@ -705,7 +779,11 @@ const styles = StyleSheet.create({
   productHeartBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' },
   productInfo: { padding: 10 },
   productName: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  productVendor: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  productVendor: { fontSize: 11, color: '#9CA3AF' },
+  vendorStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  cardDot: { width: 6, height: 6, borderRadius: 3 },
+  cardDotOpen: { backgroundColor: '#16A34A' },
+  cardDotClosed: { backgroundColor: '#DC2626' },
   productBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   productUnit: { fontSize: 11, color: '#9CA3AF' },
   productPrice: { fontSize: 16, fontWeight: '800', color: '#1B6B45' },
@@ -719,7 +797,10 @@ const styles = StyleSheet.create({
   // Market Hours
   marketHoursCard: { flexDirection: 'row', backgroundColor: '#F97316', borderRadius: 16, padding: 16, alignItems: 'center', justifyContent: 'space-between' },
   marketHoursContent: { flex: 1 },
+  marketHoursHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   marketHoursLabel: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+  mapBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
+  mapBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF' },
   marketHoursTime: { fontSize: 19, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
   marketHoursNote: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   marketHoursIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
@@ -754,8 +835,10 @@ const styles = StyleSheet.create({
   matchingProductName: { fontSize: 13, fontWeight: '600', color: '#111827' },
   matchingProductMeta: { fontSize: 11, color: '#9CA3AF' },
   matchingProductPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45', marginRight: 10 },
+  matchingProductActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   addCartBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
   addCartBtnAdded: { backgroundColor: '#16A34A' },
+  buyCartBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#EA580C', alignItems: 'center', justifyContent: 'center' },
 
   // Steps
   stepRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },

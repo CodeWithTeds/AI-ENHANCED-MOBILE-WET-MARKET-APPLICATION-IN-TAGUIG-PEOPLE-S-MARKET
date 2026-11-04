@@ -28,6 +28,12 @@ interface CartContextValue {
   updateQuantity: (productId: number, quantity: number) => void;
   clearCart: () => void;
   isInCart: (productId: number) => boolean;
+
+  // Buy Now functionality (independent of regular cart)
+  buyNowItem: CartItem | null;
+  startBuyNow: (item: Omit<CartItem, 'quantity'>, quantity?: number) => void;
+  updateBuyNowQuantity: (quantity: number) => void;
+  clearBuyNow: () => void;
 }
 
 const CartContext = createContext<CartContextValue | undefined>(undefined);
@@ -35,6 +41,7 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(null);
 
   /* Restore cart from AsyncStorage on mount */
   useEffect(() => {
@@ -100,9 +107,43 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return items.some((i) => i.product_id === productId);
   }
 
+  /* ─── Buy Now Operations (Independent of regular cart) ─── */
+  function startBuyNow(product: Omit<CartItem, 'quantity'>, quantity = 1) {
+    const normalizedQty = Math.round(quantity * 100) / 100;
+    setBuyNowItem({ ...product, quantity: normalizedQty });
+  }
+
+  function updateBuyNowQuantity(quantity: number) {
+    if (!buyNowItem) return;
+    const normalized = Math.round(quantity * 100) / 100;
+    if (normalized <= 0) {
+      setBuyNowItem(null);
+      return;
+    }
+    setBuyNowItem({ ...buyNowItem, quantity: normalized });
+  }
+
+  function clearBuyNow() {
+    setBuyNowItem(null);
+  }
+
   return (
     <CartContext.Provider
-      value={{ items, totalItems, totalPrice, isLoading, addItem, removeItem, updateQuantity, clearCart, isInCart }}
+      value={{
+        items,
+        totalItems,
+        totalPrice,
+        isLoading,
+        addItem,
+        removeItem,
+        updateQuantity,
+        clearCart,
+        isInCart,
+        buyNowItem,
+        startBuyNow,
+        updateBuyNowQuantity,
+        clearBuyNow,
+      }}
     >
       {children}
     </CartContext.Provider>

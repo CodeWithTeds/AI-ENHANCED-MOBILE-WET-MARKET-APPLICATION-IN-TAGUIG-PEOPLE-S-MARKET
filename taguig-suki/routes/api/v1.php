@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CustomerReportController;
 use App\Http\Controllers\Api\CustomerVerificationController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderChatController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
@@ -40,6 +41,7 @@ Route::prefix('marketplace')->group(function () {
     Route::get('/products', [MarketplaceController::class, 'browse']);
     Route::get('/products/search', [MarketplaceController::class, 'search']);
     Route::get('/products/{product}', [MarketplaceController::class, 'show']);
+    Route::get('/vendors/{vendor}', [MarketplaceController::class, 'vendorStore']);
     Route::get('/categories', [MarketplaceController::class, 'categories']);
 });
 
@@ -59,6 +61,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'profile']);
     Route::get('/vendor/status', [VendorRegistrationController::class, 'status']);
+
+    // In-app notifications (customer + vendor)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     // Vendor Products CRUD
     Route::get('/products', [ProductController::class, 'index']);

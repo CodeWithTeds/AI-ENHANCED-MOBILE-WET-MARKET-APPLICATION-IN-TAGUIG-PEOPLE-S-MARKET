@@ -33,12 +33,13 @@ class PaymentManagementController extends Controller
     {
         $validated = $request->validate([
             'action' => 'required|string|in:verify,approve,reject,decline',
+            'vendor_id' => 'nullable|integer|exists:vendors,id',
         ]);
 
         $action = in_array($validated['action'], ['verify', 'approve']) ? 'verify' : 'reject';
 
         try {
-            $this->orderService->verifyPayment($request->user(), $order, $action);
+            $this->orderService->verifyPayment($request->user(), $order, $action, $validated['vendor_id'] ?? null);
         } catch (UnprocessableEntityHttpException $e) {
             return back()->withErrors(['payment' => $e->getMessage()]);
         }

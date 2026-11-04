@@ -20,6 +20,10 @@ export interface VendorBusinessProfile {
     product_categories: string[];
     status: string;
     approved_at: string | null;
+    opening_time?: string;
+    closing_time?: string;
+    operating_hours?: string;
+    is_open?: boolean;
     notification_preferences?: NotificationPreferences;
   } | null;
   stats: {
@@ -32,6 +36,8 @@ export interface VendorBusinessProfile {
 export interface UpdateBusinessData {
   name?: string;
   stall_name?: string;
+  opening_time?: string;
+  closing_time?: string;
   product_categories?: string[];
 }
 

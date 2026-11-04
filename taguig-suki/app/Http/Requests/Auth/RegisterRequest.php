@@ -41,4 +41,14 @@ class RegisterRequest extends FormRequest
             'id_image' => ['required', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
         ];
     }
+
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Email address is required.',
+            'email.email' => 'Please provide a valid email address.',
+            'email.ends_with' => 'The email must be a valid @gmail.com or @yahoo.com address.',
+            'email.unique' => 'This email address is already registered.',
+        ];
+    }
 }
