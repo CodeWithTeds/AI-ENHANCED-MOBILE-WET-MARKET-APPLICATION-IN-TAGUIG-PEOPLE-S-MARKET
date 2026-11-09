@@ -1,7 +1,33 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { CheckCircle2, Eye, Search, ShieldCheck, Clock, XCircle, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, Eye, Search, ShieldCheck, Clock, XCircle, AlertTriangle, X, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { dashboard } from '@/routes';
+
+function resolveIdImageUrl(url?: string | null, path?: string | null): string | null {
+    const raw = url || (path ? `/storage/${path.replace(/^\/?(storage\/)?/, '')}` : null);
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    if (
+        trimmed.startsWith('http://localhost') ||
+        trimmed.startsWith('https://localhost') ||
+        trimmed.startsWith('http://127.0.0.1') ||
+        trimmed.startsWith('https://127.0.0.1')
+    ) {
+        const idx = trimmed.indexOf('/storage/');
+        if (idx !== -1) {
+            return trimmed.substring(idx);
+        }
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
+    }
+
+    const cleanPath = trimmed.replace(/^\/?(storage\/)?/, '');
+    return `/storage/${cleanPath}`;
+}
 
 type Verification = {
     id: number;
@@ -122,9 +148,12 @@ export default function VerificationIndex({ verifications, filters }: Props) {
                                         <td className="px-4 py-3 text-xs text-gray-500">{v.submitted_at ? new Date(v.submitted_at).toLocaleString() : '—'}</td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-end gap-1">
-                                                {v.id_image_url && (
-                                                    <button onClick={() => setPreview(v)} className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"><Eye className="h-3.5 w-3.5" /></button>
-                                                )}
+                                                {(() => {
+                                                    const imgUrl = resolveIdImageUrl(v.id_image_url, v.id_image_path);
+                                                    return imgUrl ? (
+                                                        <button onClick={() => setPreview(v)} className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50" title="Preview ID"><Eye className="h-3.5 w-3.5" /></button>
+                                                    ) : null;
+                                                })()}
                                                 {v.status === 'pending' && (
                                                     <>
                                                         <button onClick={() => handleApprove(v)} className="rounded-md bg-[#488562] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#3a6e50]">Approve</button>
@@ -147,14 +176,65 @@ export default function VerificationIndex({ verifications, filters }: Props) {
                 </div>
             </div>
 
-            {preview && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreview(null)}>
-                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between px-5 py-3 border-b"><h3 className="font-bold text-sm">ID — {preview.user?.name} • {preview.id_type}</h3><button onClick={() => setPreview(null)} className="p-1 rounded hover:bg-gray-100"><X className="h-4 w-4" /></button></div>
-                        <div className="p-4 bg-gray-50 flex items-center justify-center"><img src={preview.id_image_url ?? ''} alt="ID" className="max-h-[70vh] w-auto rounded-lg shadow" /></div>
+            {preview && (() => {
+                const previewImgUrl = resolveIdImageUrl(preview.id_image_url, preview.id_image_path);
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreview(null)}>
+                        <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-5 py-3 border-b">
+                                <h3 className="font-bold text-sm">ID — {preview.user?.name} • {preview.id_type}</h3>
+                                <div className="flex items-center gap-2">
+                                    {previewImgUrl && (
+                                        <a
+                                            href={previewImgUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                            title="Open full image in new tab"
+                                        >
+                                            <span>Full Size</span>
+                                            <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                    )}
+                                    <button onClick={() => setPreview(null)} className="p-1 rounded hover:bg-gray-100"><X className="h-4 w-4" /></button>
+                                </div>
+                            </div>
+                            <div className="p-4 bg-gray-50 flex items-center justify-center min-h-[220px]">
+                                {previewImgUrl ? (
+                                    <div className="flex flex-col items-center justify-center w-full">
+                                        <img
+                                            src={previewImgUrl}
+                                            alt={`ID of ${preview.user?.name}`}
+                                            className="max-h-[70vh] max-w-full w-auto rounded-lg shadow object-contain"
+                                            onError={(e) => {
+                                                const target = e.currentTarget as HTMLImageElement;
+                                                target.style.display = 'none';
+                                                const fallback = target.nextElementSibling as HTMLElement;
+                                                if (fallback) fallback.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div style={{ display: 'none' }} className="flex-col items-center justify-center py-10 text-center text-gray-400">
+                                            <AlertTriangle className="h-10 w-10 mb-2 text-amber-500" />
+                                            <p className="text-sm font-medium text-gray-700">Image could not be loaded</p>
+                                            <p className="text-xs text-gray-500 mt-1 max-w-sm">The uploaded image file cannot be found in storage or could not be accessed.</p>
+                                            <a
+                                                href={previewImgUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="mt-3 inline-flex items-center gap-1 text-xs text-[#488562] font-semibold underline hover:text-[#3a6e50]"
+                                            >
+                                                Try opening direct link
+                                            </a>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-500">No ID image</p>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {rejectModal && <RejectModal verification={rejectModal} onClose={() => setRejectModal(null)} />}
         </>

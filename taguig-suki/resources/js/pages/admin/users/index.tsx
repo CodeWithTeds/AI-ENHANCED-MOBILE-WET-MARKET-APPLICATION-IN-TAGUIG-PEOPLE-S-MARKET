@@ -5,6 +5,7 @@ import {
     Ban,
     CheckCircle2,
     Clock,
+    ExternalLink,
     Eye,
     Pencil,
     Search,
@@ -41,7 +42,7 @@ type AppUser = {
     name: string;
     email: string;
     is_admin: boolean;
-    role: 'admin' | 'customer';
+    role: 'admin' | 'vendor' | 'customer';
     is_active: boolean;
     email_verified_at: string | null;
     created_at: string;
@@ -49,6 +50,33 @@ type AppUser = {
     vendor: VendorInfo;
     verification: VerificationInfo;
 };
+
+function resolveIdImageUrl(url?: string | null, path?: string | null): string | null {
+    const raw = url || (path ? `/storage/${path.replace(/^\/?(storage\/)?/, '')}` : null);
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    // If it points to localhost / 127.0.0.1, convert to relative /storage/... so the browser loads from current host/port
+    if (
+        trimmed.startsWith('http://localhost') ||
+        trimmed.startsWith('https://localhost') ||
+        trimmed.startsWith('http://127.0.0.1') ||
+        trimmed.startsWith('https://127.0.0.1')
+    ) {
+        const idx = trimmed.indexOf('/storage/');
+        if (idx !== -1) {
+            return trimmed.substring(idx);
+        }
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
+    }
+
+    const cleanPath = trimmed.replace(/^\/?(storage\/)?/, '');
+    return `/storage/${cleanPath}`;
+}
 
 type FilterOption = { value: string; label: string };
 
@@ -66,6 +94,7 @@ type Props = {
         active: number;
         inactive: number;
         admins: number;
+        vendors?: number;
         customers: number;
     };
     verificationStats?: {
@@ -153,11 +182,12 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                 </div>
 
                 {/* Stats */}
-                <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid w-full gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
                     <StatCard icon={Users} label="Total Users" value={stats.total} color="#6b7280" />
                     <StatCard icon={UserCheck} label="Active" value={stats.active} color="#488562" />
                     <StatCard icon={XCircle} label="Inactive" value={stats.inactive} color="#dc2626" />
                     <StatCard icon={Shield} label="Admins" value={stats.admins} color="#7c3aed" />
+                    <StatCard icon={Store} label="Vendors" value={stats.vendors ?? 0} color="#ee600e" />
                     <StatCard icon={Users} label="Customers" value={stats.customers} color="#0867ff" />
                 </div>
                 {verificationStats && (
@@ -266,9 +296,13 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                                 <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]">{user.email}</div>
                                             </td>
                                             <td className="px-4 py-3.5">
-                                                {user.is_admin ? (
+                                                {user.role === 'admin' ? (
                                                     <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700">
                                                         Admin
+                                                    </span>
+                                                ) : user.role === 'vendor' ? (
+                                                    <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                                        Vendor
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
@@ -416,7 +450,11 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                         </div>
                         <div className="space-y-3 px-6 py-4">
                             <div className="grid grid-cols-2 gap-3">
-                                <DetailBox label="Role" value={viewUser.is_admin ? 'Admin' : 'Customer'} color={viewUser.is_admin ? '#7c3aed' : '#0867ff'} />
+                                <DetailBox
+                                    label="Role"
+                                    value={viewUser.role === 'admin' ? 'Admin' : viewUser.role === 'vendor' ? 'Vendor' : 'Customer'}
+                                    color={viewUser.role === 'admin' ? '#7c3aed' : viewUser.role === 'vendor' ? '#ee600e' : '#0867ff'}
+                                />
                                 <DetailBox
                                     label="Status"
                                     value={viewUser.is_active ? 'Active' : 'Inactive'}
@@ -426,63 +464,100 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                 <DetailBox label="Vendor" value={viewUser.vendor?.stall_name ?? 'None'} color="#ee600e" />
                             </div>
                             {/* Verification in view modal */}
-                            {viewUser.verification && (
-                                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                                    <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">ID Verification</div>
-                                    <div className="flex items-start gap-3">
-                                        {viewUser.verification.id_image_url ? (
-                                            <img src={viewUser.verification.id_image_url} alt="ID" className="h-20 w-28 rounded-lg border object-cover" />
-                                        ) : (
-                                            <div className="h-20 w-28 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No ID</div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-1.5">
-                                                <VerificationBadge status={viewUser.verification.status} />
-                                                {viewUser.verification.id_type && <span className="text-xs text-gray-600">{viewUser.verification.id_type}</span>}
-                                            </div>
-                                            {viewUser.verification.rejection_reason && viewUser.verification.status === 'rejected' && (
-                                                <p className="mt-1 text-xs text-red-600">Reason: {viewUser.verification.rejection_reason}</p>
+                            {viewUser.verification && (() => {
+                                const vImgUrl = resolveIdImageUrl(viewUser.verification.id_image_url, viewUser.verification.id_image_path);
+                                return (
+                                    <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                        <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">ID Verification</div>
+                                        <div className="flex items-start gap-3">
+                                            {vImgUrl ? (
+                                                <div
+                                                    className="relative h-20 w-28 shrink-0 rounded-lg border overflow-hidden bg-gray-100 cursor-pointer group"
+                                                    onClick={() => setPreviewVerif(viewUser)}
+                                                    title="Click to zoom ID"
+                                                >
+                                                    <img
+                                                        src={vImgUrl}
+                                                        alt="ID"
+                                                        className="h-full w-full object-cover group-hover:opacity-90"
+                                                        onError={(e) => {
+                                                            const target = e.currentTarget as HTMLImageElement;
+                                                            target.style.display = 'none';
+                                                            const fallback = target.nextElementSibling as HTMLElement;
+                                                            if (fallback) fallback.style.display = 'flex';
+                                                        }}
+                                                    />
+                                                    <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[11px] text-gray-400 font-medium">
+                                                        No preview
+                                                    </div>
+                                                </div>
+                                            ) : viewUser.is_admin ? (
+                                                <div className="h-20 w-28 shrink-0 rounded-lg bg-purple-50 border border-purple-100 flex flex-col items-center justify-center text-purple-700 text-xs text-center p-1">
+                                                    <Shield className="h-6 w-6 text-purple-600 mb-1" />
+                                                    <span className="text-[10px] font-bold">Admin</span>
+                                                </div>
+                                            ) : viewUser.vendor ? (
+                                                <div className="h-20 w-28 shrink-0 rounded-lg bg-amber-50 border border-amber-100 flex flex-col items-center justify-center text-amber-700 text-xs text-center p-1">
+                                                    <Store className="h-6 w-6 text-amber-600 mb-1" />
+                                                    <span className="text-[10px] font-bold">Vendor</span>
+                                                </div>
+                                            ) : (
+                                                <div className="h-20 w-28 shrink-0 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No ID</div>
                                             )}
-                                            <p className="mt-1 text-[11px] text-gray-500">
-                                                {viewUser.verification.submitted_at ? `Submitted ${formatDate(viewUser.verification.submitted_at)}` : 'Not submitted'}
-                                            </p>
-                                            <div className="mt-2 flex gap-1.5">
-                                                {viewUser.verification.status === 'pending' && (
-                                                    <>
-                                                        <button
-                                                            onClick={() => {
-                                                                setViewUser(null);
-                                                                handleApproveVerif(viewUser);
-                                                            }}
-                                                            className="rounded-md bg-[#488562] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#3a6e50]"
-                                                        >
-                                                            Approve
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setViewUser(null);
-                                                                setRejectVerif(viewUser);
-                                                            }}
-                                                            className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
-                                                        >
-                                                            Reject
-                                                        </button>
-                                                    </>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <VerificationBadge status={viewUser.verification.status} />
+                                                    {viewUser.verification.id_type && <span className="text-xs text-gray-600 font-medium">{viewUser.verification.id_type}</span>}
+                                                </div>
+                                                {viewUser.verification.rejection_reason && viewUser.verification.status === 'rejected' && (
+                                                    <p className="mt-1 text-xs text-red-600">Reason: {viewUser.verification.rejection_reason}</p>
                                                 )}
-                                                {viewUser.verification.id_image_url && (
-                                                    <a href={viewUser.verification.id_image_url} target="_blank" rel="noopener noreferrer" className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
-                                                        View Full
-                                                    </a>
-                                                )}
+                                                <p className="mt-1 text-[11px] text-gray-500">
+                                                    {viewUser.verification.verified_at
+                                                        ? `Verified ${formatDate(viewUser.verification.verified_at)}`
+                                                        : viewUser.verification.submitted_at
+                                                          ? `Submitted ${formatDate(viewUser.verification.submitted_at)}`
+                                                          : 'Not submitted'}
+                                                </p>
+                                                <div className="mt-2 flex gap-1.5">
+                                                    {viewUser.verification.status === 'pending' && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setViewUser(null);
+                                                                    handleApproveVerif(viewUser);
+                                                                }}
+                                                                className="rounded-md bg-[#488562] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#3a6e50]"
+                                                            >
+                                                                Approve
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setViewUser(null);
+                                                                    setRejectVerif(viewUser);
+                                                                }}
+                                                                className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {vImgUrl && (
+                                                        <a href={vImgUrl} target="_blank" rel="noopener noreferrer" className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1">
+                                                            <span>View Full</span>
+                                                            <ExternalLink className="h-3 w-3" />
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
+                                        {/* Admin must approve first notice */}
+                                        {viewUser.verification.status === 'pending' && (
+                                            <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">Admin must approve first — customer is pending until you verify.</p>
+                                        )}
                                     </div>
-                                    {/* Admin must approve first notice */}
-                                    {viewUser.verification.status === 'pending' && (
-                                        <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">Admin must approve first — customer is pending until you verify.</p>
-                                    )}
-                                </div>
-                            )}
+                                );
+                            })()}
                             <div className="rounded-xl bg-gray-50 p-3 text-xs space-y-2">
                                 <Row label="Email" value={viewUser.email} />
                                 <Row label="Verified" value={viewUser.email_verified_at ? 'Yes' : 'No'} />
@@ -525,32 +600,77 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
             {editUser && <EditModal user={editUser} onClose={() => setEditUser(null)} />}
 
             {/* ID Preview */}
-            {previewVerif && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreviewVerif(null)}>
-                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between px-5 py-3 border-b">
-                            <h3 className="font-bold text-sm">ID — {previewVerif.name} • {previewVerif.verification?.id_type ?? '—'}</h3>
-                            <button onClick={() => setPreviewVerif(null)} className="p-1 rounded hover:bg-gray-100"><X className="h-4 w-4" /></button>
-                        </div>
-                        <div className="p-4 bg-gray-50 flex items-center justify-center">
-                            {previewVerif.verification?.id_image_url ? (
-                                <img src={previewVerif.verification.id_image_url} alt="ID" className="max-h-[70vh] w-auto rounded-lg shadow" />
-                            ) : (
-                                <p className="text-sm text-gray-500">No ID image</p>
-                            )}
-                        </div>
-                        <div className="px-5 py-3 bg-white border-t flex items-center justify-between">
-                            <VerificationBadge status={previewVerif.verification?.status ?? 'unverified'} />
-                            {previewVerif.verification?.status === 'pending' && (
-                                <div className="flex gap-1.5">
-                                    <button onClick={() => { setPreviewVerif(null); handleApproveVerif(previewVerif); }} className="rounded-md bg-[#488562] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a6e50]">Approve</button>
-                                    <button onClick={() => { setPreviewVerif(null); setRejectVerif(previewVerif); }} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100">Reject</button>
+            {previewVerif && (() => {
+                const previewImgUrl = resolveIdImageUrl(previewVerif.verification?.id_image_url, previewVerif.verification?.id_image_path);
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreviewVerif(null)}>
+                        <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-5 py-3 border-b">
+                                <h3 className="font-bold text-sm">ID — {previewVerif.name} • {previewVerif.verification?.id_type ?? '—'}</h3>
+                                <div className="flex items-center gap-2">
+                                    {previewImgUrl && (
+                                        <a
+                                            href={previewImgUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                            title="Open full image in new tab"
+                                        >
+                                            <span>Full Size</span>
+                                            <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                    )}
+                                    <button onClick={() => setPreviewVerif(null)} className="p-1 rounded hover:bg-gray-100"><X className="h-4 w-4" /></button>
                                 </div>
-                            )}
+                            </div>
+                            <div className="p-4 bg-gray-50 flex items-center justify-center min-h-[220px]">
+                                {previewImgUrl ? (
+                                    <div className="flex flex-col items-center justify-center w-full">
+                                        <img
+                                            src={previewImgUrl}
+                                            alt={`ID of ${previewVerif.name}`}
+                                            className="max-h-[70vh] max-w-full w-auto rounded-lg shadow object-contain"
+                                            onError={(e) => {
+                                                const target = e.currentTarget as HTMLImageElement;
+                                                target.style.display = 'none';
+                                                const fallback = target.nextElementSibling as HTMLElement;
+                                                if (fallback) fallback.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div style={{ display: 'none' }} className="flex-col items-center justify-center py-10 text-center text-gray-400">
+                                            <AlertTriangle className="h-10 w-10 mb-2 text-amber-500" />
+                                            <p className="text-sm font-medium text-gray-700">Image could not be loaded</p>
+                                            <p className="text-xs text-gray-500 mt-1 max-w-sm">The uploaded image file cannot be found in storage or could not be accessed.</p>
+                                            <a
+                                                href={previewImgUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="mt-3 inline-flex items-center gap-1 text-xs text-[#488562] font-semibold underline hover:text-[#3a6e50]"
+                                            >
+                                                Try opening direct link
+                                            </a>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center text-gray-400">
+                                        <Shield className="h-10 w-10 mb-2 text-gray-300" />
+                                        <p className="text-sm text-gray-500">No ID image submitted</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="px-5 py-3 bg-white border-t flex items-center justify-between">
+                                <VerificationBadge status={previewVerif.verification?.status ?? 'unverified'} />
+                                {previewVerif.verification?.status === 'pending' && previewVerif.verification?.id && (
+                                    <div className="flex gap-1.5">
+                                        <button onClick={() => { setPreviewVerif(null); handleApproveVerif(previewVerif); }} className="rounded-md bg-[#488562] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a6e50]">Approve</button>
+                                        <button onClick={() => { setPreviewVerif(null); setRejectVerif(previewVerif); }} className="rounded-md bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100">Reject</button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Reject Dialog for users table */}
             {rejectVerif && <RejectVerifModal user={rejectVerif} onClose={() => setRejectVerif(null)} />}
@@ -604,8 +724,10 @@ function EditModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
                             <div className="text-gray-500">Joined {formatDate(user.created_at)}</div>
                         </div>
                         <div className="ml-auto flex gap-1.5">
-                            {user.is_admin ? (
+                            {user.role === 'admin' ? (
                                 <span className="rounded-md bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">Admin</span>
+                            ) : user.role === 'vendor' ? (
+                                <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">Vendor</span>
                             ) : (
                                 <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">Customer</span>
                             )}
@@ -757,7 +879,7 @@ function DetailBox({ label, value, color }: { label: string; value: string; colo
     );
 }
 
-function VerificationBadge({ status }: { status: VerificationInfo['status'] }) {
+function VerificationBadge({ status }: { status?: 'unverified' | 'pending' | 'verified' | 'rejected' }) {
     const map: Record<string, { bg: string; color: string; label: string }> = {
         verified: { bg: '#dcfce7', color: '#15803d', label: 'Verified' },
         pending: { bg: '#fef3c7', color: '#92400e', label: 'Pending' },
@@ -770,32 +892,84 @@ function VerificationBadge({ status }: { status: VerificationInfo['status'] }) {
 
 function VerificationCell({ user, onPreview, onApprove, onReject }: { user: AppUser; onPreview: () => void; onApprove: () => void; onReject: () => void }) {
     const v = user.verification;
-    if (!v || v.status === 'unverified' || !v.id_image_url) {
+    const imgUrl = resolveIdImageUrl(v?.id_image_url, v?.id_image_path);
+
+    if (imgUrl) {
         return (
-            <div className="flex items-center gap-1.5">
-                <VerificationBadge status={v?.status ?? 'unverified'} />
-                <span className="text-[11px] text-gray-400">{v?.id_type ?? 'No ID'}</span>
+            <div className="flex items-center gap-2">
+                <div
+                    className="relative h-9 w-14 shrink-0 rounded-md border overflow-hidden bg-gray-100 cursor-pointer group"
+                    onClick={onPreview}
+                    title="Click to view ID"
+                >
+                    <img
+                        src={imgUrl}
+                        alt="ID"
+                        className="h-full w-full object-cover group-hover:opacity-90"
+                        onError={(e) => {
+                            const target = e.currentTarget as HTMLImageElement;
+                            target.style.display = 'none';
+                            const fallback = target.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                        }}
+                    />
+                    <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[10px] text-gray-400 font-medium">
+                        ID
+                    </div>
+                </div>
+                <div className="min-w-0">
+                    <VerificationBadge status={v?.status ?? 'unverified'} />
+                    <div className="text-[11px] text-gray-600 truncate max-w-[90px]">{v?.id_type}</div>
+                </div>
+                {v?.status === 'pending' && v?.id && (
+                    <div className="flex gap-1">
+                        <button onClick={onApprove} className="rounded bg-[#488562] px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-[#3a6e50]" title="Approve">✓</button>
+                        <button onClick={onReject} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100" title="Reject">✕</button>
+                    </div>
+                )}
+                {v?.status === 'verified' && <CheckCircle2 className="h-3.5 w-3.5 text-[#488562]" />}
+                {v?.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+                {v?.status !== 'unverified' && (
+                    <button onClick={onPreview} className="p-1 rounded hover:bg-gray-100" title="Preview ID"><Eye className="h-3 w-3 text-gray-500" /></button>
+                )}
             </div>
         );
     }
-    return (
-        <div className="flex items-center gap-2">
-            <img src={v.id_image_url} alt="ID" className="h-9 w-14 rounded-md border object-cover cursor-pointer" onClick={onPreview} />
-            <div className="min-w-0">
-                <VerificationBadge status={v.status} />
-                <div className="text-[11px] text-gray-600 truncate max-w-[90px]">{v.id_type}</div>
+
+    if (v?.status === 'verified') {
+        return (
+            <div className="flex items-center gap-1.5">
+                <VerificationBadge status="verified" />
+                <span className="text-[11px] font-medium text-gray-700">{v.id_type ?? 'Verified'}</span>
+                <CheckCircle2 className="h-3.5 w-3.5 text-[#488562]" />
             </div>
-            {v.status === 'pending' && (
-                <div className="flex gap-1">
-                    <button onClick={onApprove} className="rounded bg-[#488562] px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-[#3a6e50]" title="Approve">✓</button>
-                    <button onClick={onReject} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100" title="Reject">✕</button>
-                </div>
-            )}
-            {v.status === 'verified' && <CheckCircle2 className="h-3.5 w-3.5 text-[#488562]" />}
-            {v.status === 'rejected' && <XCircle className="h-3.5 w-3.5 text-red-500" />}
-            {v.status !== 'unverified' && (
-                <button onClick={onPreview} className="p-1 rounded hover:bg-gray-100"><Eye className="h-3 w-3 text-gray-500" /></button>
-            )}
+        );
+    }
+
+    if (v?.status === 'pending') {
+        return (
+            <div className="flex items-center gap-1.5">
+                <VerificationBadge status="pending" />
+                <span className="text-[11px] font-medium text-amber-700">{v.id_type ?? 'Pending'}</span>
+                <Clock className="h-3.5 w-3.5 text-amber-600" />
+            </div>
+        );
+    }
+
+    if (v?.status === 'rejected') {
+        return (
+            <div className="flex items-center gap-1.5">
+                <VerificationBadge status="rejected" />
+                <span className="text-[11px] font-medium text-red-600">{v.id_type ?? 'Rejected'}</span>
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex items-center gap-1.5">
+            <VerificationBadge status="unverified" />
+            <span className="text-[11px] text-gray-400">{v?.id_type ?? 'No ID'}</span>
         </div>
     );
 }

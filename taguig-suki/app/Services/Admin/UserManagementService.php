@@ -5,7 +5,6 @@ namespace App\Services\Admin;
 use App\Models\CustomerVerification;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class UserManagementService
@@ -16,7 +15,7 @@ class UserManagementService
      */
     public function getIndexData(array $filters): array
     {
-        $query = User::query()->withCount(['vendor'])->with(['verification', 'vendor']);
+        $query = User::query()->withCount(['vendor'])->with(['verification', 'vendor.documents']);
 
         $this->applyFilters($query, $filters);
 
@@ -39,6 +38,7 @@ class UserManagementService
             'filters' => $filters,
             'roles' => [
                 ['value' => 'customer', 'label' => 'Customer'],
+                ['value' => 'vendor', 'label' => 'Vendor'],
                 ['value' => 'admin', 'label' => 'Admin'],
             ],
             'statuses' => [
@@ -102,17 +102,77 @@ class UserManagementService
         $user->delete();
     }
 
+    private function formatImageUrl(?string $raw): ?string
+    {
+        if (! $raw) {
+            return null;
+        }
+
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://')) {
+            return $raw;
+        }
+
+        $clean = ltrim(preg_replace('/^\/?(storage\/)?/', '', $raw), '/');
+
+        return '/storage/'.$clean;
+    }
+
     private function present(User $user): array
     {
         $verification = $user->verification;
-        // Ensure a verification row exists for consistent UI (lazy create not needed here, just present null)
+        $vendor = $user->vendor;
+
         $verifData = null;
-        if ($verification) {
+
+        if ($user->is_admin) {
+            $verifData = [
+                'id' => null,
+                'id_type' => 'Admin Account',
+                'id_image_path' => null,
+                'id_image_url' => null,
+                'status' => CustomerVerification::STATUS_VERIFIED,
+                'rejection_reason' => null,
+                'submitted_at' => $user->created_at,
+                'verified_at' => $user->email_verified_at ?? $user->created_at,
+            ];
+        } elseif ($vendor) {
+            // Find valid ID document if uploaded by vendor
+            $validIdDoc = $vendor->documents?->firstWhere('document_type', 'valid_id');
+            $idImagePath = $validIdDoc?->file_path ?? $verification?->id_image_path;
+            $idImageUrl = $this->formatImageUrl($idImagePath);
+
+            // Map vendor status to verification status
+            $status = match ($vendor->status) {
+                'approved' => CustomerVerification::STATUS_VERIFIED,
+                'pending' => CustomerVerification::STATUS_PENDING,
+                'rejected' => CustomerVerification::STATUS_REJECTED,
+                default => CustomerVerification::STATUS_UNVERIFIED,
+            };
+
+            // If the vendor user also has an explicit CustomerVerification record that is verified
+            if ($verification && $verification->status === CustomerVerification::STATUS_VERIFIED) {
+                $status = CustomerVerification::STATUS_VERIFIED;
+                $idType = $verification->id_type ?? ($validIdDoc ? 'Vendor ID' : 'Vendor Registration');
+            } else {
+                $idType = $validIdDoc ? 'Vendor ID' : 'Vendor Registration';
+            }
+
+            $verifData = [
+                'id' => $verification?->id,
+                'id_type' => $idType,
+                'id_image_path' => $idImagePath,
+                'id_image_url' => $idImageUrl,
+                'status' => $status,
+                'rejection_reason' => $vendor->rejection_reason ?? $verification?->rejection_reason,
+                'submitted_at' => $vendor->created_at ?? $verification?->submitted_at,
+                'verified_at' => $vendor->approved_at ?? $verification?->verified_at,
+            ];
+        } elseif ($verification) {
             $verifData = [
                 'id' => $verification->id,
                 'id_type' => $verification->id_type,
                 'id_image_path' => $verification->id_image_path,
-                'id_image_url' => $verification->id_image_path ? Storage::disk('public')->url($verification->id_image_path) : null,
+                'id_image_url' => $this->formatImageUrl($verification->id_image_path),
                 'status' => $verification->status,
                 'rejection_reason' => $verification->rejection_reason,
                 'submitted_at' => $verification->submitted_at,
@@ -131,12 +191,19 @@ class UserManagementService
             ];
         }
 
+        $role = 'customer';
+        if ($user->is_admin) {
+            $role = 'admin';
+        } elseif ($user->vendor) {
+            $role = 'vendor';
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'is_admin' => (bool) $user->is_admin,
-            'role' => $user->is_admin ? 'admin' : 'customer',
+            'role' => $role,
             'is_active' => (bool) ($user->is_active ?? true),
             'email_verified_at' => $user->email_verified_at,
             'created_at' => $user->created_at,
@@ -171,18 +238,51 @@ class UserManagementService
         if (! empty($filters['role'])) {
             if ($filters['role'] === 'admin') {
                 $query->where('is_admin', true);
+            } elseif ($filters['role'] === 'vendor') {
+                $query->where('is_admin', false)->whereHas('vendor');
             } elseif ($filters['role'] === 'customer') {
-                $query->where('is_admin', false);
+                $query->where('is_admin', false)->whereDoesntHave('vendor');
             }
         }
 
         if (! empty($filters['verification_status'])) {
             $vs = $filters['verification_status'];
-            if ($vs === 'unverified') {
-                $query->whereDoesntHave('verification')
-                    ->orWhereHas('verification', fn (Builder $q) => $q->where('status', 'unverified'));
-            } elseif (in_array($vs, ['pending', 'verified', 'rejected'], true)) {
-                $query->whereHas('verification', fn (Builder $q) => $q->where('status', $vs));
+            if ($vs === 'verified') {
+                $query->where(function (Builder $q) {
+                    $q->where('is_admin', true)
+                        ->orWhereHas('vendor', fn (Builder $vq) => $vq->where('status', 'approved'))
+                        ->orWhereHas('verification', fn (Builder $vq) => $vq->where('status', 'verified'));
+                });
+            } elseif ($vs === 'pending') {
+                $query->where('is_admin', false)
+                    ->where(function (Builder $q) {
+                        $q->whereHas('vendor', fn (Builder $vq) => $vq->where('status', 'pending'))
+                            ->orWhere(function (Builder $sub) {
+                                $sub->whereDoesntHave('vendor')
+                                    ->whereHas('verification', fn (Builder $vq) => $vq->where('status', 'pending'));
+                            });
+                    });
+            } elseif ($vs === 'rejected') {
+                $query->where('is_admin', false)
+                    ->where(function (Builder $q) {
+                        $q->whereHas('vendor', fn (Builder $vq) => $vq->where('status', 'rejected'))
+                            ->orWhere(function (Builder $sub) {
+                                $sub->whereDoesntHave('vendor')
+                                    ->whereHas('verification', fn (Builder $vq) => $vq->where('status', 'rejected'));
+                            });
+                    });
+            } elseif ($vs === 'unverified') {
+                $query->where('is_admin', false)
+                    ->where(function (Builder $q) {
+                        $q->whereHas('vendor', fn (Builder $vq) => $vq->whereNotIn('status', ['approved', 'pending', 'rejected']))
+                            ->orWhere(function (Builder $sub) {
+                                $sub->whereDoesntHave('vendor')
+                                    ->where(function (Builder $iq) {
+                                        $iq->whereDoesntHave('verification')
+                                            ->orWhereHas('verification', fn (Builder $vq) => $vq->where('status', 'unverified'));
+                                    });
+                            });
+                    });
             }
         }
     }
@@ -194,17 +294,54 @@ class UserManagementService
             'active' => User::where('is_active', true)->orWhereNull('is_active')->count(),
             'inactive' => User::where('is_active', false)->count(),
             'admins' => User::where('is_admin', true)->count(),
-            'customers' => User::where('is_admin', false)->count(),
+            'vendors' => User::where('is_admin', false)->whereHas('vendor')->count(),
+            'customers' => User::where('is_admin', false)->whereDoesntHave('vendor')->count(),
         ];
     }
 
     private function getVerificationStats(): array
     {
+        $verifiedCount = User::where(function (Builder $q) {
+            $q->where('is_admin', true)
+                ->orWhereHas('vendor', fn (Builder $vq) => $vq->where('status', 'approved'))
+                ->orWhereHas('verification', fn (Builder $vq) => $vq->where('status', 'verified'));
+        })->count();
+
+        $pendingCount = User::where('is_admin', false)
+            ->where(function (Builder $q) {
+                $q->whereHas('vendor', fn (Builder $vq) => $vq->where('status', 'pending'))
+                    ->orWhere(function (Builder $sub) {
+                        $sub->whereDoesntHave('vendor')
+                            ->whereHas('verification', fn (Builder $vq) => $vq->where('status', 'pending'));
+                    });
+            })->count();
+
+        $rejectedCount = User::where('is_admin', false)
+            ->where(function (Builder $q) {
+                $q->whereHas('vendor', fn (Builder $vq) => $vq->where('status', 'rejected'))
+                    ->orWhere(function (Builder $sub) {
+                        $sub->whereDoesntHave('vendor')
+                            ->whereHas('verification', fn (Builder $vq) => $vq->where('status', 'rejected'));
+                    });
+            })->count();
+
+        $unverifiedCount = User::where('is_admin', false)
+            ->where(function (Builder $q) {
+                $q->whereHas('vendor', fn (Builder $vq) => $vq->whereNotIn('status', ['approved', 'pending', 'rejected']))
+                    ->orWhere(function (Builder $sub) {
+                        $sub->whereDoesntHave('vendor')
+                            ->where(function (Builder $iq) {
+                                $iq->whereDoesntHave('verification')
+                                    ->orWhereHas('verification', fn (Builder $vq) => $vq->where('status', 'unverified'));
+                            });
+                    });
+            })->count();
+
         return [
-            'pending' => CustomerVerification::where('status', 'pending')->count(),
-            'verified' => CustomerVerification::where('status', 'verified')->count(),
-            'rejected' => CustomerVerification::where('status', 'rejected')->count(),
-            'unverified' => CustomerVerification::where('status', 'unverified')->count() + User::whereDoesntHave('verification')->count(),
+            'pending' => $pendingCount,
+            'verified' => $verifiedCount,
+            'rejected' => $rejectedCount,
+            'unverified' => $unverifiedCount,
         ];
     }
 
