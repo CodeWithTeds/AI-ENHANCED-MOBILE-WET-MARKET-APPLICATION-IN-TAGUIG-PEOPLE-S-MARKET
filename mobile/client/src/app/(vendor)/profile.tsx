@@ -36,12 +36,13 @@ import {
   updatePaymentSettings,
   type VendorPaymentSettings,
 } from '@/services/vendor-payment';
+import { PRODUCT_CATEGORIES } from '@/types/vendor';
 
 export default function ProfileScreen() {
-  const { user, vendor, token, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<VendorBusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'main' | 'editBusiness' | 'changePassword' | 'notifications' | 'paymentSettings'>('main');
+  const [activeSection, setActiveSection] = useState<'main' | 'editBusiness' | 'changePassword' | 'notifications' | 'paymentSettings' | 'categories'>('main');
 
   const fetchProfile = useCallback(async () => {
     if (!token) return;
@@ -56,8 +57,23 @@ export default function ProfileScreen() {
   }, [token]);
 
   useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+    let active = true;
+    if (token) {
+      getBusinessProfile(token)
+        .then((data) => {
+          if (active) setProfile(data);
+        })
+        .catch((err) => {
+          console.error('[Profile] fetch failed:', err);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   async function handleLogout() {
     Alert.alert('Logout', 'Are you sure you want to sign out?', [
@@ -99,6 +115,10 @@ export default function ProfileScreen() {
     return <PaymentSettingsSection token={token!} onBack={() => setActiveSection('main')} />;
   }
 
+  if (activeSection === 'categories') {
+    return <CategoriesSection profile={profile} token={token!} onBack={() => { setActiveSection('main'); fetchProfile(); }} />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -135,8 +155,23 @@ export default function ProfileScreen() {
           <MenuItem icon="star-outline" label="Customer Reviews & Feedback" subtitle="Ratings and comments from customers" onPress={() => router.push('/(vendor)/reviews' as any)} />
           <MenuItem icon="storefront-outline" label="Business Info" subtitle={profile?.vendor?.stall_name} onPress={() => setActiveSection('editBusiness')} />
           <MenuItem icon="time-outline" label="Operating Hours" subtitle={profile?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM'} onPress={() => setActiveSection('editBusiness')} />
-          <MenuItem icon="pricetags-outline" label="Product Categories" subtitle={profile?.vendor?.product_categories?.join(', ') || 'None set'} />
-          <MenuItem icon="location-outline" label="Stall Location" subtitle={profile?.vendor?.stall_location ?? 'Not set'} />
+          <MenuItem
+            icon="pricetags-outline"
+            label="Product Categories"
+            subtitle={profile?.vendor?.product_categories?.join(', ') || 'None set'}
+            onPress={() => setActiveSection('categories')}
+          />
+          <MenuItem
+            icon="location-outline"
+            label="Stall Location"
+            subtitle={profile?.vendor?.stall_location ?? 'Not set'}
+            onPress={() => {
+              Alert.alert(
+                'Stall Location',
+                `Assigned Stall: ${profile?.vendor?.stall_location ?? 'Not set'}\n\nStall allocations are managed by the Taguig Market Administration.`
+              );
+            }}
+          />
         </View>
 
         {/* Payments Section */}
@@ -254,6 +289,155 @@ function EditBusinessSection({ profile, token, onBack }: {
   );
 }
 
+/* ─── Product Categories Sub-screen ─── */
+
+const CATEGORY_ICONS: Record<string, string> = {
+  Meat: 'restaurant-outline',
+  Fish: 'fish-outline',
+  Vegetables: 'nutrition-outline',
+  Fruits: 'nutrition-outline',
+  Spices: 'flame-outline',
+  Poultry: 'egg-outline',
+  Seafood: 'water-outline',
+  Dairy: 'cafe-outline',
+  'Grains & Rice': 'leaf-outline',
+  Condiments: 'color-fill-outline',
+};
+
+function CategoriesSection({
+  profile,
+  token,
+  onBack,
+}: {
+  profile: VendorBusinessProfile | null;
+  token: string;
+  onBack: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(
+    profile?.vendor?.product_categories ?? []
+  );
+  const [saving, setSaving] = useState(false);
+
+  // Combine standard PRODUCT_CATEGORIES with any existing vendor categories
+  const allCategories = Array.from(
+    new Set([...PRODUCT_CATEGORIES, ...(profile?.vendor?.product_categories ?? [])])
+  );
+
+  const toggleCategory = (cat: string) => {
+    setSelected((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const handleSelectAll = () => {
+    setSelected([...allCategories]);
+  };
+
+  const handleClearAll = () => {
+    setSelected([]);
+  };
+
+  async function handleSave() {
+    if (selected.length === 0) {
+      Alert.alert('Required', 'Please select at least one product category so customers can discover your stall.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateBusinessInfo(token, {
+        product_categories: selected,
+      });
+      Alert.alert('Success', 'Product categories updated successfully.');
+      onBack();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update categories.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.subHeader}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={22} color={Colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.subTitle}>Product Categories</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.categoryContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.categoryIntroBox}>
+          <Ionicons name="pricetags-outline" size={20} color={Colors.primary} />
+          <Text style={styles.categoryIntroText}>
+            Select the categories of products your stall sells. This helps customers discover your stall when browsing categories in the Taguig Suki Market.
+          </Text>
+        </View>
+
+        <View style={styles.categoryActionRow}>
+          <Text style={styles.categoryCountBadgeText}>
+            {selected.length} of {allCategories.length} selected
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity onPress={handleSelectAll}>
+              <Text style={styles.categoryActionBtnText}>Select All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleClearAll}>
+              <Text style={[styles.categoryActionBtnText, { color: Colors.textMuted }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.categoryList}>
+          {allCategories.map((category) => {
+            const isSelected = selected.includes(category);
+            const iconName = CATEGORY_ICONS[category] || 'pricetag-outline';
+
+            return (
+              <TouchableOpacity
+                key={category}
+                style={[styles.categoryCard, isSelected && styles.categoryCardSelected]}
+                onPress={() => toggleCategory(category)}
+                activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected }}
+              >
+                <View style={[styles.categoryCardIconBox, isSelected && styles.categoryCardIconBoxSelected]}>
+                  <Ionicons
+                    name={iconName as any}
+                    size={20}
+                    color={isSelected ? Colors.primary : Colors.textSecondary}
+                  />
+                </View>
+                <Text style={[styles.categoryCardLabel, isSelected && styles.categoryCardLabelSelected]}>
+                  {category}
+                </Text>
+                <View style={[styles.categoryCheckCircle, isSelected && styles.categoryCheckCircleSelected]}>
+                  {isSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFF" size="small" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save Categories</Text>
+          )}
+        </TouchableOpacity>
+        <View style={{ height: 24 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 /* ─── Change Password Sub-screen ─── */
 
 function ChangePasswordSection({ token, onBack }: { token: string; onBack: () => void }) {
@@ -316,6 +500,7 @@ function NotificationsSection({ profile, token, onBack }: {
   const [prefs, setPrefs] = useState<NotificationPreferences>({
     order_alerts: profile?.vendor?.notification_preferences?.order_alerts ?? true,
     low_stock_alerts: profile?.vendor?.notification_preferences?.low_stock_alerts ?? true,
+    review_alerts: profile?.vendor?.notification_preferences?.review_alerts ?? true,
     promotion_updates: profile?.vendor?.notification_preferences?.promotion_updates ?? false,
   });
   const [saving, setSaving] = useState(false);
@@ -344,6 +529,7 @@ function NotificationsSection({ profile, token, onBack }: {
       </View>
       <View style={styles.formContent}>
         <NotifToggle label="Order Alerts" subtitle="Get notified for new orders" value={prefs.order_alerts} onToggle={(v) => setPrefs({ ...prefs, order_alerts: v })} />
+        <NotifToggle label="Review Alerts" subtitle="When customers rate your stall or products" value={prefs.review_alerts} onToggle={(v) => setPrefs({ ...prefs, review_alerts: v })} />
         <NotifToggle label="Low Stock Alerts" subtitle="When products run low" value={prefs.low_stock_alerts} onToggle={(v) => setPrefs({ ...prefs, low_stock_alerts: v })} />
         <NotifToggle label="Promotion Updates" subtitle="Market announcements & promos" value={prefs.promotion_updates} onToggle={(v) => setPrefs({ ...prefs, promotion_updates: v })} />
 
@@ -368,22 +554,27 @@ function PaymentSettingsSection({ token, onBack }: { token: string; onBack: () =
   const [removeGcashQr, setRemoveGcashQr] = useState(false);
   const [removeMayaQr, setRemoveMayaQr] = useState(false);
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const data = await getPaymentSettings(token);
-      setSettings(data);
-      setGcashNumber(data.gcash_number ?? '');
-      setMayaNumber(data.maya_number ?? '');
-    } catch (err) {
-      console.error('[PaymentSettings] fetch failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
   useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
+    let active = true;
+    getPaymentSettings(token)
+      .then((data) => {
+        if (active) {
+          setSettings(data);
+          setGcashNumber(data.gcash_number ?? '');
+          setMayaNumber(data.maya_number ?? '');
+        }
+      })
+      .catch((err) => {
+        console.error('[PaymentSettings] fetch failed:', err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   async function pickImage(target: 'gcash' | 'maya') {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -863,4 +1054,79 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12,
   },
   removeNoticeText: { fontSize: 11, color: '#92400E', fontWeight: '600' },
+
+  // Categories section
+  categoryContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 },
+  categoryIntroBox: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  categoryIntroText: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 18 },
+  categoryActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  categoryCountBadgeText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
+  categoryActionBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  categoryList: { gap: 10, marginBottom: 8 },
+  categoryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  categoryCardSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '0A',
+  },
+  categoryCardIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.inputBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  categoryCardIconBoxSelected: {
+    backgroundColor: Colors.primary + '18',
+  },
+  categoryCardLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  categoryCardLabelSelected: {
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  categoryCheckCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  categoryCheckCircleSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
 });

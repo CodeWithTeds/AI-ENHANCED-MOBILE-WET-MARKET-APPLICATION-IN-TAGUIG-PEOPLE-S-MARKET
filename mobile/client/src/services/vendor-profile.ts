@@ -50,6 +50,7 @@ export interface ChangePasswordData {
 export interface NotificationPreferences {
   order_alerts: boolean;
   low_stock_alerts: boolean;
+  review_alerts: boolean;
   promotion_updates: boolean;
 }
 
