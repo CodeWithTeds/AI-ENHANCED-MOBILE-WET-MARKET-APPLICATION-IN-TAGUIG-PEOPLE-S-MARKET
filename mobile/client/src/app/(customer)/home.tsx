@@ -36,7 +36,7 @@ import { useFavorites } from '@/context/FavoritesContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ProductDetailModal } from '@/components/customer/ProductDetailModal';
 import { VendorStoreModal } from '@/components/customer/VendorStoreModal';
-import { MarketLocationModal } from '@/components/customer/MarketLocationModal';
+import { MarketLocationModal, MARKET_DETAILS } from '@/components/customer/MarketLocationModal';
 import { StarRating, StarRatingDisplay } from '@/components/customer/StarRating';
 import { CategoryChip } from '@/components/customer/CategoryChip';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
@@ -274,7 +274,7 @@ export default function CustomerHomeScreen() {
               </View>
             </View>
             <Text style={styles.marketHoursTime}>4:00 AM – 8:00 PM</Text>
-            <Text style={styles.marketHoursNote}>Dir. A. Bunye, Lower Bicutan · Tap to view location</Text>
+            <Text style={styles.marketHoursNote}>{MARKET_DETAILS.address} · Tap to view location</Text>
           </View>
           <View style={styles.marketHoursIcon}>
             <MaterialCommunityIcons name="map-marker-radius" size={24} color="#FFFFFF" />

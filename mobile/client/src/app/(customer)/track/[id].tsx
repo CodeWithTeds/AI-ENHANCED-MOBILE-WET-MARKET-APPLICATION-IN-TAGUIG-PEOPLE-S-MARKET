@@ -109,28 +109,37 @@ export default function OrderTrackingScreen() {
     }, [fetchTracking])
   );
 
+  const refreshEligible = useCallback(async () => {
+    const authToken = await getAuthToken();
+    if (!authToken || !order) return;
+    try {
+      const list = await getEligibleReviews(authToken);
+      const mine = (list ?? []).find((e) => e.order_id === order.id);
+      setEligible(mine ?? null);
+    } catch {
+      /* non-fatal — review section just won't know prior reviews */
+    }
+  }, [order?.id, getAuthToken]);
+
+  const hasRemainingReviews = useMemo(() => {
+    if (!eligible) return false;
+    const vendors = eligible.vendors.filter((v) => !v.reviewed).length;
+    const products = eligible.products.filter((p) => !p.reviewed).length;
+    return vendors + products > 0;
+  }, [eligible]);
+
   /* Fetch what's reviewable once the order is completed */
   useEffect(() => {
     if (order?.status !== 'completed') return;
-    (async () => {
-      const authToken = await getAuthToken();
-      if (!authToken) return;
-      try {
-        const list = await getEligibleReviews(authToken);
-        const mine = (list ?? []).find((e) => e.order_id === order.id);
-        setEligible(mine ?? null);
-      } catch {
-        /* non-fatal — review section just won't know prior reviews */
-      }
-    })();
-  }, [order?.status, order?.id]);
+    refreshEligible();
+  }, [order?.status, order?.id, refreshEligible]);
 
   /* Auto-open the rating sheet when arriving from the "Rate Your Purchase" button */
   useEffect(() => {
-    if (order?.status === 'completed' && rate === '1') {
+    if (order?.status === 'completed' && rate === '1' && hasRemainingReviews) {
       setReviewSheetOpen(true);
     }
-  }, [order?.status, rate]);
+  }, [order?.status, rate, hasRemainingReviews]);
 
   function onRefresh() {
     setRefreshing(true);
@@ -274,8 +283,8 @@ export default function OrderTrackingScreen() {
           ))}
         </View>
 
-        {/* Rate your purchase — only for completed orders */}
-        {isCompleted && (
+        {/* Rate your purchase — only for completed orders with unreviewed items */}
+        {isCompleted && hasRemainingReviews && (
           <TouchableOpacity
             style={styles.rateBtn}
             activeOpacity={0.85}
@@ -308,7 +317,7 @@ export default function OrderTrackingScreen() {
           eligible={eligible}
           onSubmitted={() => {
             setReviewSheetOpen(false);
-            setEligible(null);
+            refreshEligible();
           }}
         />
       )}
@@ -336,7 +345,17 @@ export default function OrderTrackingScreen() {
 function Header({ orderNumber }: { orderNumber: string }) {
   return (
     <View style={styles.header}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back">
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/(customer)/orders');
+          }
+        }}
+        accessibilityLabel="Go back"
+      >
         <Ionicons name="arrow-back" size={20} color="#111827" />
       </TouchableOpacity>
       <View style={styles.headerTextWrap}>

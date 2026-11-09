@@ -477,7 +477,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             <InfoTile
               icon="location-outline"
               label="Location"
-              value={product.vendor?.stall_location ?? 'Taguig Market'}
+              value={product.vendor?.stall_location ?? "Taguig People's Market"}
             />
           </View>
 

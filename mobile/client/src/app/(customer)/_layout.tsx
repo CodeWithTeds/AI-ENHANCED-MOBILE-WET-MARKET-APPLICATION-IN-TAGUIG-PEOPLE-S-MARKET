@@ -147,11 +147,13 @@ function CustomerTabs() {
           ),
         }}
       />
-      {/* Order tracking screen — opened from the Orders tab, hidden from tab bar */}
+      {/* Order tracking screen — opened from the Orders tab, hidden from tab bar.
+          `href: null` would make it unreachable in Expo Router SDK 58. */}
       <Tabs.Screen
         name="track/[id]"
         options={{
-          href: null,
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -159,7 +161,8 @@ function CustomerTabs() {
       <Tabs.Screen
         name="reports"
         options={{
-          href: null,
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
         }}
       />
     </Tabs>

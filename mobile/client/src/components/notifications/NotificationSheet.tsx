@@ -44,6 +44,7 @@ const CATEGORY_VISUALS: Record<string, CategoryVisual> = {
   payment_submitted: { icon: 'hourglass-outline', color: '#D97706', bg: '#FFF7E0' },
   payment_received: { icon: 'checkmark-circle-outline', color: '#059669', bg: '#E7F7EF' },
   order_status: { icon: 'checkmark-done-circle-outline', color: '#1B6B45', bg: '#E7F7EF' },
+  new_review: { icon: 'star', color: '#D97706', bg: '#FFF7E0' },
 };
 
 const DEFAULT_VISUAL: CategoryVisual = {
@@ -51,6 +52,59 @@ const DEFAULT_VISUAL: CategoryVisual = {
   color: '#6B7280',
   bg: '#F3F4F6',
 };
+
+/**
+ * Robustly extract order ID from notification payload.
+ */
+export function getNotificationOrderId(item: AppNotification): number | null {
+  const rawId =
+    item.order_id ??
+    item.data?.order_id ??
+    (item.data as any)?.orderId ??
+    (item.data as any)?.order?.id;
+  const parsed = Number(rawId);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * Determine the exact destination route when a user taps a notification.
+ * Ensures customers and vendors are taken directly to relevant details
+ * (order tracking/items, payment verification, reviews) instead of Home.
+ */
+export function getNotificationTargetRoute(
+  item: AppNotification,
+  role: 'customer' | 'vendor',
+): string {
+  const orderId = getNotificationOrderId(item);
+  const category = item.category || (item.data as any)?.category;
+
+  if (role === 'vendor') {
+    // 1. Review / Feedback notifications -> Vendor Reviews screen
+    if (category === 'new_review') {
+      const target = (item.data as any)?.target;
+      return target === 'product'
+        ? '/(vendor)/reviews?tab=products'
+        : '/(vendor)/reviews?tab=stall';
+    }
+
+    // 2. Order & Payment notifications -> Vendor Orders screen with targeted order focused
+    if (orderId) {
+      return `/(vendor)/orders?focus=${orderId}`;
+    }
+
+    // 3. Fallback for vendor
+    return '/(vendor)/orders';
+  }
+
+  // Role: Customer
+  // 1. Order tracking & details / Payment status screen
+  if (orderId) {
+    return `/(customer)/track/${orderId}`;
+  }
+
+  // 2. Fallback for customer: My Orders tab
+  return '/(customer)/orders';
+}
 
 export function NotificationSheet({
   visible,
@@ -156,22 +210,21 @@ export function NotificationSheet({
         .catch(() => {});
     }
 
+    // Dismiss sheet first
     onClose();
 
-    const orderId = item.order_id ?? Number(item.data?.order_id ?? 0);
-    if (!orderId) return;
+    // Resolve target route
+    const targetRoute = getNotificationTargetRoute(item, role);
 
-    if (role === 'customer') {
-      router.push({
-        pathname: '/(customer)/track/[id]',
-        params: { id: String(orderId) },
-      } as never);
-    } else {
-      router.push({
-        pathname: '/(vendor)/orders',
-        params: { focus: String(orderId) },
-      } as never);
-    }
+    // Yield window focus away from the native Modal before triggering navigation.
+    // This prevents React Native Modal dismiss from aborting or reverting navigation back to Home.
+    setTimeout(() => {
+      try {
+        router.push(targetRoute as any);
+      } catch (err) {
+        console.warn('[NotificationSheet] Navigation failed:', err);
+      }
+    }, 120);
   }
 
   return (
@@ -318,9 +371,7 @@ function NotificationRow({
         <Text style={styles.rowTime}>{formatRelativeTime(item.created_at)}</Text>
       </View>
 
-      {!!(item.order_id ?? item.data?.order_id) && (
-        <Ionicons name="chevron-forward" size={16} color="#C4CBC7" />
-      )}
+      <Ionicons name="chevron-forward" size={16} color="#C4CBC7" />
     </TouchableOpacity>
   );
 }

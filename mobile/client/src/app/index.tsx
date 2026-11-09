@@ -225,7 +225,7 @@ function CreateAccountPrompt() {
     <View style={styles.formSection}>
       <View style={styles.createAccountContent}>
         <View style={styles.createIcon}>
-          <MaterialCommunityIcons name="store" size={30} color={Colors.primary} />
+          <MaterialCommunityIcons name="store" size={32} color={Colors.primary} />
         </View>
         <Text style={styles.createTitle}>Join TaguigSuki</Text>
         <Text style={styles.createSubtitle}>
@@ -234,13 +234,14 @@ function CreateAccountPrompt() {
         </Text>
 
         <TouchableOpacity
-          style={styles.signInButton}
+          style={styles.vendorButton}
           onPress={() => router.push('/vendor-register')}
           activeOpacity={0.85}
           accessibilityRole="button"
         >
-          <Text style={styles.signInButtonText}>Register as Vendor</Text>
-          <Feather name="chevron-right" size={20} color="#FFFFFF" />
+          <MaterialCommunityIcons name="storefront-outline" size={20} color="#FFFFFF" />
+          <Text style={styles.vendorButtonText}>Register as Vendor</Text>
+          <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
 
         <View style={styles.dividerRow}>
@@ -257,6 +258,7 @@ function CreateAccountPrompt() {
         >
           <Feather name="user" size={18} color={Colors.primary} />
           <Text style={styles.customerButtonText}>Sign Up as Customer</Text>
+          <Feather name="chevron-right" size={18} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -470,13 +472,15 @@ const styles = StyleSheet.create({
 
   // Sign In button
   signInButton: {
+    width: '100%',
     backgroundColor: Colors.primary,
     borderRadius: 14,
     height: 54,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -494,11 +498,36 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Divider
-  dividerRow: {
+  // Vendor Register button (Create Account tab)
+  vendorButton: {
+    width: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    height: 54,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  vendorButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+
+  // Divider
+  dividerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
   },
   dividerLine: {
     flex: 1,
@@ -507,10 +536,11 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     fontSize: 12,
+    fontWeight: '600',
     color: Colors.textMuted,
-    marginHorizontal: 12,
+    marginHorizontal: 14,
+    textTransform: 'uppercase',
   },
-
 
   // Terms
   termsText: {
@@ -518,6 +548,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
+    paddingTop: 8,
     paddingBottom: 24,
   },
   termsLink: {
@@ -527,20 +558,21 @@ const styles = StyleSheet.create({
 
   // Create Account tab
   createAccountContent: {
+    width: '100%',
     alignItems: 'center',
     paddingVertical: 16,
   },
   createIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primary + '12',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   createTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     color: Colors.text,
     marginBottom: 8,
@@ -550,20 +582,22 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
-    paddingHorizontal: 8,
+    marginBottom: 26,
+    paddingHorizontal: 12,
   },
   customerButton: {
     width: '100%',
-    height: 50,
+    height: 54,
     borderRadius: 14,
     borderWidth: 1.5,
     borderColor: Colors.primary,
+    backgroundColor: '#F0FDF4',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 24,
+    gap: 10,
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
   customerButtonText: {
     fontSize: 15,
