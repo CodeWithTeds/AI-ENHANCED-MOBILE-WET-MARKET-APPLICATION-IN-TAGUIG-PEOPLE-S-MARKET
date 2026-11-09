@@ -110,3 +110,26 @@ it('allows vendors to update operating hours in profile', function () {
     expect($vendor->closing_time)->toBe('19:00');
     expect($vendor->operating_hours)->toBe('5:00 AM - 7:00 PM');
 });
+
+it('allows vendors to update product categories in profile', function () {
+    $user = User::factory()->create();
+    $vendor = Vendor::create([
+        'user_id' => $user->id,
+        'stall_name' => 'Categorized Stall',
+        'stall_location' => 'Stall 12',
+        'product_categories' => ['Meat'],
+        'status' => 'approved',
+    ]);
+
+    Sanctum::actingAs($user);
+
+    $response = $this->putJson('/api/v1/vendor/profile/business', [
+        'product_categories' => ['Vegetables', 'Fruits', 'Spices'],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('status', 'success');
+
+    $vendor->refresh();
+    expect($vendor->product_categories)->toEqual(['Vegetables', 'Fruits', 'Spices']);
+});

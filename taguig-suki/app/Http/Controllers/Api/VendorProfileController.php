@@ -57,6 +57,7 @@ class VendorProfileController extends Controller
         $validated = $request->validate([
             'order_alerts' => 'sometimes|boolean',
             'low_stock_alerts' => 'sometimes|boolean',
+            'review_alerts' => 'sometimes|boolean',
             'promotion_updates' => 'sometimes|boolean',
         ]);
 

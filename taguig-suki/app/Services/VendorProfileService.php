@@ -39,18 +39,29 @@ class VendorProfileService
     {
         $vendor = $this->vendorRepository->findByUser($user);
 
-        if (!$vendor) {
+        if (! $vendor) {
             throw ValidationException::withMessages([
                 'vendor' => ['No vendor account found.'],
             ]);
         }
 
-        $vendor->update(array_filter([
-            'stall_name' => $data['stall_name'] ?? null,
-            'opening_time' => $data['opening_time'] ?? null,
-            'closing_time' => $data['closing_time'] ?? null,
-            'product_categories' => $data['product_categories'] ?? null,
-        ]));
+        $updates = [];
+        if (array_key_exists('stall_name', $data) && $data['stall_name'] !== null) {
+            $updates['stall_name'] = $data['stall_name'];
+        }
+        if (array_key_exists('opening_time', $data) && $data['opening_time'] !== null) {
+            $updates['opening_time'] = $data['opening_time'];
+        }
+        if (array_key_exists('closing_time', $data) && $data['closing_time'] !== null) {
+            $updates['closing_time'] = $data['closing_time'];
+        }
+        if (array_key_exists('product_categories', $data)) {
+            $updates['product_categories'] = $data['product_categories'];
+        }
+
+        if (! empty($updates)) {
+            $vendor->update($updates);
+        }
 
         if (isset($data['name'])) {
             $user->update(['name' => $data['name']]);
@@ -69,7 +80,7 @@ class VendorProfileService
      */
     public function changePassword(User $user, array $data): null
     {
-        if (!Hash::check($data['current_password'], $user->password)) {
+        if (! Hash::check($data['current_password'], $user->password)) {
             throw ValidationException::withMessages([
                 'current_password' => ['Current password is incorrect.'],
             ]);
@@ -105,7 +116,7 @@ class VendorProfileService
      */
     private function getVendorStats(?Vendor $vendor): array
     {
-        if (!$vendor) {
+        if (! $vendor) {
             return [
                 'total_products' => 0,
                 'total_orders' => 0,
