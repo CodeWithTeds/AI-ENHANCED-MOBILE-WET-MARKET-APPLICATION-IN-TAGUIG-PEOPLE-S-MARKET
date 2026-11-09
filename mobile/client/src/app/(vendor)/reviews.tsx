@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/services/auth';
 import { getCustomerToken } from '@/services/customer-auth';
@@ -65,16 +65,23 @@ type SortOption = 'newest' | 'oldest' | 'highest' | 'lowest';
 export default function VendorReviewsScreen() {
   const router = useRouter();
   const { token } = useAuth();
+  const { tab } = useLocalSearchParams<{ tab?: 'stall' | 'products' }>();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<VendorReviewsDashboardResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('stall');
+  const [activeTab, setActiveTab] = useState<Tab>(tab === 'products' ? 'products' : 'stall');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tab === 'stall' || tab === 'products') {
+      setActiveTab(tab);
+    }
+  }, [tab]);
 
   const loadData = useCallback(async () => {
     const authToken = token ?? (await getToken()) ?? (await getCustomerToken());

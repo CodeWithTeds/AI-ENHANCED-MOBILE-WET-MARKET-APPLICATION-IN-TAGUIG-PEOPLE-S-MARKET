@@ -102,17 +102,22 @@ export default function VendorLayout() {
           ),
         }}
       />
+      {/* Opened from the dashboard/profile. Do not use `href: null` here:
+          Expo Router SDK 58 treats hidden tabs as unreachable and redirects
+          them back to the initial tab. Hiding the button keeps them routable. */}
       <Tabs.Screen
         name="sales"
         options={{
-          href: null,
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
         name="reviews"
         options={{
-          href: null,
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           tabBarStyle: { display: 'none' },
         }}
       />

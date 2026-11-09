@@ -25,7 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { getToken } from '@/services/auth';
 import {
   getVendorOrders,
@@ -90,6 +90,12 @@ export default function VendorOrdersScreen() {
   }, [token]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+    }, [fetchOrders])
+  );
 
   // Open the order linked from a notification tap.
   useEffect(() => {
