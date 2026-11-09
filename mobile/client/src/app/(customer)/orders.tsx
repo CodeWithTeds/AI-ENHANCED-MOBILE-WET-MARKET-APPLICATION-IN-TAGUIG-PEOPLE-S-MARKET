@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
@@ -32,10 +32,12 @@ import {
 import { ApiError } from '@/services/api';
 import { OrderChatModal } from '@/components/chat/OrderChatModal';
 import { ReviewSheet } from '@/components/customer/ReviewSheet';
+import { getEligibleReviews, type EligibleOrder } from '@/services/reviews';
 import { getProductImageUrl } from '@/utils/image';
 import { getCategoryEmoji } from '@/constants/categories';
 
 export default function OrdersScreen() {
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
   const { token } = useCustomerAuth();
 
   const getAuthToken = async () => token ?? await getCustomerToken();
@@ -46,6 +48,7 @@ export default function OrdersScreen() {
   const [error, setError] = useState<string | null>(null);
   const [chatOrder, setChatOrder] = useState<{ order: Order; vendorId: number; stallName: string } | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
+  const [eligibleList, setEligibleList] = useState<EligibleOrder[]>([]);
   const [currentToken, setCurrentToken] = useState<string>('');
 
   const fetchOrders = useCallback(async () => {
@@ -53,8 +56,12 @@ export default function OrdersScreen() {
     if (!authToken) { setLoading(false); return; }
     setCurrentToken(authToken);
     try {
-      const result = await getOrders(authToken);
+      const [result, eligible] = await Promise.all([
+        getOrders(authToken),
+        getEligibleReviews(authToken).catch(() => [] as EligibleOrder[]),
+      ]);
       setOrders(result.data ?? []);
+      setEligibleList(eligible ?? []);
       setError(null);
     } catch {
       setError('Could not load orders. Pull down to retry.');
@@ -65,6 +72,19 @@ export default function OrdersScreen() {
   }, [token]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+    }, [fetchOrders])
+  );
+
+  // Focus and expand order if navigated with ?focus=[orderId]
+  useEffect(() => {
+    const orderId = Number(focus);
+    if (!Number.isFinite(orderId) || orderId <= 0) return;
+    setExpandedId(orderId);
+  }, [focus]);
 
   function onRefresh() {
     setRefreshing(true);
@@ -129,23 +149,31 @@ export default function OrdersScreen() {
             </Text>
           </View>
         ) : (
-          orders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              expanded={expandedId === order.id}
-              onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
-              onUpdated={handleUpdated}
-              getToken={getAuthToken}
-              onOpenChat={(ord) => {
-                const firstVendor = ord.items.find((i) => !!i.vendor) ?? ord.items[0];
-                const vId = firstVendor?.vendor?.id ?? firstVendor?.vendor_id ?? 1;
-                const vName = firstVendor?.vendor?.stall_name ?? 'Vendor Stall';
-                setChatOrder({ order: ord, vendorId: vId, stallName: vName });
-              }}
-              onRate={(ord) => setRatingOrder(ord)}
-            />
-          ))
+          orders.map((order) => {
+            const orderEligible = eligibleList.find((e) => e.order_id === order.id);
+            const canRate = orderEligible
+              ? orderEligible.vendors.some((v) => !v.reviewed) || orderEligible.products.some((p) => !p.reviewed)
+              : false;
+
+            return (
+              <OrderCard
+                key={order.id}
+                order={order}
+                expanded={expandedId === order.id}
+                onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                onUpdated={handleUpdated}
+                getToken={getAuthToken}
+                canRate={canRate}
+                onOpenChat={(ord) => {
+                  const firstVendor = ord.items.find((i) => !!i.vendor) ?? ord.items[0];
+                  const vId = firstVendor?.vendor?.id ?? firstVendor?.vendor_id ?? 1;
+                  const vName = firstVendor?.vendor?.stall_name ?? 'Vendor Stall';
+                  setChatOrder({ order: ord, vendorId: vId, stallName: vName });
+                }}
+                onRate={(ord) => setRatingOrder(ord)}
+              />
+            );
+          })
         )}
       </ScrollView>
 
@@ -171,6 +199,7 @@ export default function OrdersScreen() {
           visible={!!ratingOrder}
           onClose={() => setRatingOrder(null)}
           order={ratingOrder}
+          eligible={eligibleList.find((e) => e.order_id === ratingOrder.id) ?? null}
           onSubmitted={() => {
             setRatingOrder(null);
             fetchOrders();
@@ -191,6 +220,7 @@ function OrderCard({
   getToken,
   onOpenChat,
   onRate,
+  canRate = false,
 }: {
   order: Order;
   expanded: boolean;
@@ -199,6 +229,7 @@ function OrderCard({
   getToken: () => Promise<string | null>;
   onOpenChat?: (order: Order) => void;
   onRate?: (order: Order) => void;
+  canRate?: boolean;
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [refInput, setRefInput] = useState('');
@@ -488,11 +519,11 @@ function OrderCard({
             </TouchableOpacity>
           )}
 
-          {order.status === 'completed' && (
+          {order.status === 'completed' && canRate && (
             <TouchableOpacity
               style={styles.rateBtn}
               activeOpacity={0.85}
-              onPress={() => (onRate ? onRate(order) : router.push(`/(customer)/track/${order.id}` as any))}
+              onPress={() => (onRate ? onRate(order) : router.push(`/(customer)/track/${order.id}?rate=1` as any))}
             >
               <Ionicons name="star" size={16} color="#FFFFFF" />
               <Text style={styles.rateBtnText}>Rate Your Purchase</Text>
@@ -500,16 +531,16 @@ function OrderCard({
           )}
 
           <TouchableOpacity
-            style={[styles.trackBtn, order.status === 'completed' && styles.trackBtnOutline]}
+            style={[styles.trackBtn, order.status === 'completed' && canRate && styles.trackBtnOutline]}
             activeOpacity={0.85}
             onPress={() => router.push(`/(customer)/track/${order.id}` as any)}
           >
             <Ionicons
               name="pulse-outline"
               size={16}
-              color={order.status === 'completed' ? '#1B6B45' : '#FFFFFF'}
+              color={order.status === 'completed' && canRate ? '#1B6B45' : '#FFFFFF'}
             />
-            <Text style={[styles.trackBtnText, order.status === 'completed' && styles.trackBtnTextOutline]}>
+            <Text style={[styles.trackBtnText, order.status === 'completed' && canRate && styles.trackBtnTextOutline]}>
               Track Order
             </Text>
           </TouchableOpacity>

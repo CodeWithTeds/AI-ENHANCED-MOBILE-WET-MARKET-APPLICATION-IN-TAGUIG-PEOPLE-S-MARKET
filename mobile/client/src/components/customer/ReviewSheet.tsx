@@ -3,7 +3,7 @@
  * from a completed order with photo attachments.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
+  getEligibleReviews,
   submitProductReview,
   submitVendorReview,
   type EligibleOrder,
@@ -42,11 +43,34 @@ export function ReviewSheet({
   visible,
   onClose,
   order,
-  eligible,
+  eligible: propEligible,
   onSubmitted,
 }: ReviewSheetProps) {
   const { token } = useCustomerAuth();
   const getAuthToken = async () => token ?? await getCustomerToken();
+
+  const [internalEligible, setInternalEligible] = useState<EligibleOrder | null>(null);
+
+  useEffect(() => {
+    if (!visible || propEligible) return;
+    let isMounted = true;
+    (async () => {
+      const authToken = await getAuthToken();
+      if (!authToken) return;
+      try {
+        const list = await getEligibleReviews(authToken);
+        const mine = (list ?? []).find((e) => e.order_id === order.id);
+        if (isMounted && mine) {
+          setInternalEligible(mine);
+        }
+      } catch {}
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, propEligible, order.id]);
+
+  const eligible = propEligible ?? internalEligible;
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -166,9 +190,17 @@ export function ReviewSheet({
       } else {
         await submitProductReview(target.id, { rating, comment: comment || undefined, order_id: order.id, images }, authToken);
       }
-      setDone((prev) => new Set(prev).add(`${target.type}:${target.id}`));
+      const newDone = new Set(done).add(`${target.type}:${target.id}`);
+      setDone(newDone);
       setTarget(null);
       setImages([]);
+
+      // Check if all items in this order are now reviewed
+      const remainingVendors = vendors.filter((v) => !v.reviewed && !newDone.has(`vendor:${v.id}`));
+      const remainingProducts = products.filter((p) => !p.reviewed && !newDone.has(`product:${p.id}`));
+      if (remainingVendors.length === 0 && remainingProducts.length === 0) {
+        onSubmitted?.();
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Could not submit review. Try again.';
       setError(message);
@@ -177,12 +209,20 @@ export function ReviewSheet({
     }
   }
 
+  function handleClose() {
+    if (done.size > 0 && onSubmitted) {
+      onSubmitted();
+    } else {
+      onClose();
+    }
+  }
+
   const pendingVendors = vendors.filter((v) => !v.reviewed && !done.has(`vendor:${v.id}`));
   const pendingProducts = products.filter((p) => !p.reviewed && !done.has(`product:${p.id}`));
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <TouchableWithoutFeedback onPress={handleClose}>
         <View style={sheetStyles.backdrop} />
       </TouchableWithoutFeedback>
 
@@ -191,7 +231,7 @@ export function ReviewSheet({
         <View style={sheetStyles.header}>
           <Text style={sheetStyles.title}>Rate Your Purchase</Text>
           <Text style={sheetStyles.subtitle}>Order {order.order_number}</Text>
-          <TouchableOpacity style={sheetStyles.closeBtn} onPress={onClose} accessibilityLabel="Close">
+          <TouchableOpacity style={sheetStyles.closeBtn} onPress={handleClose} accessibilityLabel="Close">
             <Ionicons name="close" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
@@ -204,7 +244,7 @@ export function ReviewSheet({
               <Text style={sheetStyles.allDoneSub}>
                 You've reviewed everything from this order.
               </Text>
-              <TouchableOpacity style={sheetStyles.doneBtn} onPress={onSubmitted ?? onClose}>
+              <TouchableOpacity style={sheetStyles.doneBtn} onPress={onSubmitted ?? handleClose}>
                 <Text style={sheetStyles.doneBtnText}>Close</Text>
               </TouchableOpacity>
             </View>
