@@ -119,7 +119,7 @@ export default function OrdersScreen() {
         </View>
         <TouchableOpacity
           style={styles.reportsBtn}
-          onPress={() => router.push('/(customer)/reports' as any)}
+          onPress={() => router.navigate('/(customer)/reports' as any)}
           activeOpacity={0.8}
           accessibilityLabel="View Reports"
         >
@@ -164,10 +164,10 @@ export default function OrdersScreen() {
                 onUpdated={handleUpdated}
                 getToken={getAuthToken}
                 canRate={canRate}
-                onOpenChat={(ord) => {
+                onOpenChat={(ord, vendorId, stallName) => {
                   const firstVendor = ord.items.find((i) => !!i.vendor) ?? ord.items[0];
-                  const vId = firstVendor?.vendor?.id ?? firstVendor?.vendor_id ?? 1;
-                  const vName = firstVendor?.vendor?.stall_name ?? 'Vendor Stall';
+                  const vId = vendorId ?? firstVendor?.vendor?.id ?? firstVendor?.vendor_id ?? 1;
+                  const vName = stallName ?? firstVendor?.vendor?.stall_name ?? 'Vendor Stall';
                   setChatOrder({ order: ord, vendorId: vId, stallName: vName });
                 }}
                 onRate={(ord) => setRatingOrder(ord)}
@@ -227,7 +227,7 @@ function OrderCard({
   onToggle: () => void;
   onUpdated: (o: Order) => void;
   getToken: () => Promise<string | null>;
-  onOpenChat?: (order: Order) => void;
+  onOpenChat?: (order: Order, vendorId?: number, stallName?: string) => void;
   onRate?: (order: Order) => void;
   canRate?: boolean;
 }) {
@@ -440,6 +440,18 @@ function OrderCard({
                         </Text>
                       </View>
                     ))}
+
+                    {/* Chat with this specific vendor */}
+                    {onOpenChat && (
+                      <TouchableOpacity
+                        style={styles.portionChatBtn}
+                        activeOpacity={0.8}
+                        onPress={() => onOpenChat(order, portion.vendor_id, portion.stall_name)}
+                      >
+                        <Ionicons name="chatbubbles-outline" size={14} color="#059669" />
+                        <Text style={styles.portionChatBtnText}>Chat with {portion.stall_name}</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 );
               })}
@@ -523,7 +535,7 @@ function OrderCard({
             <TouchableOpacity
               style={styles.rateBtn}
               activeOpacity={0.85}
-              onPress={() => (onRate ? onRate(order) : router.push(`/(customer)/track/${order.id}?rate=1` as any))}
+              onPress={() => (onRate ? onRate(order) : router.navigate(`/(customer)/track/${order.id}?rate=1` as any))}
             >
               <Ionicons name="star" size={16} color="#FFFFFF" />
               <Text style={styles.rateBtnText}>Rate Your Purchase</Text>
@@ -533,7 +545,7 @@ function OrderCard({
           <TouchableOpacity
             style={[styles.trackBtn, order.status === 'completed' && canRate && styles.trackBtnOutline]}
             activeOpacity={0.85}
-            onPress={() => router.push(`/(customer)/track/${order.id}` as any)}
+            onPress={() => router.navigate(`/(customer)/track/${order.id}` as any)}
           >
             <Ionicons
               name="pulse-outline"
@@ -789,6 +801,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  portionChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingVertical: 7,
+    marginTop: 8,
+  },
+  portionChatBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
   },
   itemRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7,
