@@ -88,4 +88,13 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::post('dashboard/verifications/{customerVerification}/reject', [CustomerVerificationController::class, 'reject'])->name('verifications.reject');
 });
 
+Route::get('storage/{path}', function (string $path) {
+    $fullPath = storage_path('app/public/'.$path);
+    if (! file_exists($fullPath)) {
+        abort(404);
+    }
+
+    return response()->file($fullPath);
+})->where('path', '.*')->name('storage.fallback');
+
 require __DIR__.'/settings.php';
