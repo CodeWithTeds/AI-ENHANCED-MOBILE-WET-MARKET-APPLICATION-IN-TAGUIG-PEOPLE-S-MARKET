@@ -19,13 +19,11 @@ export interface VendorPaymentSettings {
 }
 
 function fixQrUrl(url: string | null, path: string | null): string | null {
-  // Prefer building from path using API host (works for LAN IP 192.168.x.x)
+  const base = API_BASE_URL.replace('/api/v1', '');
   if (path) {
-    const base = API_BASE_URL.replace('/api/v1', '');
     return `${base}/storage/${path.replace(/^\//, '')}`;
   }
-  if (url && url.includes('localhost')) {
-    const base = API_BASE_URL.replace('/api/v1', '');
+  if (url && (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168.') || url.includes('10.0.') || url.includes('172.'))) {
     const idx = url.indexOf('/storage/');
     if (idx !== -1) return base + url.substring(idx);
   }

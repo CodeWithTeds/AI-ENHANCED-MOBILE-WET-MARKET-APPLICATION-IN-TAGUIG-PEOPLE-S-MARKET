@@ -140,7 +140,7 @@ export default function CustomerReportsScreen() {
         // Map low-level network errors to user-friendly message
         const friendly =
           raw.includes('Connection reset') || raw.includes('fetch failed') || raw.includes('Network request failed') || e.status === 0
-            ? 'Cannot reach server at https://ai-enhanced-mobile-wet-market-application-in-tag-production.up.railway.app. Check your internet connection or try again. (Local dev: set EXPO_PUBLIC_API_URL=http://192.168.1.2:8080/api/v1)'
+            ? 'Cannot reach server at https://taguig-suki-production.up.railway.app. Check your internet connection or try again.'
             : raw;
         setError(friendly);
       } finally {
