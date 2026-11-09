@@ -267,7 +267,7 @@ export default function VendorOrdersScreen() {
           </View>
           <TouchableOpacity
             style={styles.salesBtn}
-            onPress={() => router.push('/(vendor)/sales' as any)}
+            onPress={() => router.navigate('/(vendor)/sales' as any)}
             activeOpacity={0.8}
           >
             <Ionicons name="trending-up" size={14} color="#1B6B45" />
@@ -341,7 +341,7 @@ export default function VendorOrdersScreen() {
             </View>
             <TouchableOpacity
               style={styles.viewAnalyticsBtn}
-              onPress={() => router.push('/(vendor)/sales' as any)}
+              onPress={() => router.navigate('/(vendor)/sales' as any)}
               activeOpacity={0.8}
             >
               <Text style={styles.viewAnalyticsText}>Analytics</Text>

@@ -220,7 +220,7 @@ export function NotificationSheet({
     // This prevents React Native Modal dismiss from aborting or reverting navigation back to Home.
     setTimeout(() => {
       try {
-        router.push(targetRoute as any);
+        router.navigate(targetRoute as any);
       } catch (err) {
         console.warn('[NotificationSheet] Navigation failed:', err);
       }

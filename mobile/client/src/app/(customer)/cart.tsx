@@ -598,7 +598,7 @@ export default function CartScreen() {
           }}
           onViewOrders={() => {
             setConfirmedOrder(null);
-            router.push('/(customer)/orders');
+            router.navigate('/(customer)/orders');
           }}
         />
       )}
@@ -929,7 +929,7 @@ function OrderConfirmationModal({
             style={confirmStyles.primaryBtn}
             onPress={() => {
               onClose();
-              router.push(`/track/${order.id}` as any);
+              router.navigate(`/(customer)/track/${order.id}` as any);
             }}
           >
             <Ionicons name="chatbubbles-outline" size={18} color="#FFFFFF" />

@@ -170,7 +170,17 @@ export default function CustomerReportsScreen() {
         <SafeAreaView edges={['top']}>
           <View style={styles.headerInner}>
             <View style={styles.headerNav}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Go back">
+              <TouchableOpacity
+                onPress={() => {
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.navigate('/(customer)/orders' as any);
+                  }
+                }}
+                style={styles.backBtn}
+                accessibilityLabel="Go back"
+              >
                 <Ionicons name="arrow-back" size={20} color="#FFF" />
               </TouchableOpacity>
               <View style={styles.headerTitleWrap}>

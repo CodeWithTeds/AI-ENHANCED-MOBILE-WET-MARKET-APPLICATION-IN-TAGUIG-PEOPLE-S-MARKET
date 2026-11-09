@@ -205,7 +205,7 @@ export default function VendorDashboard() {
         {/* Hero — all-time revenue & sales analytics entry */}
         <TouchableOpacity
           style={styles.heroCard}
-          onPress={() => router.push('/(vendor)/sales' as any)}
+          onPress={() => router.navigate('/(vendor)/sales' as any)}
           activeOpacity={0.85}
         >
           <View style={styles.heroLeft}>
@@ -237,7 +237,7 @@ export default function VendorDashboard() {
             label="Pending"
             value={pendingCount}
             tint={TINTS.orange}
-            onPress={() => router.push('/(vendor)/orders')}
+            onPress={() => router.navigate('/(vendor)/orders')}
             sub="awaiting pickup"
           />
           <Tile
@@ -245,7 +245,7 @@ export default function VendorDashboard() {
             label="Ready"
             value={confirmedCount}
             tint={TINTS.blue}
-            onPress={() => router.push('/(vendor)/orders')}
+            onPress={() => router.navigate('/(vendor)/orders')}
             sub="ready for pickup"
           />
           <Tile
@@ -253,7 +253,7 @@ export default function VendorDashboard() {
             label="Products"
             value={productsCount}
             tint={TINTS.brand}
-            onPress={() => router.push('/(vendor)/products')}
+            onPress={() => router.navigate('/(vendor)/products')}
             sub={`${totalUnits} units`}
           />
           <Tile
@@ -261,7 +261,7 @@ export default function VendorDashboard() {
             label="Low stock"
             value={lowStock}
             tint={lowStock > 0 ? TINTS.red : TINTS.brand}
-            onPress={() => router.push('/(vendor)/inventory')}
+            onPress={() => router.navigate('/(vendor)/inventory')}
             sub={outStock > 0 ? `${outStock} out of stock` : 'well stocked'}
           />
         </View>
@@ -269,7 +269,7 @@ export default function VendorDashboard() {
         {/* Reviews Quick-action */}
         <TouchableOpacity
           style={styles.reviewsQuickCard}
-          onPress={() => router.push('/(vendor)/reviews' as any)}
+          onPress={() => router.navigate('/(vendor)/reviews' as any)}
           activeOpacity={0.85}
         >
           <View style={[styles.reviewsQuickIcon, { backgroundColor: C.amberSoft }]}>
@@ -291,7 +291,7 @@ export default function VendorDashboard() {
               </View>
               <Text style={styles.cardTitle}>Recent Orders</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(vendor)/orders')} style={styles.viewAllBtn}>
+            <TouchableOpacity onPress={() => router.navigate('/(vendor)/orders')} style={styles.viewAllBtn}>
               <Text style={styles.viewAllText}>View all</Text>
               <Ionicons name="chevron-forward" size={14} color={C.brand} />
             </TouchableOpacity>
@@ -309,7 +309,7 @@ export default function VendorDashboard() {
             </View>
           ) : (
             recentOrders.map((order) => (
-              <OrderRow key={order.id} order={order} onPress={() => router.push('/(vendor)/orders')} />
+              <OrderRow key={order.id} order={order} onPress={() => router.navigate('/(vendor)/orders')} />
             ))
           )}
         </View>
@@ -323,7 +323,7 @@ export default function VendorDashboard() {
               </View>
               <Text style={styles.cardTitle}>Inventory Snapshot</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(vendor)/inventory')} style={styles.viewAllBtn}>
+            <TouchableOpacity onPress={() => router.navigate('/(vendor)/inventory')} style={styles.viewAllBtn}>
               <Text style={styles.viewAllText}>Manage</Text>
               <Ionicons name="chevron-forward" size={14} color={C.brand} />
             </TouchableOpacity>

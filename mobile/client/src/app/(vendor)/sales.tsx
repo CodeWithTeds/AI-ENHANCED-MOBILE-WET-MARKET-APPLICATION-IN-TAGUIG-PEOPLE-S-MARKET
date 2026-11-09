@@ -212,7 +212,10 @@ export default function VendorSalesScreen() {
       <View style={styles.screen}>
         <SafeAreaView edges={['top']} style={styles.header}>
           <View style={styles.headerNav}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <TouchableOpacity
+              onPress={() => (router.canGoBack() ? router.back() : router.navigate('/(vendor)/dashboard'))}
+              style={styles.backBtn}
+            >
               <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Sales & Revenue</Text>
@@ -235,7 +238,7 @@ export default function VendorSalesScreen() {
           <View style={styles.headerInner}>
             <View style={styles.headerNav}>
               <TouchableOpacity
-                onPress={() => router.back()}
+                onPress={() => (router.canGoBack() ? router.back() : router.navigate('/(vendor)/dashboard'))}
                 style={styles.backBtn}
                 accessibilityLabel="Go back"
               >

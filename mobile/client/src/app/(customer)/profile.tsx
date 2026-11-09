@@ -140,7 +140,7 @@ export default function CustomerProfileScreen() {
           <MenuItem
             icon="bar-chart-outline"
             label="Reports"
-            onPress={() => router.push('/(customer)/reports' as any)}
+            onPress={() => router.navigate('/(customer)/reports' as any)}
           />
           <View style={styles.reportHintBox}>
             <Ionicons name="document-text-outline" size={14} color={Colors.textSecondary} />
