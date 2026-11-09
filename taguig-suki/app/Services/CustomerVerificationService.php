@@ -109,15 +109,28 @@ class CustomerVerificationService
     {
         $imageUrl = null;
         if ($verification->id_image_path) {
-            if ($request) {
-                try {
-                    $host = $request->getSchemeAndHttpHost();
-                    $imageUrl = rtrim($host, '/') . '/storage/' . ltrim($verification->id_image_path, '/');
-                } catch (\Throwable) {
-                    $imageUrl = Storage::disk('public')->url($verification->id_image_path);
+            $raw = $verification->id_image_path;
+            if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://')) {
+                // If it accidentally has http://localhost/storage/..., swap with request host if available
+                if ($request && (str_contains($raw, '://localhost') || str_contains($raw, '://127.0.0.1'))) {
+                    $host = rtrim($request->getSchemeAndHttpHost(), '/');
+                    $idx = strpos($raw, '/storage/');
+                    $imageUrl = $idx !== false ? $host . substr($raw, $idx) : $raw;
+                } else {
+                    $imageUrl = $raw;
                 }
             } else {
-                $imageUrl = Storage::disk('public')->url($verification->id_image_path);
+                $clean = ltrim(preg_replace('/^\/?(storage\/)?/', '', $raw), '/');
+                if ($request) {
+                    try {
+                        $host = rtrim($request->getSchemeAndHttpHost(), '/');
+                        $imageUrl = $host . '/storage/' . $clean;
+                    } catch (\Throwable) {
+                        $imageUrl = '/storage/' . $clean;
+                    }
+                } else {
+                    $imageUrl = '/storage/' . $clean;
+                }
             }
         }
 
