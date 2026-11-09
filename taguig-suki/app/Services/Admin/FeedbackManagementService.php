@@ -88,7 +88,7 @@ class FeedbackManagementService
             'images' => $review->images->map(fn ($img) => [
                 'id' => $img->id,
                 'path' => $img->path,
-                'url' => Storage::disk('public')->url($img->path),
+                'url' => '/storage/' . ltrim(preg_replace('/^\/?(storage\/)?/', '', $img->path), '/'),
             ])->values()->all(),
         ];
     }
@@ -99,7 +99,9 @@ class FeedbackManagementService
             return 'recipe';
         }
 
-        return $review->reviewable_type === 'App\\Models\\Vendor' ? 'vendor' : 'product';
+        return (str_ends_with($review->reviewable_type ?? '', 'Vendor') || $review->reviewable instanceof \App\Models\Vendor)
+            ? 'vendor'
+            : 'product';
     }
 
     private function resolveTargetName(Review $review): ?string
@@ -115,8 +117,8 @@ class FeedbackManagementService
         }
 
         return match (true) {
-            property_exists($reviewable, 'stall_name') => $reviewable->stall_name,
-            property_exists($reviewable, 'name') => $reviewable->name,
+            ! empty($reviewable->stall_name) => $reviewable->stall_name,
+            ! empty($reviewable->name) => $reviewable->name,
             default => null,
         };
     }

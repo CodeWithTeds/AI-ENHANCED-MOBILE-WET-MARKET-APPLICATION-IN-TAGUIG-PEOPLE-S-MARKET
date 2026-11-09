@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product;
+use App\Models\Review;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Notifications\NewOrderReceivedNotification;
+use App\Notifications\NewReviewReceivedNotification;
 use App\Notifications\OrderStatusUpdatedNotification;
 use App\Notifications\PaymentProofSubmittedNotification;
 use App\Notifications\PaymentStatusUpdatedNotification;
@@ -146,6 +149,48 @@ class NotificationService
     }
 
     /**
+     * Notify the vendor when a customer rates their stall or one of their products.
+     */
+    public function notifyVendorNewReview(Review $review): void
+    {
+        $vendor = null;
+        $product = null;
+
+        if ($review->reviewable_type === Vendor::class) {
+            $vendor = Vendor::find($review->reviewable_id);
+        } elseif ($review->reviewable_type === Product::class) {
+            $product = Product::with('vendor')->find($review->reviewable_id);
+            $vendor = $product?->vendor;
+        }
+
+        $vendorUser = $vendor?->user;
+        $customer = $review->user;
+
+        if (! $vendor || ! $vendorUser || ! $customer) {
+            return;
+        }
+
+        if ((int) $vendorUser->id === (int) $customer->id) {
+            return;
+        }
+
+        if (! $this->vendorWantsReviewAlerts($vendor)) {
+            return;
+        }
+
+        $this->safeNotify($vendorUser, new NewReviewReceivedNotification(
+            reviewId: $review->id,
+            rating: (int) $review->rating,
+            comment: $review->comment,
+            vendorId: $vendor->id,
+            stallName: $vendor->stall_name,
+            customerName: $customer->name,
+            productId: $product?->id,
+            productName: $product?->name,
+        ));
+    }
+
+    /**
      * @param  Collection<int, OrderItem>  $items
      */
     private function itemsTotal(Collection $items): float
@@ -156,6 +201,11 @@ class NotificationService
     private function vendorWantsOrderAlerts(Vendor $vendor): bool
     {
         return (bool) ($vendor->notification_preferences['order_alerts'] ?? true);
+    }
+
+    private function vendorWantsReviewAlerts(Vendor $vendor): bool
+    {
+        return (bool) ($vendor->notification_preferences['review_alerts'] ?? true);
     }
 
     private function customerWantsOrderAlerts(User $user): bool

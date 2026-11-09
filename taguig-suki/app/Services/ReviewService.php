@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class ReviewService
 {
+    public function __construct(private readonly NotificationService $notificationService) {}
+
     /**
      * Rate a vendor — only allowed if the customer has a COMPLETED order
      * containing this vendor's products.
@@ -312,7 +314,7 @@ class ReviewService
             ]);
         }
 
-        return DB::transaction(function () use ($attributes, $user, $images) {
+        $review = DB::transaction(function () use ($attributes, $user, $images) {
             $review = Review::create($attributes + ['user_id' => $user->id]);
 
             foreach ($images as $image) {
@@ -325,6 +327,10 @@ class ReviewService
 
             return $review->load(['user:id,name', 'images']);
         });
+
+        $this->notificationService->notifyVendorNewReview($review);
+
+        return $review;
     }
 
     /**
@@ -401,7 +407,7 @@ class ReviewService
                 'images' => $r->images->map(fn ($img) => [
                     'id' => $img->id,
                     'path' => $img->path,
-                    'url' => Storage::disk('public')->url($img->path),
+                    'url' => '/storage/' . ltrim(preg_replace('/^\/?(storage\/)?/', '', $img->path), '/'),
                 ])->values(),
             ])->values(),
             'average_rating' => $productReviews->count() > 0 ? round($productReviews->avg('rating'), 1) : 0,
@@ -435,7 +441,7 @@ class ReviewService
                 'images' => $r->images->map(fn ($img) => [
                     'id' => $img->id,
                     'path' => $img->path,
-                    'url' => Storage::disk('public')->url($img->path),
+                    'url' => '/storage/' . ltrim(preg_replace('/^\/?(storage\/)?/', '', $img->path), '/'),
                 ])->values(),
             ])->values(),
             'average_rating' => $total > 0 ? round($reviews->avg('rating'), 1) : 0,
