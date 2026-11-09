@@ -21,7 +21,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { API_BASE_URL } from '@/config/api';
 import {
   getCategories,
   getFeaturedProducts,
@@ -41,6 +40,8 @@ import { StarRating, StarRatingDisplay } from '@/components/customer/StarRating'
 import { CategoryChip } from '@/components/customer/CategoryChip';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { PRODUCT_CATEGORIES } from '@/types/vendor';
+import { getProductImageUrl } from '@/utils/image';
+import { getCategoryEmoji } from '@/constants/categories';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min((SCREEN_WIDTH - 48 - 12) / 2, 240);
@@ -319,10 +320,9 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
   const heartAnim = useRef(new Animated.Value(1)).current;
   const isFav = isProductFavorited(product.id);
+  const [imageError, setImageError] = useState(false);
 
-  const imageUrl = product.image
-    ? `${API_BASE_URL.replace('/api/v1', '')}/storage/${product.image}`
-    : null;
+  const imageUrl = getProductImageUrl(product.image);
 
   function handleToggleFavorite() {
     Animated.sequence([
@@ -341,11 +341,16 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
     <TouchableOpacity style={styles.productCard} activeOpacity={0.85} onPress={onPress}>
       {/* Image */}
       <View style={styles.productImageWrap}>
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.productImage} resizeMode="cover" />
+        {imageUrl && !imageError ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.productImage}
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
         ) : (
           <View style={styles.productImagePlaceholder}>
-            <Ionicons name="image-outline" size={28} color="#D1D5DB" />
+            <Text style={{ fontSize: 32 }}>{getCategoryEmoji(product.category)}</Text>
           </View>
         )}
         {/* Badge */}
@@ -630,7 +635,7 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
       category: product.category,
       image: product.image,
     }, 1);
-    router.push('/(customer)/cart' as any);
+    router.navigate('/(customer)/cart' as any);
   }
 
   return (

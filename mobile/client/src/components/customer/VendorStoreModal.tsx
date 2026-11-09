@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
-import { API_BASE_URL } from '@/config/api';
+import { getProductImageUrl } from '@/utils/image';
 import { getVendorStore, type MarketProduct, type VendorStoreData } from '@/services/marketplace';
 import { getVendorReviews, resolveReviewImageUrl, type Review, type ReviewSummary } from '@/services/reviews';
 import { useCart } from '@/context/CartContext';
@@ -64,7 +64,7 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
       image: item.image,
     }, 1);
     onClose();
-    router.push('/(customer)/cart' as any);
+    router.navigate('/(customer)/cart' as any);
   }
 
   useEffect(() => {
@@ -421,16 +421,18 @@ function StoreProductRow({
   onAddToCart: () => void;
   onBuyNow: () => void;
 }) {
-  const imageUrl = product.image
-    ? product.image.startsWith('http')
-      ? product.image
-      : `${API_BASE_URL.replace('/api/v1', '')}/storage/${product.image.replace(/^\/?(storage\/)?/, '')}`
-    : null;
+  const [imgError, setImgError] = useState(false);
+  const imageUrl = getProductImageUrl(product.image);
 
   return (
     <TouchableOpacity style={styles.productRow} onPress={onSelect} activeOpacity={0.8}>
-      {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.productImg} resizeMode="cover" />
+      {imageUrl && !imgError ? (
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.productImg}
+          resizeMode="cover"
+          onError={() => setImgError(true)}
+        />
       ) : (
         <View style={styles.productImgPlaceholder}>
           <Ionicons name="image-outline" size={22} color={Colors.textMuted} />

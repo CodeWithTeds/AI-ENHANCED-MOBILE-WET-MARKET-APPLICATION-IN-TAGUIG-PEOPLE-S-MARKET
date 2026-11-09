@@ -14,13 +14,26 @@ export function getProductImageUrl(pathOrUrl?: string | null): string | null {
 
   // If already an absolute http/https URL
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // If it points to localhost / 127.0.0.1, replace with the configured API host
-    if (trimmed.includes('localhost') || trimmed.includes('127.0.0.1')) {
+    // If it points to localhost / 127.0.0.1 / local LAN IP, replace with configured API host
+    const isLocalOrLan =
+      trimmed.includes('localhost') ||
+      trimmed.includes('127.0.0.1') ||
+      trimmed.includes('192.168.') ||
+      trimmed.includes('10.0.') ||
+      trimmed.includes('172.');
+
+    if (isLocalOrLan) {
       const idx = trimmed.indexOf('/storage/');
       if (idx !== -1) {
         return `${storageBase}${trimmed.substring(idx)}`;
       }
     }
+
+    // If storageBase uses https, upgrade http to https to avoid Android mixed-content blocking
+    if (storageBase.startsWith('https://') && trimmed.startsWith('http://')) {
+      return trimmed.replace('http://', 'https://');
+    }
+
     return trimmed;
   }
 

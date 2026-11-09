@@ -36,6 +36,7 @@ import type { MarketProduct } from '@/services/marketplace';
 import { getProductReviews, type ReviewSummary } from '@/services/reviews';
 import { StarRatingDisplay } from '@/components/customer/StarRating';
 import { getCategoryConfig } from '@/constants/categories';
+import { getProductImageUrl } from '@/utils/image';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.88;
@@ -276,7 +277,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
     }, quantity);
 
     onClose();
-    router.push('/(customer)/cart' as any);
+    router.navigate('/(customer)/cart' as any);
   }
 
   function handleToggleFavorite() {
@@ -297,14 +298,15 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
     setGalleryIndex(idx);
   }
 
+  const [failedImgProductId, setFailedImgProductId] = useState<number | null>(null);
+
   if (!product) return null;
 
-  const imageUrl = product.image
-    ? `${API_BASE_URL.replace('/api/v1', '')}/storage/${product.image}`
-    : null;
+  const galleryImgError = failedImgProductId === product.id;
+  const imageUrl = getProductImageUrl(product.image);
 
   /* We show the real image + a "zoomed" placeholder as second slide when no extra images exist */
-  const galleryImages = imageUrl ? [imageUrl] : [];
+  const galleryImages = imageUrl && !galleryImgError ? [imageUrl] : [];
   const categoryConfig = getCategoryConfig(product.category);
   const categoryEmoji = categoryConfig.emoji;
   const categoryBg = categoryConfig.bg;
@@ -339,6 +341,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                     source={{ uri: item }}
                     style={styles.galleryImage}
                     resizeMode="cover"
+                    onError={() => setFailedImgProductId(product.id)}
                   />
                 )}
               />
