@@ -10,6 +10,7 @@ import {
   FlatList,
   Image,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -21,10 +22,20 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { API_BASE_URL } from '@/config/api';
 import { getVendorStore, type MarketProduct, type VendorStoreData } from '@/services/marketplace';
+import { getVendorReviews, resolveReviewImageUrl, type Review, type ReviewSummary } from '@/services/reviews';
 import { useCart } from '@/context/CartContext';
 import { MarketLocationModal } from './MarketLocationModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function formatReviewDate(dateStr: string) {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
 
 interface Props {
   vendorId: number | null;
@@ -35,6 +46,9 @@ interface Props {
 
 export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }: Props) {
   const [data, setData] = useState<VendorStoreData | null>(null);
+  const [reviewsSummary, setReviewsSummary] = useState<ReviewSummary | null>(null);
+  const [activeTab, setActiveTab] = useState<'products' | 'reviews'>('products');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -56,25 +70,30 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
   useEffect(() => {
     if (!visible || !vendorId) {
       setData(null);
+      setReviewsSummary(null);
+      setActiveTab('products');
       setError(null);
       return;
     }
 
     setLoading(true);
     setError(null);
-    getVendorStore(vendorId)
-      .then(setData)
-      .catch((err) => {
-        console.error('[VendorStoreModal] failed to load:', err);
-        setError('Failed to load store details.');
-      })
-      .finally(() => setLoading(false));
+
+    // Load store data and reviews in parallel
+    Promise.allSettled([
+      getVendorStore(vendorId).then(setData),
+      getVendorReviews(vendorId).then(setReviewsSummary),
+    ]).catch((err) => {
+      console.error('[VendorStoreModal] failed to load:', err);
+      setError('Failed to load store details.');
+    }).finally(() => setLoading(false));
   }, [visible, vendorId]);
 
   if (!visible) return null;
 
   const vendor = data?.vendor;
   const products = data?.products ?? [];
+  const reviews = reviewsSummary?.reviews ?? [];
 
   // Determine open/closed status (default 4:00 AM - 8:00 PM)
   const operatingHours = vendor?.operating_hours ?? '4:00 AM - 8:00 PM';
@@ -109,7 +128,7 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
           </View>
         ) : (
           <FlatList
-            data={products}
+            data={activeTab === 'products' ? (products as any[]) : (reviews as any[])}
             keyExtractor={(item) => String(item.id)}
             contentContainerStyle={styles.listContent}
             ListHeaderComponent={
@@ -121,6 +140,22 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
                   </View>
                   <View style={styles.storeHeroInfo}>
                     <Text style={styles.stallName}>{vendor?.stall_name}</Text>
+                    
+                    {/* Rating row in hero */}
+                    <View style={styles.storeRatingRow}>
+                      <Ionicons name="star" size={13} color="#F59E0B" />
+                      <Text style={styles.storeRatingScore}>
+                        {reviewsSummary && reviewsSummary.total > 0
+                          ? reviewsSummary.average_rating.toFixed(1)
+                          : 'New'}
+                      </Text>
+                      <Text style={styles.storeRatingCount}>
+                        {reviewsSummary && reviewsSummary.total > 0
+                          ? `(${reviewsSummary.total} ${reviewsSummary.total === 1 ? 'review' : 'reviews'})`
+                          : '• No ratings yet'}
+                      </Text>
+                    </View>
+
                     <TouchableOpacity
                       style={styles.locationRow}
                       onPress={() => setShowLocationModal(true)}
@@ -160,40 +195,140 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
                   </Text>
                 </View>
 
-                {/* Section title */}
-                <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>Available Products</Text>
-                  <Text style={styles.productCount}>{products.length} items</Text>
+                {/* Tab Switcher: Products vs Feedback & Reviews */}
+                <View style={styles.tabSwitcher}>
+                  <TouchableOpacity
+                    style={[styles.tabBtn, activeTab === 'products' && styles.tabBtnActive]}
+                    onPress={() => setActiveTab('products')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="cube-outline"
+                      size={15}
+                      color={activeTab === 'products' ? Colors.primary : '#6B7280'}
+                    />
+                    <Text style={[styles.tabBtnText, activeTab === 'products' && styles.tabBtnTextActive]}>
+                      Products ({products.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.tabBtn, activeTab === 'reviews' && styles.tabBtnActive]}
+                    onPress={() => setActiveTab('reviews')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={14}
+                      color={activeTab === 'reviews' ? Colors.primary : '#6B7280'}
+                    />
+                    <Text style={[styles.tabBtnText, activeTab === 'reviews' && styles.tabBtnTextActive]}>
+                      Reviews ({reviewsSummary?.total ?? 0})
+                    </Text>
+                  </TouchableOpacity>
                 </View>
+
+                {/* Tab-specific header content */}
+                {activeTab === 'products' ? (
+                  <View style={styles.sectionTitleRow}>
+                    <Text style={styles.sectionTitle}>Available Products</Text>
+                    <Text style={styles.productCount}>{products.length} items</Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Overall Rating Breakdown Hero */}
+                    <View style={styles.reviewsHeroCard}>
+                      <View style={styles.reviewsHeroLeft}>
+                        <Text style={styles.reviewsBigScore}>
+                          {reviewsSummary && reviewsSummary.total > 0
+                            ? reviewsSummary.average_rating.toFixed(1)
+                            : '—'}
+                        </Text>
+                        <View style={styles.starsRow}>
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Ionicons
+                              key={star}
+                              name={star <= Math.round(reviewsSummary?.average_rating ?? 0) ? 'star' : 'star-outline'}
+                              size={14}
+                              color={star <= Math.round(reviewsSummary?.average_rating ?? 0) ? '#F59E0B' : '#D1D5DB'}
+                            />
+                          ))}
+                        </View>
+                        <Text style={styles.reviewsTotalText}>
+                          {reviewsSummary && reviewsSummary.total > 0
+                            ? `Based on ${reviewsSummary.total} ${reviewsSummary.total === 1 ? 'review' : 'reviews'}`
+                            : 'No reviews yet'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.reviewsHeroRight}>
+                        {[5, 4, 3, 2, 1].map((star) => {
+                          const count = reviewsSummary?.rating_counts?.[star] ?? 0;
+                          const total = reviewsSummary?.total ?? 0;
+                          const pct = total > 0 ? (count / total) * 100 : 0;
+                          return (
+                            <View key={star} style={styles.ratingBarRow}>
+                              <Text style={styles.ratingBarStar}>{star}</Text>
+                              <Ionicons name="star" size={10} color="#F59E0B" />
+                              <View style={styles.ratingBarTrack}>
+                                <View style={[styles.ratingBarFill, { width: `${pct}%` }]} />
+                              </View>
+                              <Text style={styles.ratingBarCount}>{count}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View style={styles.sectionTitleRow}>
+                      <Text style={styles.sectionTitle}>Customer Feedback</Text>
+                      <Text style={styles.productCount}>{reviews.length} feedback</Text>
+                    </View>
+                  </>
+                )}
               </View>
             }
-            renderItem={({ item }) => (
-              <StoreProductRow
-                product={item}
-                isOpen={isOpen}
-                onSelect={() => onSelectProduct?.(item)}
-                onAddToCart={() =>
-                  addItem(
-                    {
-                      product_id: item.id,
-                      product_name: item.name,
-                      price: item.price,
-                      unit: item.unit,
-                      category: item.category,
-                      image: item.image,
-                    },
-                    1
-                  )
-                }
-                onBuyNow={() => handleBuyNow(item)}
-              />
-            )}
+            renderItem={({ item }) =>
+              activeTab === 'products' ? (
+                <StoreProductRow
+                  product={item as MarketProduct}
+                  isOpen={isOpen}
+                  onSelect={() => onSelectProduct?.(item as MarketProduct)}
+                  onAddToCart={() =>
+                    addItem(
+                      {
+                        product_id: item.id,
+                        product_name: item.name,
+                        price: item.price,
+                        unit: item.unit,
+                        category: item.category,
+                        image: item.image,
+                      },
+                      1
+                    )
+                  }
+                  onBuyNow={() => handleBuyNow(item as MarketProduct)}
+                />
+              ) : (
+                <StoreReviewItem review={item as Review} onPreviewImage={setPreviewImage} />
+              )
+            }
             ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="cube-outline" size={40} color={Colors.textMuted} />
-                <Text style={styles.emptyTitle}>No products listed</Text>
-                <Text style={styles.emptySubtitle}>This store has no active products at the moment.</Text>
-              </View>
+              activeTab === 'products' ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="cube-outline" size={40} color={Colors.textMuted} />
+                  <Text style={styles.emptyTitle}>No products listed</Text>
+                  <Text style={styles.emptySubtitle}>This store has no active products at the moment.</Text>
+                </View>
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="star-outline" size={40} color={Colors.textMuted} />
+                  <Text style={styles.emptyTitle}>No feedback yet</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Completed orders from this store can be reviewed by customers.
+                  </Text>
+                </View>
+              )
             }
           />
         )}
@@ -202,8 +337,74 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
           visible={showLocationModal}
           onClose={() => setShowLocationModal(false)}
         />
+
+        {/* Photo Lightbox Modal */}
+        <Modal
+          visible={!!previewImage}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewImage(null)}
+        >
+          <View style={styles.lightboxBackdrop}>
+            <TouchableOpacity style={styles.lightboxCloseBtn} onPress={() => setPreviewImage(null)}>
+              <Ionicons name="close" size={26} color="#FFF" />
+            </TouchableOpacity>
+            {previewImage && (
+              <Image source={{ uri: previewImage }} style={styles.lightboxImage} resizeMode="contain" />
+            )}
+          </View>
+        </Modal>
       </SafeAreaView>
     </Modal>
+  );
+}
+
+function StoreReviewItem({
+  review,
+  onPreviewImage,
+}: {
+  review: Review;
+  onPreviewImage: (uri: string) => void;
+}) {
+  return (
+    <View style={styles.reviewItemCard}>
+      <View style={styles.reviewItemTop}>
+        <View style={styles.reviewerAvatar}>
+          <Text style={styles.reviewerInitial}>{(review.user || 'C').charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.reviewerNameRow}>
+            <Text style={styles.reviewerName}>{review.user || 'Customer'}</Text>
+            <Text style={styles.reviewDate}>{formatReviewDate(review.created_at)}</Text>
+          </View>
+          <View style={styles.reviewStarRow}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name={star <= review.rating ? 'star' : 'star-outline'}
+                size={12}
+                color={star <= review.rating ? '#F59E0B' : '#D1D5DB'}
+              />
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+
+      {review.images && review.images.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reviewPhotoScroll}>
+          {review.images.map((img) => {
+            const uri = resolveReviewImageUrl(img.url, img.path);
+            return (
+              <TouchableOpacity key={img.id} onPress={() => onPreviewImage(uri)} activeOpacity={0.8}>
+                <Image source={{ uri }} style={styles.reviewPhotoThumb} />
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+    </View>
   );
 }
 
@@ -583,5 +784,204 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 13,
     color: Colors.textSecondary,
+  },
+  storeRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  storeRatingScore: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  storeRatingCount: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12,
+    gap: 4,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  tabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  tabBtnTextActive: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  reviewsHeroCard: {
+    flexDirection: 'row',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    marginBottom: 14,
+    gap: 16,
+  },
+  reviewsHeroLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: 14,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
+    minWidth: 100,
+  },
+  reviewsBigScore: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: Colors.text,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 2,
+    marginVertical: 4,
+  },
+  reviewsTotalText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  reviewsHeroRight: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  ratingBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingBarStar: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    width: 8,
+  },
+  ratingBarTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  ratingBarFill: {
+    height: '100%',
+    backgroundColor: '#F59E0B',
+    borderRadius: 3,
+  },
+  ratingBarCount: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    minWidth: 14,
+    textAlign: 'right',
+  },
+  reviewItemCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    marginHorizontal: 16,
+    marginBottom: 10,
+  },
+  reviewItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  reviewerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewerInitial: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  reviewerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  reviewerName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  reviewDate: {
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  reviewStarRow: {
+    flexDirection: 'row',
+    gap: 1,
+  },
+  reviewComment: {
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  reviewPhotoScroll: {
+    marginTop: 10,
+  },
+  reviewPhotoThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    marginRight: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  lightboxBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  lightboxCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  lightboxImage: {
+    width: '100%',
+    height: '80%',
   },
 });
