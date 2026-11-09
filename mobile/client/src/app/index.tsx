@@ -235,13 +235,17 @@ function CreateAccountPrompt() {
 
         <TouchableOpacity
           style={styles.vendorButton}
-          onPress={() => router.push('/vendor-register')}
+          onPress={() => router.navigate('/vendor-register')}
           activeOpacity={0.85}
           accessibilityRole="button"
         >
-          <MaterialCommunityIcons name="storefront-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.vendorButtonText}>Register as Vendor</Text>
-          <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.85)" />
+          <View style={styles.buttonLeft}>
+            <View style={styles.vendorIconBadge}>
+              <MaterialCommunityIcons name="storefront-outline" size={20} color="#FFFFFF" />
+            </View>
+            <Text style={styles.vendorButtonText}>Register as Vendor</Text>
+          </View>
+          <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
 
         <View style={styles.dividerRow}>
@@ -252,13 +256,17 @@ function CreateAccountPrompt() {
 
         <TouchableOpacity
           style={styles.customerButton}
-          onPress={() => router.push('/customer-login')}
+          onPress={() => router.navigate('/customer-login')}
           activeOpacity={0.85}
           accessibilityRole="button"
         >
-          <Feather name="user" size={18} color={Colors.primary} />
-          <Text style={styles.customerButtonText}>Sign Up as Customer</Text>
-          <Feather name="chevron-right" size={18} color={Colors.primary} />
+          <View style={styles.buttonLeft}>
+            <View style={styles.customerIconBadge}>
+              <Feather name="user" size={18} color={Colors.primary} />
+            </View>
+            <Text style={styles.customerButtonText}>Sign Up as Customer</Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -503,17 +511,29 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: Colors.primary,
     borderRadius: 14,
-    height: 54,
-    paddingHorizontal: 20,
+    height: 56,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
+  },
+  buttonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  vendorIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   vendorButtonText: {
     fontSize: 16,
@@ -587,17 +607,24 @@ const styles = StyleSheet.create({
   },
   customerButton: {
     width: '100%',
-    height: 54,
+    height: 56,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: '#B9F1D0',
     backgroundColor: '#F0FDF4',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingHorizontal: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
     marginBottom: 20,
+  },
+  customerIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   customerButtonText: {
     fontSize: 15,
