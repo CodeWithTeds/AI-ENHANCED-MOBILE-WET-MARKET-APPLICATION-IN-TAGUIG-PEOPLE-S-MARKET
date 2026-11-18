@@ -22,6 +22,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { StallComplaintModal } from '@/components/customer/StallComplaintModal';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import {
   changeCustomerPassword,
@@ -49,6 +50,7 @@ export default function CustomerProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<'main' | 'editProfile' | 'changePassword' | 'notifications' | 'idVerification'>('main');
   const [verification, setVerification] = useState<CustomerVerification | null>(null);
+  const [complaintModalOpen, setComplaintModalOpen] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     if (!token) {
@@ -172,6 +174,24 @@ export default function CustomerProfileScreen() {
           </View>
         </View>
 
+        {/* Stall & Sanitation Complaints Section (Item 5) */}
+        <View style={styles.menuSection}>
+          <Text style={styles.menuSectionTitle}>Market &amp; Sanitation</Text>
+          <MenuItem
+            icon="shield-half-outline"
+            label="Report a Stall Concern"
+            badge="TPM Admin"
+            badgeColor="#D97706"
+            onPress={() => setComplaintModalOpen(true)}
+          />
+          <View style={styles.reportHintBox}>
+            <Ionicons name="warning-outline" size={14} color="#D97706" />
+            <Text style={styles.reportHintText}>
+              Report stall concerns such as foul odor, cleanliness, improper handling, or obstruction directly to Taguig Market Administration.
+            </Text>
+          </View>
+        </View>
+
         {/* Account Section */}
         <View style={styles.menuSection}>
           <Text style={styles.menuSectionTitle}>Account</Text>
@@ -188,6 +208,13 @@ export default function CustomerProfileScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Stall Complaint / Sanitation Report Modal with Stall Selector */}
+      <StallComplaintModal
+        visible={complaintModalOpen}
+        onClose={() => setComplaintModalOpen(false)}
+        authToken={token}
+      />
     </SafeAreaView>
   );
 }

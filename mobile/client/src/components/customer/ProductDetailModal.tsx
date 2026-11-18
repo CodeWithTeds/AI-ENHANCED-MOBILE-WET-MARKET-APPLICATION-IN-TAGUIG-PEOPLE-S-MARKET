@@ -32,11 +32,12 @@ import { router } from 'expo-router';
 import { API_BASE_URL } from '@/config/api';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
-import type { MarketProduct } from '@/services/marketplace';
+import { getProductDetail, type MarketProduct, type VendorComparisonItem } from '@/services/marketplace';
 import { getProductReviews, type ReviewSummary } from '@/services/reviews';
 import { StarRatingDisplay } from '@/components/customer/StarRating';
 import { getCategoryConfig } from '@/constants/categories';
 import { getProductImageUrl } from '@/utils/image';
+import { StallComplaintModal } from '@/components/customer/StallComplaintModal';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.88;
@@ -173,18 +174,38 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
 
+  const [activeProduct, setActiveProduct] = useState<MarketProduct | null>(product);
+  const [comparisonVendors, setComparisonVendors] = useState<VendorComparisonItem[]>([]);
+  const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  const [complaintOpen, setComplaintOpen] = useState(false);
+
+  useEffect(() => {
+    setActiveProduct(product);
+    setShowVendorDropdown(false);
+    if (!product || !visible) return;
+    getProductDetail(product.id)
+      .then((detail) => {
+        if (detail.comparison_vendors) {
+          setComparisonVendors(detail.comparison_vendors);
+        }
+      })
+      .catch(() => {});
+  }, [product, visible]);
+
+  const displayProduct = activeProduct ?? product;
+
   const { addItem, isInCart, items, startBuyNow } = useCart();
   const { addProduct, removeProduct, isProductFavorited } = useFavorites();
 
-  const inCart = product ? isInCart(product.id) : false;
-  const cartItem = product ? items.find((i) => i.product_id === product.id) : null;
-  const isFav = product ? isProductFavorited(product.id) : false;
-  const isWeightProduct = product ? product.unit.toLowerCase() === 'kg' : false;
+  const inCart = displayProduct ? isInCart(displayProduct.id) : false;
+  const cartItem = displayProduct ? items.find((i) => i.product_id === displayProduct.id) : null;
+  const isFav = displayProduct ? isProductFavorited(displayProduct.id) : false;
+  const isWeightProduct = displayProduct ? displayProduct.unit.toLowerCase() === 'kg' : false;
   const step = isWeightProduct ? 0.5 : 1;
   const minQty = isWeightProduct ? 0.5 : 1;
 
-  const vendorHours = product?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM';
-  const isStoreOpen = product?.vendor?.is_open ?? computeIsOpen(product?.vendor?.opening_time, product?.vendor?.closing_time);
+  const vendorHours = displayProduct?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM';
+  const isStoreOpen = displayProduct?.vendor?.is_open ?? computeIsOpen(displayProduct?.vendor?.opening_time, displayProduct?.vendor?.closing_time);
 
   function formatQty(q: number): string {
     return Number.isInteger(q) ? String(q) : q.toFixed(1).replace(/\.0$/, '');
@@ -192,11 +213,11 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
 
   /* Load the product's public rating summary when opened */
   useEffect(() => {
-    if (!visible || !product) return;
-    getProductReviews(product.id)
+    if (!visible || !displayProduct) return;
+    getProductReviews(displayProduct.id)
       .then(setRatingSummary)
       .catch(() => setRatingSummary(null));
-  }, [visible, product]);
+  }, [visible, displayProduct]);
 
   /* Open / close animation */
   useEffect(() => {
@@ -240,7 +261,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   }, []);
 
   function handleAddToCart() {
-    if (!product) return;
+    if (!displayProduct) return;
 
     /* Button bounce */
     Animated.sequence([
@@ -250,12 +271,12 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
     ]).start();
 
     addItem({
-      product_id: product.id,
-      product_name: product.name,
-      price: product.price,
-      unit: product.unit,
-      category: product.category,
-      image: product.image,
+      product_id: displayProduct.id,
+      product_name: displayProduct.name,
+      price: displayProduct.price,
+      unit: displayProduct.unit,
+      category: displayProduct.category,
+      image: displayProduct.image,
     }, quantity);
 
     /* Show snackbar */
@@ -265,15 +286,15 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   }
 
   function handleBuyNow() {
-    if (!product || !product.is_available) return;
+    if (!displayProduct || !displayProduct.is_available) return;
 
     startBuyNow({
-      product_id: product.id,
-      product_name: product.name,
-      price: product.price,
-      unit: product.unit,
-      category: product.category,
-      image: product.image,
+      product_id: displayProduct.id,
+      product_name: displayProduct.name,
+      price: displayProduct.price,
+      unit: displayProduct.unit,
+      category: displayProduct.category,
+      image: displayProduct.image,
     }, quantity);
 
     onClose();
@@ -281,15 +302,15 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   }
 
   function handleToggleFavorite() {
-    if (!product) return;
+    if (!displayProduct) return;
     Animated.sequence([
       Animated.spring(heartScaleAnim, { toValue: 1.45, useNativeDriver: true, speed: 60 }),
       Animated.spring(heartScaleAnim, { toValue: 1, useNativeDriver: true, speed: 30 }),
     ]).start();
     if (isFav) {
-      removeProduct(product.id);
+      removeProduct(displayProduct.id);
     } else {
-      addProduct(product);
+      addProduct(displayProduct);
     }
   }
 
@@ -300,17 +321,17 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
 
   const [failedImgProductId, setFailedImgProductId] = useState<number | null>(null);
 
-  if (!product) return null;
+  if (!displayProduct) return null;
 
-  const galleryImgError = failedImgProductId === product.id;
-  const imageUrl = getProductImageUrl(product.image);
+  const galleryImgError = failedImgProductId === displayProduct.id;
+  const imageUrl = getProductImageUrl(displayProduct.image);
 
   /* We show the real image + a "zoomed" placeholder as second slide when no extra images exist */
   const galleryImages = imageUrl && !galleryImgError ? [imageUrl] : [];
-  const categoryConfig = getCategoryConfig(product.category);
+  const categoryConfig = getCategoryConfig(displayProduct.category);
   const categoryEmoji = categoryConfig.emoji;
   const categoryBg = categoryConfig.bg;
-  const subtotal = product.price * quantity;
+  const subtotal = displayProduct.price * quantity;
   const categoryLabel = categoryConfig.label;
 
   return (
@@ -341,7 +362,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                     source={{ uri: item }}
                     style={styles.galleryImage}
                     resizeMode="cover"
-                    onError={() => setFailedImgProductId(product.id)}
+                    onError={() => setFailedImgProductId(displayProduct.id)}
                   />
                 )}
               />
@@ -374,10 +395,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           </TouchableOpacity>
 
           {/* Availability badge */}
-          <View style={[styles.availBadge, !product.is_available && styles.availBadgeUnavail]}>
-            <View style={[styles.availDot, !product.is_available && styles.availDotUnavail]} />
-            <Text style={[styles.availText, !product.is_available && styles.availTextUnavail]}>
-              {product.is_available ? 'Available' : 'Unavailable'}
+          <View style={[styles.availBadge, !displayProduct.is_available && styles.availBadgeUnavail]}>
+            <View style={[styles.availDot, !displayProduct.is_available && styles.availDotUnavail]} />
+            <Text style={[styles.availText, !displayProduct.is_available && styles.availTextUnavail]}>
+              {displayProduct.is_available ? 'Available' : 'Unavailable'}
             </Text>
           </View>
         </View>
@@ -396,13 +417,13 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           </View>
 
           {/* Product Name */}
-          <Text style={styles.productName}>{product.name}</Text>
+          <Text style={styles.productName}>{displayProduct.name}</Text>
 
           {/* Vendor / Stall Info & Operating Hours */}
           <TouchableOpacity
             style={styles.vendorStoreCard}
-            onPress={() => product.vendor?.id && onOpenVendorStore?.(product.vendor.id)}
-            disabled={!product.vendor?.id || !onOpenVendorStore}
+            onPress={() => displayProduct.vendor?.id && onOpenVendorStore?.(displayProduct.vendor.id)}
+            disabled={!displayProduct.vendor?.id || !onOpenVendorStore}
             activeOpacity={0.8}
           >
             <View style={styles.vendorStoreTop}>
@@ -412,10 +433,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.vendorStoreName}>
-                    {product.vendor?.stall_name ?? 'Taguig People\'s Market'}
+                    {displayProduct.vendor?.stall_name ?? 'Taguig People\'s Market'}
                   </Text>
-                  {product.vendor?.stall_location ? (
-                    <Text style={styles.vendorStoreLoc}>{product.vendor.stall_location}</Text>
+                  {displayProduct.vendor?.stall_location ? (
+                    <Text style={styles.vendorStoreLoc}>{displayProduct.vendor.stall_location}</Text>
                   ) : null}
                 </View>
               </View>
@@ -429,13 +450,123 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             </View>
 
             <View style={styles.vendorHoursRow}>
-              <Ionicons name="time-outline" size={12} color="#6B7280" />
-              <Text style={styles.vendorHoursText}>Hours: {vendorHours}</Text>
-              {onOpenVendorStore && product.vendor?.id ? (
-                <Text style={styles.viewStoreLink}>View Store →</Text>
-              ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="time-outline" size={12} color="#6B7280" />
+                <Text style={styles.vendorHoursText}>Hours: {vendorHours}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => setComplaintOpen(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
+                >
+                  <Ionicons name="flag-outline" size={12} color="#D97706" />
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#D97706' }}>Report Stall</Text>
+                </TouchableOpacity>
+                {onOpenVendorStore && displayProduct.vendor?.id ? (
+                  <Text style={styles.viewStoreLink}>View Store →</Text>
+                ) : null}
+              </View>
             </View>
           </TouchableOpacity>
+
+          {/* AI Stall & Vendor Comparison Dropdown */}
+          {comparisonVendors.length > 0 && (
+            <View style={styles.comparisonBox}>
+              <TouchableOpacity
+                style={styles.comparisonHeader}
+                onPress={() => setShowVendorDropdown(!showVendorDropdown)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.comparisonHeaderLeft}>
+                  <View style={styles.sparkleIconWrap}>
+                    <Ionicons name="sparkles" size={14} color="#B45309" />
+                  </View>
+                  <View>
+                    <Text style={styles.comparisonTitle}>
+                      {comparisonVendors.length} {comparisonVendors.length === 1 ? 'Stall' : 'Stalls'} Selling This Item
+                    </Text>
+                    <Text style={styles.comparisonSub}>
+                      Sorted by AI Vendor Rating • Tap to compare &amp; choose
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons
+                  name={showVendorDropdown ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color="#4B5563"
+                />
+              </TouchableOpacity>
+
+              {showVendorDropdown && (
+                <View style={styles.comparisonList}>
+                  {comparisonVendors.map((item) => {
+                    const isSelected = item.product_id === displayProduct?.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.product_id}
+                        style={[
+                          styles.comparisonRow,
+                          isSelected && styles.comparisonRowSelected,
+                        ]}
+                        onPress={() => {
+                          setActiveProduct({
+                            ...displayProduct,
+                            id: item.product_id,
+                            vendor_id: item.vendor_id,
+                            name: item.name,
+                            price: item.price,
+                            unit: item.unit,
+                            image: item.image ?? displayProduct.image,
+                            vendor: {
+                              id: item.vendor_id,
+                              stall_name: item.stall_name,
+                              stall_location: item.stall_location,
+                              operating_hours: displayProduct?.vendor?.operating_hours,
+                              is_open: displayProduct?.vendor?.is_open,
+                            },
+                          });
+                          setShowVendorDropdown(false);
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={[styles.vendorRowStall, isSelected && { color: '#1B6B45', fontWeight: '800' }]}>
+                              {item.stall_name}
+                            </Text>
+                            {item.is_ai_recommended && (
+                              <View style={styles.aiBadge}>
+                                <Ionicons name="sparkles" size={10} color="#B45309" />
+                                <Text style={styles.aiBadgeText}>AI Recommended</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.vendorRowLoc}>{item.stall_location}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                              <Ionicons name="star" size={12} color="#F59E0B" />
+                              <Text style={styles.vendorRowRating}>{item.rating.toFixed(1)}</Text>
+                              <Text style={styles.vendorRowReviewCount}>({item.reviews_count} reviews)</Text>
+                            </View>
+                            <Text style={styles.vendorRowStock}>• Stock: {item.stock_quantity} {item.unit}</Text>
+                          </View>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <Text style={styles.vendorRowPrice}>₱{Number(item.price).toFixed(2)}</Text>
+                          <Text style={styles.vendorRowUnit}>per {item.unit}</Text>
+                          {isSelected && (
+                            <View style={styles.selectedCheck}>
+                              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
 
           {!isStoreOpen && (
             <View style={styles.closedNoticeBox}>
@@ -449,8 +580,8 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           {/* Price + In-cart badge */}
           <View style={styles.priceRow}>
             <View>
-              <Text style={styles.priceLabel}>Price per {product.unit}</Text>
-              <Text style={styles.price}>₱{Number(product.price).toFixed(2)}</Text>
+              <Text style={styles.priceLabel}>Price per {displayProduct.unit}</Text>
+              <Text style={styles.price}>₱{Number(displayProduct.price).toFixed(2)}</Text>
             </View>
             {inCart && cartItem ? (
               <View style={styles.inCartBadge}>
@@ -461,26 +592,26 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           </View>
 
           {/* Description */}
-          {product.description ? (
+          {displayProduct.description ? (
             <View style={styles.descBox}>
               <Text style={styles.descTitle}>About this product</Text>
-              <Text style={styles.descText}>{product.description}</Text>
+              <Text style={styles.descText}>{displayProduct.description}</Text>
             </View>
           ) : null}
 
           {/* Info Grid */}
           <View style={styles.infoGrid}>
-            <InfoTile icon="cube-outline" label="Unit" value={product.unit} />
+            <InfoTile icon="cube-outline" label="Unit" value={displayProduct.unit} />
             <InfoTile icon="pricetag-outline" label="Category" value={categoryLabel} />
             <InfoTile
               icon="storefront-outline"
               label="Stall"
-              value={product.vendor?.stall_name ?? '—'}
+              value={displayProduct.vendor?.stall_name ?? '—'}
             />
             <InfoTile
               icon="location-outline"
               label="Location"
-              value={product.vendor?.stall_location ?? "Taguig People's Market"}
+              value={displayProduct.vendor?.stall_location ?? "Taguig People's Market"}
             />
           </View>
 
@@ -522,7 +653,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
               >
                 <Ionicons name="remove" size={18} color={quantity <= minQty ? '#D1D5DB' : '#374151'} />
               </TouchableOpacity>
-              <Text style={styles.qtyValue}>{formatQty(quantity)} {isWeightProduct ? 'kg' : product.unit}</Text>
+              <Text style={styles.qtyValue}>{formatQty(quantity)} {isWeightProduct ? 'kg' : displayProduct.unit}</Text>
               <TouchableOpacity
                 style={styles.qtyBtn}
                 onPress={() => setQuantity((q) => Math.round((q + step) * 100) / 100)}
@@ -560,7 +691,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
 
           {/* Subtotal */}
           <View style={styles.subtotalRow}>
-            <Text style={styles.subtotalLabel}>Subtotal ({formatQty(quantity)} × ₱{Number(product.price).toFixed(2)})</Text>
+            <Text style={styles.subtotalLabel}>Subtotal ({formatQty(quantity)} × ₱{Number(displayProduct.price).toFixed(2)})</Text>
             <Text style={styles.subtotalValue}>₱{subtotal.toFixed(2)}</Text>
           </View>
 
@@ -572,10 +703,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                 style={[
                   styles.addToCartBtn,
                   inCart && styles.addToCartBtnActive,
-                  !product.is_available && styles.addToCartBtnDisabled,
+                  !displayProduct.is_available && styles.addToCartBtnDisabled,
                 ]}
                 onPress={handleAddToCart}
-                disabled={!product.is_available}
+                disabled={!displayProduct.is_available}
                 activeOpacity={0.85}
                 accessibilityLabel={inCart ? 'Add more to cart' : 'Add to cart'}
               >
@@ -587,11 +718,11 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                 <Text
                   style={[
                     styles.addToCartBtnText,
-                    !inCart && product.is_available && styles.addToCartBtnTextOutline,
+                    !inCart && displayProduct.is_available && styles.addToCartBtnTextOutline,
                   ]}
                   numberOfLines={1}
                 >
-                  {!product.is_available
+                  {!displayProduct.is_available
                     ? 'Unavailable'
                     : inCart
                     ? 'Add More'
@@ -604,10 +735,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             <TouchableOpacity
               style={[
                 styles.buyNowBtn,
-                !product.is_available && styles.buyNowBtnDisabled,
+                !displayProduct.is_available && styles.buyNowBtnDisabled,
               ]}
               onPress={handleBuyNow}
-              disabled={!product.is_available}
+              disabled={!displayProduct.is_available}
               activeOpacity={0.85}
               accessibilityLabel="Buy now and checkout directly"
             >
@@ -622,6 +753,20 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
 
         {/* Snackbar Toast */}
         <AddedToCartSnackbar visible={snackVisible} />
+
+        {/* Stall Complaint Modal */}
+        {displayProduct?.vendor && (
+          <StallComplaintModal
+            visible={complaintOpen}
+            onClose={() => setComplaintOpen(false)}
+            targetStall={{
+              vendorId: displayProduct.vendor.id,
+              stallName: displayProduct.vendor.stall_name,
+              stallNumber: displayProduct.vendor.stall_location,
+              sectionName: displayProduct.vendor.stall_location,
+            }}
+          />
+        )}
       </Animated.View>
     </Modal>
   );
@@ -1110,6 +1255,117 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  comparisonBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  comparisonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  comparisonHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  sparkleIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comparisonTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  comparisonSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  comparisonList: {
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+    backgroundColor: '#FFFFFF',
+  },
+  comparisonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  comparisonRowSelected: {
+    backgroundColor: '#F0FDF4',
+  },
+  vendorRowStall: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  vendorRowLoc: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  vendorRowRating: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  vendorRowReviewCount: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  vendorRowStock: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  vendorRowPrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+  vendorRowUnit: {
+    fontSize: 10,
+    color: '#6B7280',
+  },
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  selectedCheck: {
+    marginTop: 3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#1B6B45',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

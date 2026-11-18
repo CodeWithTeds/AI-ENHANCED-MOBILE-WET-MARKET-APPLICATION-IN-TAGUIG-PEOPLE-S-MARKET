@@ -18,6 +18,7 @@ import {
   Animated,
   AppState,
   Image,
+  Linking,
   Modal,
   RefreshControl,
   ScrollView,
@@ -49,6 +50,7 @@ import {
 } from '@/services/reviews';
 import { ReviewSheet } from '@/components/customer/ReviewSheet';
 import { OrderChatModal } from '@/components/chat/OrderChatModal';
+import { StallComplaintModal, TargetStall } from '@/components/customer/StallComplaintModal';
 import { ApiError } from '@/services/api';
 import { getProductImageUrl } from '@/utils/image';
 
@@ -70,6 +72,9 @@ export default function OrderTrackingScreen() {
   const [eligible, setEligible] = useState<EligibleOrder | null>(null);
   const [activeChatVendor, setActiveChatVendor] = useState<{ id: number; stall_name: string } | null>(null);
   const [currentToken, setCurrentToken] = useState<string>('');
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [complaintModalOpen, setComplaintModalOpen] = useState(false);
+  const [targetComplaintStall, setTargetComplaintStall] = useState<TargetStall | null>(null);
 
   const fetchTracking = useCallback(async () => {
     const authToken = await getAuthToken();
@@ -279,9 +284,58 @@ export default function OrderTrackingScreen() {
               onChatVendor={(vendorId, stallName) => {
                 setActiveChatVendor({ id: vendorId, stall_name: stallName });
               }}
+              onReportStall={(stallInfo) => {
+                setTargetComplaintStall(stallInfo);
+                setComplaintModalOpen(true);
+              }}
             />
           ))}
         </View>
+
+        {/* Customer Receipt Action Button (Item 9) */}
+        <TouchableOpacity
+          style={styles.receiptActionBtn}
+          activeOpacity={0.85}
+          onPress={() => setReceiptModalOpen(true)}
+        >
+          <View style={styles.receiptActionLeft}>
+            <View style={styles.receiptActionIconWrap}>
+              <Ionicons name="receipt-outline" size={20} color="#1B6B45" />
+            </View>
+            <View>
+              <Text style={styles.receiptActionTitle}>View Transaction Receipt</Text>
+              <Text style={styles.receiptActionSub}>Itemized stall breakdown & payment verification</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        {/* Report Stall Concern Action Button (Item 5) */}
+        <TouchableOpacity
+          style={styles.complaintActionBtn}
+          activeOpacity={0.85}
+          onPress={() => {
+            const firstItem = order.items[0];
+            setTargetComplaintStall({
+              vendorId: firstItem?.vendor_id,
+              stallName: firstItem?.vendor?.stall_name ?? 'Market Vendor',
+              stallNumber: firstItem?.vendor?.stall_location,
+              sectionName: firstItem?.vendor?.stall_location,
+            });
+            setComplaintModalOpen(true);
+          }}
+        >
+          <View style={styles.receiptActionLeft}>
+            <View style={[styles.receiptActionIconWrap, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="shield-half-outline" size={20} color="#D97706" />
+            </View>
+            <View>
+              <Text style={styles.receiptActionTitle}>Report Stall Concern</Text>
+              <Text style={styles.receiptActionSub}>Report bad smell, sanitation, cleanliness, or obstruction</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
 
         {/* Rate your purchase — only for completed orders with unreviewed items */}
         {isCompleted && hasRemainingReviews && (
@@ -336,6 +390,130 @@ export default function OrderTrackingScreen() {
           onStatusUpdated={() => fetchTracking()}
         />
       ) : null}
+
+      {/* Official Transaction Receipt Modal (Item 9) */}
+      <Modal
+        visible={receiptModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setReceiptModalOpen(false)}
+      >
+        <View style={styles.receiptModalOverlay}>
+          <View style={styles.receiptModalContent}>
+            <View style={styles.receiptModalHeader}>
+              <View>
+                <Text style={styles.receiptOfficialBadge}>TAGUIG CITY PUBLIC MARKET</Text>
+                <Text style={styles.receiptModalTitle}>Transaction Receipt</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setReceiptModalOpen(false)}
+                style={styles.receiptModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.receiptScroll}>
+              <View style={styles.receiptPaper}>
+                {/* Header details */}
+                <View style={styles.receiptMetaSection}>
+                  <View style={styles.receiptMetaRow}>
+                    <Text style={styles.receiptMetaLabel}>Receipt No:</Text>
+                    <Text style={styles.receiptMetaValue}>TS-REC-{String(order.id).padStart(6, '0')}</Text>
+                  </View>
+                  <View style={styles.receiptMetaRow}>
+                    <Text style={styles.receiptMetaLabel}>Order Ref:</Text>
+                    <Text style={styles.receiptMetaValue}>{order.order_number}</Text>
+                  </View>
+                  <View style={styles.receiptMetaRow}>
+                    <Text style={styles.receiptMetaLabel}>Date & Time:</Text>
+                    <Text style={styles.receiptMetaValue}>{formatDateTime(order.created_at)}</Text>
+                  </View>
+                  <View style={styles.receiptMetaRow}>
+                    <Text style={styles.receiptMetaLabel}>Payment Method:</Text>
+                    <Text style={[styles.receiptMetaValue, { textTransform: 'uppercase' }]}>{order.payment_method}</Text>
+                  </View>
+                  <View style={styles.receiptMetaRow}>
+                    <Text style={styles.receiptMetaLabel}>Payment Status:</Text>
+                    <Text style={[styles.receiptMetaValue, { color: '#059669', fontWeight: '800' }]}>
+                      {(order.payment_status || 'pending').toUpperCase()}
+                    </Text>
+                  </View>
+                  {order.payment_reference_number ? (
+                    <View style={styles.receiptMetaRow}>
+                      <Text style={styles.receiptMetaLabel}>Reference No:</Text>
+                      <Text style={[styles.receiptMetaValue, { fontFamily: 'monospace' }]}>{order.payment_reference_number}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Items itemization */}
+                <View style={styles.receiptItemsSection}>
+                  <Text style={styles.receiptSectionHeader}>PURCHASED PRODUCTS</Text>
+                  {order.items.map((item) => (
+                    <View key={item.id} style={styles.receiptItemRow}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={styles.receiptItemName}>{item.product_name}</Text>
+                        <Text style={styles.receiptItemStall}>
+                          Stall: {item.vendor?.stall_name ?? 'Market Vendor'}
+                          {item.vendor?.stall_location ? ` · ${item.vendor.stall_location}` : ''}
+                        </Text>
+                        <Text style={styles.receiptItemSubText}>
+                          {item.quantity} {item.unit} @ ₱{Number(item.unit_price).toFixed(2)}
+                        </Text>
+                      </View>
+                      <Text style={styles.receiptItemPrice}>
+                        ₱{Number(item.subtotal).toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Summary */}
+                <View style={styles.receiptSummarySection}>
+                  <View style={styles.receiptSummaryRow}>
+                    <Text style={styles.receiptSummaryLabel}>Subtotal</Text>
+                    <Text style={styles.receiptSummaryValue}>₱{Number(order.total_amount).toFixed(2)}</Text>
+                  </View>
+                  <View style={styles.receiptSummaryRow}>
+                    <Text style={styles.receiptSummaryLabel}>Market Processing Fee</Text>
+                    <Text style={styles.receiptSummaryValue}>₱0.00</Text>
+                  </View>
+                  <View style={[styles.receiptSummaryRow, styles.receiptGrandTotalRow]}>
+                    <Text style={styles.receiptGrandTotalLabel}>TOTAL AMOUNT</Text>
+                    <Text style={styles.receiptGrandTotalValue}>₱{Number(order.total_amount).toFixed(2)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.receiptFooter}>
+                  <Text style={styles.receiptFooterText}>Taguig Suki · Digital Public Market</Text>
+                  <Text style={styles.receiptFooterSub}>General Luna St, Taguig City, Metro Manila</Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.receiptModalActions}>
+              <TouchableOpacity
+                style={styles.receiptDoneBtn}
+                onPress={() => setReceiptModalOpen(false)}
+              >
+                <Text style={styles.receiptDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Stall Complaint / Sanitation Report Modal (Item 5) */}
+      <StallComplaintModal
+        visible={complaintModalOpen}
+        onClose={() => {
+          setComplaintModalOpen(false);
+          setTargetComplaintStall(null);
+        }}
+        targetStall={targetComplaintStall}
+        authToken={currentToken}
+      />
     </SafeAreaView>
   );
 }
@@ -508,9 +686,11 @@ function PulsingDot() {
 function ItemRow({
   item,
   onChatVendor,
+  onReportStall,
 }: {
   item: OrderItem;
   onChatVendor?: (vendorId: number, stallName: string) => void;
+  onReportStall?: (stallInfo: TargetStall) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = getProductImageUrl(item.product?.image);
@@ -541,16 +721,34 @@ function ItemRow({
 
       <View style={styles.itemRightAction}>
         <Text style={styles.itemSubtotal}>₱{Number(item.subtotal).toFixed(2)}</Text>
-        {onChatVendor && (
-          <TouchableOpacity
-            style={styles.itemChatSmallBtn}
-            onPress={() => onChatVendor(item.vendor_id, stallName)}
-            accessibilityLabel={`Chat with ${stallName}`}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={12} color="#059669" />
-            <Text style={styles.itemChatSmallText}>Chat</Text>
-          </TouchableOpacity>
-        )}
+        <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
+          {onChatVendor && (
+            <TouchableOpacity
+              style={styles.itemChatSmallBtn}
+              onPress={() => onChatVendor(item.vendor_id, stallName)}
+              accessibilityLabel={`Chat with ${stallName}`}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color="#059669" />
+              <Text style={styles.itemChatSmallText}>Chat</Text>
+            </TouchableOpacity>
+          )}
+          {onReportStall && (
+            <TouchableOpacity
+              style={styles.itemReportSmallBtn}
+              onPress={() =>
+                onReportStall({
+                  vendorId: item.vendor_id,
+                  stallName,
+                  sectionName: item.vendor?.stall_location,
+                })
+              }
+              accessibilityLabel={`Report stall concern for ${stallName}`}
+            >
+              <Ionicons name="flag-outline" size={12} color="#D97706" />
+              <Text style={styles.itemReportSmallText}>Report</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -794,5 +992,246 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#059669',
+  },
+  /* Receipt Button */
+  receiptActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  receiptActionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  receiptActionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptActionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  receiptActionSub: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  complaintActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    padding: 14,
+    marginBottom: 12,
+  },
+  itemReportSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  itemReportSmallText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  /* Receipt Modal */
+  receiptModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  receiptModalContent: {
+    backgroundColor: '#F9FAFB',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: 24,
+  },
+  receiptModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  receiptOfficialBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#059669',
+    letterSpacing: 0.5,
+  },
+  receiptModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  receiptModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptScroll: {
+    padding: 16,
+  },
+  receiptPaper: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  receiptMetaSection: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingBottom: 12,
+    gap: 6,
+  },
+  receiptMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  receiptMetaLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  receiptMetaValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  receiptItemsSection: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  receiptSectionHeader: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  receiptItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 6,
+  },
+  receiptItemName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  receiptItemStall: {
+    fontSize: 11,
+    color: '#4B5563',
+    marginTop: 1,
+  },
+  receiptItemSubText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
+  receiptItemPrice: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  receiptSummarySection: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    gap: 6,
+  },
+  receiptSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  receiptSummaryLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  receiptSummaryValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  receiptGrandTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 8,
+    marginTop: 4,
+  },
+  receiptGrandTotalLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  receiptGrandTotalValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  receiptFooter: {
+    alignItems: 'center',
+    paddingTop: 14,
+    gap: 2,
+  },
+  receiptFooterText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  receiptFooterSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  receiptModalActions: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  receiptDoneBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  receiptDoneBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
