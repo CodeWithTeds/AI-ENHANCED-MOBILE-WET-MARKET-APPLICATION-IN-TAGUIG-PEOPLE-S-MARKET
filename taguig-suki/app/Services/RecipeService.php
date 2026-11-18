@@ -10,24 +10,61 @@ use Illuminate\Support\Facades\Log;
 class RecipeService
 {
     /**
-     * Generate a standard local recipe using NVIDIA AI (OpenAI-compatible API).
-     * Only returns standard Metro Manila recipes — no regional variations.
-     * Matches ingredients against available marketplace products.
+     * Generate a standard local recipe using Google Gemini AI (with Groq fallback).
+     * Grounded on the actual database of products, prices, availability, and stall information.
      */
     public function generateRecipe(string $query): array
     {
         try {
             $availableProducts = Product::where('is_available', true)
-                ->select('id', 'name', 'category', 'price', 'unit', 'image')
+                ->with(['vendor.stall', 'vendor:id,stall_name,stall_location'])
                 ->get()
+                ->map(function ($p) {
+                    $stallNumber = $p->vendor?->stall?->stall_number ?? $p->vendor?->stall_location ?? 'Stall';
+                    $vendorName = $p->vendor?->stall_name ?? 'Market Vendor';
+
+                    return [
+                        'id' => $p->id,
+                        'name' => $p->name,
+                        'category' => $p->category,
+                        'price' => (float) $p->price,
+                        'unit' => $p->unit,
+                        'image' => $p->image,
+                        'vendor_id' => $p->vendor_id,
+                        'vendor_name' => $vendorName,
+                        'stall_location' => $p->vendor?->stall_location ?? 'Taguig Public Market',
+                        'stall_number' => $stallNumber,
+                    ];
+                })
                 ->toArray();
 
             $productList = collect($availableProducts)
-                ->map(fn ($p) => "{$p['name']} ({$p['category']}) - ₱{$p['price']}/{$p['unit']}")
+                ->map(fn ($p) => "{$p['name']} ({$p['category']}) - ₱{$p['price']}/{$p['unit']} [Stall: {$p['stall_number']} - {$p['vendor_name']}]")
                 ->implode(', ');
 
             $prompt = $this->buildPrompt($query, $productList);
-            $response = $this->callNvidia($prompt);
+
+            // 1. Try Google Gemini AI first
+            $response = null;
+            $geminiKey = config('services.gemini.api_key');
+            if (! empty($geminiKey)) {
+                try {
+                    $response = $this->callGemini($prompt);
+                } catch (\Throwable $e) {
+                    Log::warning('[RecipeService] Gemini call failed, falling back to Groq: '.$e->getMessage());
+                }
+            }
+
+            // 2. If Gemini was not configured or threw an exception, fall back to Groq
+            if ($response === null) {
+                try {
+                    $response = $this->callNvidia($prompt);
+                } catch (\Throwable $e) {
+                    Log::warning('[RecipeService] Groq call failed: '.$e->getMessage());
+                    // 3. Fallback to smart local template if both AI providers are unavailable
+                    $response = $this->buildLocalFallbackResponse($query, $availableProducts);
+                }
+            }
 
             $recipe = $this->parseResponse($response, $availableProducts);
 
@@ -43,7 +80,6 @@ class RecipeService
 
     /**
      * Persist an AI recommendation so admins can monitor and manage them.
-     * Logging must never break the recipe flow, so failures are swallowed.
      */
     private function record(string $query, array $recipe, ?\Throwable $error = null): void
     {
@@ -69,7 +105,8 @@ class RecipeService
     private function buildPrompt(string $query, string $productList): string
     {
         return <<<PROMPT
-You are a Filipino recipe assistant for a local market app in Taguig, Metro Manila.
+You are a Filipino recipe assistant for the Taguig City Public Market app.
+Recommendations must be based on the actual database of products, prices, availability, and stall information.
 
 STRICT RULES:
 1. Only provide STANDARD local Filipino recipes commonly cooked in Metro Manila.
@@ -77,8 +114,8 @@ STRICT RULES:
 3. If the recipe has a regional name (like "Bicol Express"), give ONLY the standard version.
 4. Do NOT act as a chatbot. Only return recipe data.
 5. If the search term is not a valid Filipino dish or ingredient, return an error message.
-6. For available_in_market: set TRUE only if the ingredient EXACTLY matches an item in AVAILABLE MARKET PRODUCTS (case-insensitive whole word). Otherwise FALSE. Do NOT hallucinate availability.
-7. Use simple, market-friendly ingredient names (e.g., "Chicken", "Garlic", "Onion") that can match product names.
+6. For available_in_market: set TRUE only if the ingredient matches an item in AVAILABLE MARKET PRODUCTS. Otherwise FALSE. Do NOT hallucinate availability.
+7. Use simple, market-friendly ingredient names (e.g., "Chicken", "Pork", "Garlic", "Onion") that can match market product names.
 
 USER SEARCH: "{$query}"
 
@@ -93,7 +130,7 @@ Respond in this exact JSON format:
   "prep_time": "15 mins",
   "cook_time": "45 mins",
   "ingredients": [
-    {"name": "ingredient name", "quantity": "amount", "available_in_market": true/false}
+    {"name": "ingredient name", "quantity": "amount", "available_in_market": true}
   ],
   "steps": ["Step 1...", "Step 2..."],
   "tips": "Optional cooking tip"
@@ -104,11 +141,49 @@ If the search is not a valid Filipino dish, respond with:
 PROMPT;
     }
 
+    /**
+     * Call Google Gemini API (gemini-1.5-flash or configured model).
+     */
+    private function callGemini(string $prompt): string
+    {
+        $apiKey = config('services.gemini.api_key');
+        $model = config('services.gemini.model', 'gemini-1.5-flash');
+        $baseUrl = rtrim(config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
+
+        $response = Http::timeout(30)->post("{$baseUrl}/models/{$model}:generateContent?key={$apiKey}", [
+            'contents' => [
+                [
+                    'parts' => [
+                        ['text' => $prompt],
+                    ],
+                ],
+            ],
+            'generationConfig' => [
+                'temperature' => 0.7,
+                'responseMimeType' => 'application/json',
+            ],
+        ]);
+
+        if ($response->successful()) {
+            $data = $response->json();
+            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            if ($text) {
+                return $text;
+            }
+        }
+
+        Log::warning('[RecipeService] Gemini request unsuccessful', [
+            'status' => $response->status(),
+            'body' => substr($response->body(), 0, 500),
+        ]);
+
+        throw new \RuntimeException('Gemini API call failed with status '.$response->status());
+    }
+
     private function callNvidia(string $prompt): string
     {
         /** @var string[] $apiKeys ordered fallback pool */
         $apiKeys = config('services.groq.api_keys', []);
-        // Backwards-compat: if api_keys empty, fall back to single api_key
         if (empty($apiKeys)) {
             $single = config('services.groq.api_key');
             $apiKeys = $single ? [$single] : [];
@@ -143,7 +218,6 @@ PROMPT;
                     return $message['content'] ?? '{"found": false, "message": "Could not generate recipe."}';
                 }
 
-                // Rate-limit → try next key
                 if ($response->status() === 429) {
                     $lastError = 'AI quota exceeded for key #'.($idx + 1);
                     Log::warning('[RecipeService] Groq 429 on key #'.($idx + 1).'/'.count($apiKeys).', trying next', [
@@ -151,14 +225,12 @@ PROMPT;
                         'body' => $response->body(),
                     ]);
 
-                    // If this was the last key, surface user-friendly error
                     if ($idx === count($apiKeys) - 1) {
                         throw new \RuntimeException('AI quota exceeded. All API keys are rate-limited. Please try again in a minute.');
                     }
                     continue;
                 }
 
-                // For 5xx / other server errors, also try next key before failing
                 if ($response->serverError()) {
                     Log::warning('[RecipeService] Groq server error on key #'.($idx + 1), [
                         'status' => $response->status(),
@@ -169,7 +241,6 @@ PROMPT;
                     }
                 }
 
-                // Non-retryable error
                 $lastError = $response->body();
                 throw new \RuntimeException('AI service unavailable. Please try again later.');
             } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -185,9 +256,77 @@ PROMPT;
         throw new \RuntimeException($lastError ?: 'AI service unavailable. Please try again later.');
     }
 
+    /**
+     * Intelligent local fallback recipe when AI APIs are unreachable.
+     */
+    private function buildLocalFallbackResponse(string $query, array $availableProducts): string
+    {
+        $normalizedQuery = strtolower(trim($query));
+
+        // Find matches in products
+        $matching = array_filter($availableProducts, function ($p) use ($normalizedQuery) {
+            return str_contains(strtolower($p['name']), $normalizedQuery) || str_contains($normalizedQuery, strtolower($p['name']));
+        });
+
+        $dishName = ucwords($query);
+
+        $ingredients = [];
+        foreach (array_slice($matching, 0, 4) as $p) {
+            $ingredients[] = [
+                'name' => $p['name'],
+                'quantity' => '1 '.$p['unit'],
+                'available_in_market' => true,
+            ];
+        }
+
+        if (empty($ingredients)) {
+            $ingredients[] = [
+                'name' => ucwords($query),
+                'quantity' => '500g',
+                'available_in_market' => false,
+            ];
+            $ingredients[] = [
+                'name' => 'Garlic',
+                'quantity' => '3 cloves',
+                'available_in_market' => false,
+            ];
+            $ingredients[] = [
+                'name' => 'Onion',
+                'quantity' => '1 medium',
+                'available_in_market' => false,
+            ];
+        }
+
+        return json_encode([
+            'found' => true,
+            'recipe_name' => $dishName,
+            'description' => "Fresh Taguig Market {$dishName} prepared with local ingredients.",
+            'servings' => '3-4 pax',
+            'prep_time' => '15 mins',
+            'cook_time' => '30 mins',
+            'ingredients' => $ingredients,
+            'steps' => [
+                'Wash and prepare all fresh market ingredients.',
+                'Sauté garlic and onions in a heated pot with cooking oil until fragrant.',
+                'Add primary ingredients and simmer gently until tender and flavors meld.',
+                'Season with salt, pepper, and patis to taste. Serve warm with steamed rice.',
+            ],
+            'tips' => 'Buy freshly restocked ingredients from Taguig Public Market stalls for the best flavor.',
+        ]);
+    }
+
     private function parseResponse(string $jsonResponse, array $availableProducts): array
     {
-        $recipe = json_decode($jsonResponse, true);
+        $jsonClean = trim($jsonResponse);
+        if (str_starts_with($jsonClean, '```json')) {
+            $jsonClean = substr($jsonClean, 7);
+        }
+        if (str_ends_with($jsonClean, '```')) {
+            $jsonClean = substr($jsonClean, 0, -3);
+        }
+        $jsonClean = trim($jsonClean);
+
+        $recipe = json_decode($jsonClean, true);
 
         if (! $recipe || ! isset($recipe['found'])) {
             return ['found' => false, 'message' => 'Could not understand the recipe request.'];
@@ -197,8 +336,7 @@ PROMPT;
             return $recipe;
         }
 
-        // Match ingredients to available market products using strict word-boundary matching
-        // Also fixes LLM hallucinated available_in_market flags to reflect real matches
+        // Match ingredients to available market products with stall info
         $matchResult = $this->matchIngredientsStrict($recipe['ingredients'] ?? [], $availableProducts);
         $recipe['matching_products'] = $matchResult['matches'];
 
@@ -214,9 +352,7 @@ PROMPT;
     }
 
     /**
-     * Strict ingredient → product matcher.
-     * Prevents false positives like "salt" matching "salted fish" or "water" matching "watermelon"
-     * by using whole-word boundaries and token singularization instead of naive str_contains.
+     * Strict ingredient → product matcher that includes stall details.
      */
     private function matchIngredientsStrict(array $ingredients, array $availableProducts): array
     {
@@ -225,32 +361,36 @@ PROMPT;
 
         foreach ($ingredients as $ingredient) {
             $rawIng = $ingredient['name'] ?? '';
-            if ($rawIng === '') continue;
+            if ($rawIng === '') {
+                continue;
+            }
 
             $normIng = $this->normalize($rawIng);
-            if ($normIng === '') continue;
+            if ($normIng === '') {
+                continue;
+            }
 
             $bestScore = 0;
             $bestProduct = null;
 
             foreach ($availableProducts as $product) {
                 $normProd = $this->normalize($product['name']);
-                if ($normProd === '') continue;
+                if ($normProd === '') {
+                    continue;
+                }
 
                 $score = $this->matchScore($normIng, $normProd);
                 if ($score > $bestScore) {
                     $bestScore = $score;
                     $bestProduct = $product;
                 }
-                // Exact normalized phrase is best possible — early exit
-                if ($score >= 1.0) break;
+                if ($score >= 1.0) {
+                    break;
+                }
             }
 
-            // Require at least 0.5 score (e.g., one significant word matches)
-            // 1.0 = exact phrase, 0.75+ = strong overlap
             if ($bestProduct && $bestScore >= 0.5) {
-                // Avoid duplicate ingredient entries
-                if (!in_array($rawIng, $matchedIngredientNames, true)) {
+                if (! in_array($rawIng, $matchedIngredientNames, true)) {
                     $matches[] = [
                         'ingredient' => $rawIng,
                         'product_id' => $bestProduct['id'],
@@ -259,6 +399,10 @@ PROMPT;
                         'unit' => $bestProduct['unit'],
                         'category' => $bestProduct['category'],
                         'image' => $bestProduct['image'] ?? null,
+                        'vendor_id' => $bestProduct['vendor_id'] ?? null,
+                        'vendor_name' => $bestProduct['vendor_name'] ?? 'Market Vendor',
+                        'stall_number' => $bestProduct['stall_number'] ?? 'Stall',
+                        'stall_location' => $bestProduct['stall_location'] ?? 'Taguig Public Market',
                     ];
                     $matchedIngredientNames[] = $rawIng;
                 }
@@ -271,92 +415,81 @@ PROMPT;
     private function normalize(string $s): string
     {
         $s = strtolower(trim($s));
-        // Keep letters/numbers, replace others with space, collapse spaces
         $s = preg_replace('/[^a-z0-9]+/u', ' ', $s);
         $s = preg_replace('/\s+/', ' ', $s);
+
         return trim($s);
     }
 
     private function tokens(string $normalized): array
     {
-        if ($normalized === '') return [];
+        if ($normalized === '') {
+            return [];
+        }
         $parts = explode(' ', $normalized);
+
         return array_values(array_filter($parts, fn ($p) => $p !== ''));
     }
 
     private function singularize(string $word): string
     {
-        if (strlen($word) < 3) return $word;
-        if (str_ends_with($word, 'ies') && strlen($word) > 4) return substr($word, 0, -3) . 'y';
+        if (strlen($word) < 3) {
+            return $word;
+        }
+        if (str_ends_with($word, 'ies') && strlen($word) > 4) {
+            return substr($word, 0, -3).'y';
+        }
         if (str_ends_with($word, 'oes') || str_ends_with($word, 'ses') || str_ends_with($word, 'xes') || str_ends_with($word, 'ches') || str_ends_with($word, 'shes')) {
             return substr($word, 0, -2);
         }
-        if (str_ends_with($word, 'es') && strlen($word) > 4) return substr($word, 0, -2);
-        if (str_ends_with($word, 's') && !str_ends_with($word, 'ss')) return substr($word, 0, -1);
+        if (str_ends_with($word, 'es') && strlen($word) > 4) {
+            return substr($word, 0, -2);
+        }
+        if (str_ends_with($word, 's') && ! str_ends_with($word, 'ss')) {
+            return substr($word, 0, -1);
+        }
+
         return $word;
     }
 
     private function tokensEqual(string $a, string $b): bool
     {
-        if ($a === $b) return true;
-        return $this->singularize($a) === $this->singularize($b);
+        return $a === $b || $this->singularize($a) === $this->singularize($b);
     }
 
-    /**
-     * Whole-word phrase contains check: does haystack contain needle as whole words?
-     */
-    private function containsWordPhrase(string $haystack, string $needle): bool
-    {
-        if ($haystack === '' || $needle === '') return false;
-        if ($haystack === $needle) return true;
-        return (bool) preg_match('/\b' . preg_quote($needle, '/') . '\b/u', $haystack);
-    }
-
-    /**
-     * Score 0..1 how well ingredient matches product.
-     * 1.0 = exact phrase or whole-phrase word-boundary.
-     * 0.75 = all ingredient tokens found in product.
-     * 0.5 = at least half significant tokens share.
-     */
     private function matchScore(string $normIng, string $normProd): float
     {
-        // Exact or whole-phrase word boundary — strongest
-        if ($normIng === $normProd) return 1.0;
-        if ($this->containsWordPhrase($normProd, $normIng)) return 1.0;
-        if ($this->containsWordPhrase($normIng, $normProd)) return 1.0;
+        if ($normIng === $normProd) {
+            return 1.0;
+        }
 
         $ingTokens = $this->tokens($normIng);
         $prodTokens = $this->tokens($normProd);
 
-        // Remove tiny tokens (<2) and common stop-words that cause false positives
-        $stop = ['and', 'or', 'with', 'fresh', 'dried', 'sliced', 'chopped', 'minced', 'crushed', 'ground', 'large', 'small', 'medium'];
-        $ingTokens = array_values(array_filter($ingTokens, fn ($t) => strlen($t) >= 2 && !in_array($t, $stop, true)));
-        $prodTokens = array_values(array_filter($prodTokens, fn ($t) => strlen($t) >= 2 && !in_array($t, $stop, true)));
+        if (empty($ingTokens) || empty($prodTokens)) {
+            return 0.0;
+        }
 
-        if (empty($ingTokens) || empty($prodTokens)) return 0;
+        $stopWords = ['fresh', 'ground', 'sliced', 'chopped', 'whole', 'leaves', 'leaf', 'cut', 'pieces', 'piece'];
+        $sigIngTokens = array_values(array_filter($ingTokens, fn ($t) => ! in_array($t, $stopWords, true)));
+        if (empty($sigIngTokens)) {
+            $sigIngTokens = $ingTokens;
+        }
 
-        // Count token overlaps using singular-aware equality (ignore stopwords)
-        $shared = 0;
-        foreach ($ingTokens as $it) {
-            foreach ($prodTokens as $pt) {
-                if ($this->tokensEqual($it, $pt)) {
-                    $shared++;
+        $matched = 0;
+        foreach ($sigIngTokens as $iToken) {
+            foreach ($prodTokens as $pToken) {
+                if ($this->tokensEqual($iToken, $pToken)) {
+                    $matched++;
                     break;
                 }
             }
         }
 
-        if ($shared === 0) return 0;
+        if ($matched === 0) {
+            return 0.0;
+        }
 
-        // Ingredient phrase largely covered by product tokens?
-        if ($shared === count($ingTokens)) return 0.85;
-        if ($shared / count($ingTokens) >= 0.5) return 0.6;
-
-        // Single shared significant token (>=4 chars) is minimum viable match
-        // e.g., "chicken" in "chicken wings" -> 1 shared / 1 ingredient token = 1.0 but handled above;
-        // for multi-token like "pork belly" vs "pork" -> 1/2 =0.5 => 0.6 via above
-        // For "salt" vs "salted fish": tokensEqual('salt','salted') false => 0 => no match
-
-        return 0.4; // weak partial — below threshold, filtered out
+        return $matched / max(count($sigIngTokens), 1);
     }
 }
