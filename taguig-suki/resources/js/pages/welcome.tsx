@@ -17,7 +17,8 @@ import {
     Users,
 } from 'lucide-react';
 
-const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/c4a36f15-8c16-4ac7-8600-38679fd8bd72';
+const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/93af940d-cd0e-4cb4-845b-9805a370429b';
+const APK_DOWNLOAD_URL = 'https://expo.dev/artifacts/eas/KyaKWmQ46QL0UMXkaLKcaX65NmUGJM65n_SSi37TFCw.apk';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -57,7 +58,7 @@ export default function Welcome() {
 
                         <div className="flex items-center gap-3">
                             <a
-                                href={EAS_BUILD_URL}
+                                href={APK_DOWNLOAD_URL}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
@@ -118,7 +119,7 @@ export default function Welcome() {
 
                                 <div className="flex flex-wrap items-center gap-4">
                                     <a
-                                        href={EAS_BUILD_URL}
+                                        href={APK_DOWNLOAD_URL}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="group inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/15 transition-all hover:bg-black hover:shadow-xl"
@@ -350,7 +351,7 @@ export default function Welcome() {
                                 </div>
                                 <div className="flex flex-wrap gap-3">
                                     <a
-                                        href={EAS_BUILD_URL}
+                                        href={APK_DOWNLOAD_URL}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-black/10 transition hover:bg-black"
@@ -359,17 +360,17 @@ export default function Welcome() {
                                         Download TaguigSuki.apk (v1.0.0)
                                     </a>
                                     <a
-                                        href="https://expo.dev/accounts/teadlol12345/projects/taguig-suki"
+                                        href={EAS_BUILD_URL}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-6 py-3.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                                     >
-                                        All builds
+                                        Expo Build Details
                                         <ArrowRight className="h-4 w-4" />
                                     </a>
                                 </div>
                                 <p className="mt-4 text-xs text-gray-500">
-                                    File: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> • Build c4a36f15 • Package: com.taguigsuki.app • Requires Android 8.0+ •{' '}
+                                    File: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> • Build 93af940d • Package: com.taguigsuki.client • Requires Android 8.0+ •{' '}
                                     <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2">Expo build page</a>
                                 </p>
                             </div>
