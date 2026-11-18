@@ -35,7 +35,7 @@ import { useFavorites } from '@/context/FavoritesContext';
 import { getProductDetail, type MarketProduct, type VendorComparisonItem } from '@/services/marketplace';
 import { getProductReviews, type ReviewSummary } from '@/services/reviews';
 import { StarRatingDisplay } from '@/components/customer/StarRating';
-import { getCategoryConfig } from '@/constants/categories';
+import { getCategoryConfig, getCategoryImage } from '@/constants/categories';
 import { getProductImageUrl } from '@/utils/image';
 import { StallComplaintModal } from '@/components/customer/StallComplaintModal';
 
@@ -372,10 +372,11 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
               <GalleryDots count={galleryImages.length} activeIndex={galleryIndex} />
             </>
           ) : (
-            <View style={[styles.galleryPlaceholder, { backgroundColor: categoryBg }]}>
-              <Text style={styles.galleryPlaceholderEmoji}>{categoryEmoji}</Text>
-              <Text style={styles.galleryPlaceholderLabel}>No photo available</Text>
-            </View>
+            <Image
+              source={getCategoryImage(displayProduct.category)}
+              style={styles.galleryImage}
+              resizeMode="cover"
+            />
           )}
 
           {/* Gradient overlay at bottom for readability */}

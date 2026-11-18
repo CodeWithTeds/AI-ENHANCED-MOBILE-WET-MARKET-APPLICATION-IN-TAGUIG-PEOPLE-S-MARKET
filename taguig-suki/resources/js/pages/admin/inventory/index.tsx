@@ -34,6 +34,32 @@ type InventoryItem = {
 
 type FilterOption = { value: string; label: string };
 
+function getCategoryFallback(category?: string | null): string {
+    const raw = (category ?? '').toLowerCase().trim();
+    if (/poult|chick|manok|duck|turkey/i.test(raw)) return '/images/categories/poultry.jpg';
+    if (/fish|isda|bangus|tilapia|salmon/i.test(raw)) return '/images/categories/fish.jpg';
+    if (/seafood|shrimp|hipon|crab|squid/i.test(raw)) return '/images/categories/seafood.jpg';
+    if (/meat|beef|pork|karne|baboy|baka/i.test(raw)) return '/images/categories/meat.jpg';
+    if (/veg|gulay/i.test(raw)) return '/images/categories/vegetables.jpg';
+    if (/fruit|prutas/i.test(raw)) return '/images/categories/fruits.jpg';
+    if (/spice|sili|chili|pepper|garlic|onion/i.test(raw)) return '/images/categories/spices.jpg';
+    if (/condiment|sauce|toyo|patis|suka/i.test(raw)) return '/images/categories/condiments.jpg';
+    if (/dairy|milk|cheese|egg|itlog/i.test(raw)) return '/images/categories/dairy.jpg';
+    if (/grain|rice|bigas/i.test(raw)) return '/images/categories/grains.jpg';
+    if (/dry/i.test(raw)) return '/images/categories/dry-ingredients.jpg';
+    if (/herb/i.test(raw)) return '/images/categories/herbs.jpg';
+    return '/images/categories/meat.jpg';
+}
+
+function getProductPhoto(img: string | null | undefined, category?: string | null): string {
+    if (!img) return getCategoryFallback(category);
+    const trimmed = img.trim();
+    if (!trimmed) return getCategoryFallback(category);
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+    const clean = trimmed.replace(/^\/?(storage\/)?/, '');
+    return `/storage/${clean}`;
+}
+
 type Props = {
     inventories: {
         data: InventoryItem[];
@@ -190,13 +216,17 @@ export default function InventoryIndex({ inventories, stats, filters, stock_stat
                                             <td className="px-4 py-2.5 text-xs text-gray-400">{(inventories.current_page - 1) * inventories.per_page + idx + 1}</td>
                                             <td className="px-4 py-2.5">
                                                 <div className="flex items-center gap-2.5">
-                                                    {item.product.image ? (
-                                                        <img src={`/storage/${item.product.image}`} alt={item.product.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
-                                                    ) : (
-                                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                                                            <Package className="h-4 w-4 text-gray-400" />
-                                                        </div>
-                                                    )}
+                                                    <img
+                                                        src={getProductPhoto(item.product.image, item.product.category)}
+                                                        alt={item.product.name}
+                                                        className="h-9 w-9 shrink-0 rounded-lg object-cover"
+                                                        onError={(e) => {
+                                                            const fallback = getCategoryFallback(item.product.category);
+                                                            if (e.currentTarget.src !== fallback && !e.currentTarget.src.endsWith(fallback)) {
+                                                                e.currentTarget.src = fallback;
+                                                            }
+                                                        }}
+                                                    />
                                                     <div className="min-w-0">
                                                         <div className="text-xs font-semibold text-gray-900">{item.product.name}</div>
                                                         <div className="text-[10px] text-gray-400">{item.product.unit}</div>

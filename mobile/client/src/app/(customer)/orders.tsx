@@ -34,7 +34,7 @@ import { OrderChatModal } from '@/components/chat/OrderChatModal';
 import { ReviewSheet } from '@/components/customer/ReviewSheet';
 import { getEligibleReviews, type EligibleOrder } from '@/services/reviews';
 import { getProductImageUrl } from '@/utils/image';
-import { getCategoryEmoji } from '@/constants/categories';
+import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 
 export default function OrdersScreen() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
@@ -582,8 +582,12 @@ function OrderItemThumbnail({ image, category }: { image?: string | null; catego
   }
 
   return (
-    <View style={styles.itemEmojiWrap}>
-      <Text style={styles.itemEmoji}>{getCategoryEmoji(category)}</Text>
+    <View style={styles.itemImageWrap}>
+      <Image
+        source={getCategoryImage(category)}
+        style={styles.itemImage}
+        resizeMode="cover"
+      />
     </View>
   );
 }

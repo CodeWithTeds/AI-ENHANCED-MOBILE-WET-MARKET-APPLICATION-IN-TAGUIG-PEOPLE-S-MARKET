@@ -5,9 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +18,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import {
   type CreateInventoryData,
@@ -51,23 +54,31 @@ export default function InventoryScreen() {
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editItem, setEditItem] = useState<Inventory | null>(null);
   const [adjustModalItem, setAdjustModalItem] = useState<Inventory | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) {
+      setRefreshing(true);
+    }
+    setLoadError(null);
     try {
       const [inv, prods] = await Promise.all([fetchInventory(), fetchProducts()]);
       setInventoryItems(inv);
       setProducts(prods);
-    } catch {
-      // silently fail
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to load inventory';
+      setLoadError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   // Products that don't have inventory yet (for create modal)
   const productsWithoutInventory = useMemo(() => {
@@ -199,8 +210,21 @@ export default function InventoryScreen() {
             <Text style={styles.totalUnitsText}>{formatStockQty(stockSummary.totalUnits)} units</Text>
           </View>
           <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={() => loadData(true)}
+            disabled={refreshing}
+            accessibilityLabel="Refresh inventory"
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#1B6B45" />
+            ) : (
+              <Feather name="refresh-cw" size={16} color="#1B6B45" />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.addBtn}
             onPress={() => setCreateModalVisible(true)}
+            accessibilityLabel="Create inventory"
           >
             <Feather name="plus" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -266,49 +290,84 @@ export default function InventoryScreen() {
       )}
 
       {/* Inventory List */}
-      {loading ? (
-        <View style={styles.centered}>
-          <Text style={styles.loadingText}>Loading inventory...</Text>
-        </View>
-      ) : inventoryItems.length === 0 ? (
-        <View style={styles.centered}>
-          <Feather name="inbox" size={40} color="#D1D5DB" />
-          <Text style={styles.emptyTitle}>No inventory yet</Text>
-          <Text style={styles.emptySubtext}>
-            Create inventory for your products to manage stock
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyAddBtn}
-            onPress={() => setCreateModalVisible(true)}
-          >
-            <Feather name="plus" size={16} color="#FFFFFF" />
-            <Text style={styles.emptyAddText}>Create Inventory</Text>
-          </TouchableOpacity>
-        </View>
-      ) : filteredItems.length === 0 ? (
-        <View style={styles.centered}>
-          <Feather name="search" size={40} color="#D1D5DB" />
-          <Text style={styles.emptyTitle}>No matching items</Text>
-          <Text style={styles.emptySubtext}>Try a different search or filter</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredItems}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          renderItem={({ item }) => (
-            <InventoryItemRow
-              item={item}
-              onAdjust={() => setAdjustModalItem(item)}
-              onEdit={() => setEditItem(item)}
-              onDelete={() => handleDeleteInventory(item)}
-            />
-          )}
-        />
-      )}
+      <FlatList
+        data={loading ? [] : filteredItems}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={[
+          styles.listContent,
+          (loading || filteredItems.length === 0) && styles.emptyListContent,
+        ]}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+        alwaysBounceVertical={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#1B6B45']}
+            tintColor="#1B6B45"
+          />
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color="#1B6B45" />
+              <Text style={styles.loadingText}>Loading inventory...</Text>
+            </View>
+          ) : loadError ? (
+            <View style={styles.centered}>
+              <Feather name="alert-circle" size={40} color="#DC2626" />
+              <Text style={styles.emptyTitle}>Failed to load inventory</Text>
+              <Text style={styles.emptySubtext}>{loadError}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => loadData(true)}
+              >
+                <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : inventoryItems.length === 0 ? (
+            <View style={styles.centered}>
+              <Feather name="inbox" size={40} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No inventory yet</Text>
+              <Text style={styles.emptySubtext}>
+                Create inventory for your products to manage stock
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyAddBtn}
+                onPress={() => setCreateModalVisible(true)}
+              >
+                <Feather name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyAddText}>Create Inventory</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.centered}>
+              <Feather name="search" size={40} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No matching items</Text>
+              <Text style={styles.emptySubtext}>Try a different search or filter</Text>
+              <TouchableOpacity
+                style={styles.resetFilterBtn}
+                onPress={() => {
+                  setSearchQuery('');
+                  setActiveView('all');
+                }}
+              >
+                <Text style={styles.resetFilterText}>Reset Filters</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <InventoryItemRow
+            item={item}
+            onAdjust={() => setAdjustModalItem(item)}
+            onEdit={() => setEditItem(item)}
+            onDelete={() => handleDeleteInventory(item)}
+          />
+        )}
+      />
 
       {/* Create Inventory Modal */}
       <CreateInventoryModal
@@ -1050,6 +1109,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
 
   // Summary
   summaryRow: {
@@ -1104,6 +1173,7 @@ const styles = StyleSheet.create({
 
   // List
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+  emptyListContent: { flexGrow: 1, justifyContent: 'center' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60, gap: 8 },
   loadingText: { fontSize: 14, color: '#9CA3AF' },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#374151', marginTop: 8 },
@@ -1119,6 +1189,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   emptyAddText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  resetFilterBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    marginTop: 10,
+  },
+  resetFilterText: { fontSize: 13, fontWeight: '600', color: '#1B6B45' },
 
   // Inventory Item
   inventoryItem: {

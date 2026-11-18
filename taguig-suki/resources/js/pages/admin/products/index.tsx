@@ -34,6 +34,23 @@ type Product = {
 
 type FilterOption = { value: string; label: string };
 
+function getCategoryFallback(category?: string | null): string {
+    const raw = (category ?? '').toLowerCase().trim();
+    if (/poult|chick|manok|duck|turkey/i.test(raw)) return '/images/categories/poultry.jpg';
+    if (/fish|isda|bangus|tilapia|salmon/i.test(raw)) return '/images/categories/fish.jpg';
+    if (/seafood|shrimp|hipon|crab|squid/i.test(raw)) return '/images/categories/seafood.jpg';
+    if (/meat|beef|pork|karne|baboy|baka/i.test(raw)) return '/images/categories/meat.jpg';
+    if (/veg|gulay/i.test(raw)) return '/images/categories/vegetables.jpg';
+    if (/fruit|prutas/i.test(raw)) return '/images/categories/fruits.jpg';
+    if (/spice|sili|chili|pepper|garlic|onion/i.test(raw)) return '/images/categories/spices.jpg';
+    if (/condiment|sauce|toyo|patis|suka/i.test(raw)) return '/images/categories/condiments.jpg';
+    if (/dairy|milk|cheese|egg|itlog/i.test(raw)) return '/images/categories/dairy.jpg';
+    if (/grain|rice|bigas/i.test(raw)) return '/images/categories/grains.jpg';
+    if (/dry/i.test(raw)) return '/images/categories/dry-ingredients.jpg';
+    if (/herb/i.test(raw)) return '/images/categories/herbs.jpg';
+    return '/images/categories/meat.jpg';
+}
+
 function getProductImageUrl(img: string | null | undefined): string | null {
     if (!img) return null;
     const trimmed = img.trim();
@@ -41,6 +58,11 @@ function getProductImageUrl(img: string | null | undefined): string | null {
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
     const clean = trimmed.replace(/^\/?(storage\/)?/, '');
     return `/storage/${clean}`;
+}
+
+function getProductPhoto(img: string | null | undefined, category?: string | null): string {
+    const url = getProductImageUrl(img);
+    return url || getCategoryFallback(category);
 }
 
 type Props = {
@@ -199,20 +221,17 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                         <tr key={product.id} className="group transition hover:bg-[#488562]/[0.02]">
                                             <td className="px-4 py-3.5">
                                                 <div className="flex items-center gap-3">
-                                                    {getProductImageUrl(product.image) ? (
-                                                        <img
-                                                            src={getProductImageUrl(product.image)!}
-                                                            alt={product.name}
-                                                            className="h-10 w-10 shrink-0 rounded-lg object-cover border border-gray-100"
-                                                            onError={(e) => {
-                                                                e.currentTarget.style.display = 'none';
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                                                            <Package className="h-5 w-5 text-gray-400" />
-                                                        </div>
-                                                    )}
+                                                    <img
+                                                        src={getProductPhoto(product.image, product.category)}
+                                                        alt={product.name}
+                                                        className="h-10 w-10 shrink-0 rounded-lg object-cover border border-gray-100"
+                                                        onError={(e) => {
+                                                            const fallback = getCategoryFallback(product.category);
+                                                            if (e.currentTarget.src !== fallback && !e.currentTarget.src.endsWith(fallback)) {
+                                                                e.currentTarget.src = fallback;
+                                                            }
+                                                        }}
+                                                    />
                                                     <div className="min-w-0 max-w-[200px]">
                                                         <div className="truncate text-sm font-semibold text-gray-900">{product.name}</div>
                                                         <div className="truncate text-xs text-gray-400">
@@ -331,20 +350,17 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                     <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                             <div className="flex items-center gap-3">
-                                {getProductImageUrl(viewProduct.image) ? (
-                                    <img
-                                        src={getProductImageUrl(viewProduct.image)!}
-                                        alt={viewProduct.name}
-                                        className="h-10 w-10 rounded-lg object-cover border"
-                                        onError={(e) => {
-                                            e.currentTarget.style.display = 'none';
-                                        }}
-                                    />
-                                ) : (
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
-                                        <Package className="h-5 w-5 text-gray-400" />
-                                    </div>
-                                )}
+                                <img
+                                    src={getProductPhoto(viewProduct.image, viewProduct.category)}
+                                    alt={viewProduct.name}
+                                    className="h-10 w-10 rounded-lg object-cover border"
+                                    onError={(e) => {
+                                        const fallback = getCategoryFallback(viewProduct.category);
+                                        if (e.currentTarget.src !== fallback && !e.currentTarget.src.endsWith(fallback)) {
+                                            e.currentTarget.src = fallback;
+                                        }
+                                    }}
+                                />
                                 <div>
                                     <h3 className="text-sm font-bold text-gray-900">{viewProduct.name}</h3>
                                     <p className="text-xs text-gray-500">
@@ -438,7 +454,7 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
         _method: 'PUT' as const,
     });
 
-    const [preview, setPreview] = useState<string | null>(getProductImageUrl(product.image));
+    const [preview, setPreview] = useState<string | null>(getProductPhoto(product.image, product.category));
 
     function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0] ?? null;
@@ -446,7 +462,7 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
         if (file) {
             setPreview(URL.createObjectURL(file));
         } else {
-            setPreview(getProductImageUrl(product.image));
+            setPreview(getProductPhoto(product.image, product.category));
         }
     }
 
@@ -470,13 +486,17 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4 px-6 py-4">
                     <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-3">
-                        {preview ? (
-                            <img src={preview} alt={product.name} className="h-12 w-12 rounded-lg object-cover border" />
-                        ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-200">
-                                <Package className="h-6 w-6 text-gray-400" />
-                            </div>
-                        )}
+                        <img
+                            src={preview || getCategoryFallback(product.category)}
+                            alt={product.name}
+                            className="h-12 w-12 rounded-lg object-cover border"
+                            onError={(e) => {
+                                const fallback = getCategoryFallback(product.category);
+                                if (e.currentTarget.src !== fallback && !e.currentTarget.src.endsWith(fallback)) {
+                                    e.currentTarget.src = fallback;
+                                }
+                            }}
+                        />
                         <div className="text-xs">
                             <div className="font-medium text-gray-900">ID #{product.id}</div>
                             <div className="text-gray-500">{product.vendor?.stall_name ?? 'No vendor'}</div>

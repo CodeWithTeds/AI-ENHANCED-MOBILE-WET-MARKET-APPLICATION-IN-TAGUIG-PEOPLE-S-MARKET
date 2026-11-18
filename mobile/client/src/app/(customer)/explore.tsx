@@ -6,6 +6,7 @@
 import { useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,7 +18,8 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFavorites, type FavoriteRecipe, type FavoriteProduct } from '@/context/FavoritesContext';
 import { useCart } from '@/context/CartContext';
-import { getCategoryEmoji } from '@/constants/categories';
+import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
+import { getProductImageUrl } from '@/utils/image';
 
 type Tab = 'recipes' | 'products';
 
@@ -252,7 +254,19 @@ function ProductCard({ product }: { product: FavoriteProduct }) {
   return (
     <View style={styles.productCard}>
       <View style={styles.productEmoji}>
-        <Text style={styles.productEmojiText}>{getCategoryEmoji(product.category)}</Text>
+        {product.image ? (
+          <Image
+            source={{ uri: getProductImageUrl(product.image)! }}
+            style={{ width: 46, height: 46, borderRadius: 14 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Image
+            source={getCategoryImage(product.category)}
+            style={{ width: 46, height: 46, borderRadius: 14 }}
+            resizeMode="cover"
+          />
+        )}
       </View>
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{product.name}</Text>

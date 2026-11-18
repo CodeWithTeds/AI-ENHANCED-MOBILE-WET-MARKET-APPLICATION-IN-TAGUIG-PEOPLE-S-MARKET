@@ -31,7 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCart, type CartItem } from '@/context/CartContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCustomerToken } from '@/services/customer-auth';
-import { getCategoryEmoji } from '@/constants/categories';
+import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 import {
   placeOrder,
   getVendorsPaymentDetails,
@@ -800,9 +800,11 @@ function CartItemCard({
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <View style={styles.itemIcon}>
-            <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
-          </View>
+          <Image
+            source={getCategoryImage(item.category)}
+            style={styles.itemImage}
+            resizeMode="cover"
+          />
         )}
       </View>
       <View style={styles.itemInfo}>
@@ -850,8 +852,12 @@ function OrderItemThumb({ image, category }: { image?: string | null; category: 
   }
 
   return (
-    <View style={confirmStyles.itemEmojiWrap}>
-      <Text style={confirmStyles.itemEmoji}>{getCategoryEmoji(category)}</Text>
+    <View style={confirmStyles.itemImageWrap}>
+      <Image
+        source={getCategoryImage(category)}
+        style={confirmStyles.itemImage}
+        resizeMode="cover"
+      />
     </View>
   );
 }

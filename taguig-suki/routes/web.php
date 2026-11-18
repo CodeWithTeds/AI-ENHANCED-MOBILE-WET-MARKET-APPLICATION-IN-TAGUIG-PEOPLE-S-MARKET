@@ -110,11 +110,66 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
 
 Route::get('storage/{path}', function (string $path) {
     $fullPath = storage_path('app/public/'.$path);
-    if (! file_exists($fullPath)) {
-        abort(404);
+    if (file_exists($fullPath)) {
+        return response()->file($fullPath);
     }
 
-    return response()->file($fullPath);
+    // Fallback: If uploaded product image was lost on ephemeral server container,
+    // serve matching photographic image based on product name or category
+    if (str_starts_with($path, 'products/')) {
+        $product = \App\Models\Product::where('image', $path)
+            ->orWhere('image', 'like', "%{$path}%")
+            ->first();
+
+        $name = strtolower($product?->name ?? '');
+        $cat = strtolower($product?->category ?? '');
+
+        // 1. Pork / Meat
+        if (str_contains($name, 'pork') || str_contains($name, 'liempo') || str_contains($name, 'baboy')) {
+            $porkImg = storage_path('app/public/products/14/pork_liempo.jpg');
+            if (file_exists($porkImg)) {
+                return response()->file($porkImg);
+            }
+            if (file_exists(public_path('images/categories/meat.jpg'))) {
+                return response()->file(public_path('images/categories/meat.jpg'));
+            }
+        }
+
+        // 2. Fish / Seafood
+        if (str_contains($name, 'tilapia') || str_contains($name, 'bangus') || str_contains($name, 'fish') || $cat === 'fish' || $cat === 'seafood') {
+            if (file_exists(public_path('images/categories/fish.jpg'))) {
+                return response()->file(public_path('images/categories/fish.jpg'));
+            }
+        }
+
+        // 3. Poultry / Chicken / Egg
+        if (str_contains($name, 'chicken') || str_contains($name, 'itlog') || str_contains($name, 'poultry') || $cat === 'poultry') {
+            if (file_exists(public_path('images/categories/poultry.jpg'))) {
+                return response()->file(public_path('images/categories/poultry.jpg'));
+            }
+        }
+
+        // 4. Vegetables
+        if (str_contains($name, 'sibuyas') || str_contains($name, 'kamatis') || str_contains($name, 'kangkong') || str_contains($name, 'gulay') || $cat === 'vegetables') {
+            if (file_exists(public_path('images/categories/vegetables.jpg'))) {
+                return response()->file(public_path('images/categories/vegetables.jpg'));
+            }
+        }
+
+        // 5. General category image
+        $cleanCat = str_replace(' ', '-', $cat);
+        $catFile = public_path("images/categories/{$cleanCat}.jpg");
+        if ($cat && file_exists($catFile)) {
+            return response()->file($catFile);
+        }
+
+        // 6. Generic meat/product fallback
+        if (file_exists(public_path('images/categories/meat.jpg'))) {
+            return response()->file(public_path('images/categories/meat.jpg'));
+        }
+    }
+
+    abort(404);
 })->where('path', '.*')->name('storage.fallback');
 
 require __DIR__.'/settings.php';

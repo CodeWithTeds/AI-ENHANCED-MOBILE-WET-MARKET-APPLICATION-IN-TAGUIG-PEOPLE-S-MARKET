@@ -33,7 +33,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
-import { getCategoryEmoji } from '@/constants/categories';
+import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
   getOrderTracking,
@@ -708,8 +708,12 @@ function ItemRow({
           />
         </View>
       ) : (
-        <View style={styles.itemEmojiWrap}>
-          <Text style={styles.itemEmoji}>{getCategoryEmoji(item.category)}</Text>
+        <View style={styles.itemImageWrap}>
+          <Image
+            source={getCategoryImage(item.category)}
+            style={styles.itemImage}
+            resizeMode="cover"
+          />
         </View>
       )}
       <View style={styles.itemInfo}>

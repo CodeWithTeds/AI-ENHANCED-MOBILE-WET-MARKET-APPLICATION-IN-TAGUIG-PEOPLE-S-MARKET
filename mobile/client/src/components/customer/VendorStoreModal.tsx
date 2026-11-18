@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
+import { getCategoryImage } from '@/constants/categories';
 import { getProductImageUrl } from '@/utils/image';
 import { getVendorStore, type MarketProduct, type VendorStoreData } from '@/services/marketplace';
 import { getVendorReviews, resolveReviewImageUrl, type Review, type ReviewSummary } from '@/services/reviews';
@@ -434,9 +435,11 @@ function StoreProductRow({
           onError={() => setImgError(true)}
         />
       ) : (
-        <View style={styles.productImgPlaceholder}>
-          <Ionicons name="image-outline" size={22} color={Colors.textMuted} />
-        </View>
+        <Image
+          source={getCategoryImage(product.category)}
+          style={styles.productImg}
+          resizeMode="cover"
+        />
       )}
 
       <View style={styles.productInfo}>

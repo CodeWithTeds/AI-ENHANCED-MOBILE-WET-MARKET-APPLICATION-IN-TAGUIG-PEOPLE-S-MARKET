@@ -5,11 +5,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
   Image,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +20,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -82,27 +85,33 @@ export default function ProductsScreen() {
   const [filterVisible, setFilterVisible] = useState(false);
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [activeFilterCount, setActiveFilterCount] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) {
+      setRefreshing(true);
+    }
+    setLoadError(null);
     try {
-      setLoading(true);
       const data = await fetchProducts();
       setProducts(data);
-    } catch {
-      // silently fail
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to load products';
+      setLoadError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+  useFocusEffect(
+    useCallback(() => {
+      loadProducts();
+    }, [loadProducts])
+  );
 
   function handleRefresh() {
-    setRefreshing(true);
-    loadProducts();
+    loadProducts(true);
   }
 
   // Count active filters
@@ -260,9 +269,23 @@ export default function ProductsScreen() {
             {filteredProducts.length} of {products.length} items
           </Text>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-          <Feather name="plus" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={() => loadProducts(true)}
+            disabled={refreshing}
+            accessibilityLabel="Refresh products"
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#1B6B45" />
+            ) : (
+              <Feather name="refresh-cw" size={17} color="#1B6B45" />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={handleAdd} accessibilityLabel="Add product">
+            <Feather name="plus" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search + Filter Bar */}
@@ -359,58 +382,81 @@ export default function ProductsScreen() {
       )}
 
       {/* Products Grid */}
-      {loading ? (
-        <View style={styles.centered}>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      ) : products.length === 0 ? (
-        <View style={styles.centered}>
-          <View style={styles.emptyIcon}>
-            <Feather name="shopping-bag" size={40} color="#D1D5DB" />
-          </View>
-          <Text style={styles.emptyTitle}>No products yet</Text>
-          <Text style={styles.emptySubtext}>
-            Add your first product to start selling
-          </Text>
-          <TouchableOpacity style={styles.emptyAddBtn} onPress={handleAdd}>
-            <Feather name="plus" size={16} color="#FFFFFF" />
-            <Text style={styles.emptyAddText}>Add Product</Text>
-          </TouchableOpacity>
-        </View>
-      ) : filteredProducts.length === 0 ? (
-        <View style={styles.centered}>
-          <View style={styles.emptyIcon}>
-            <Feather name="filter" size={40} color="#D1D5DB" />
-          </View>
-          <Text style={styles.emptyTitle}>No matching products</Text>
-          <Text style={styles.emptySubtext}>
-            Try adjusting your filters or search query
-          </Text>
-          <TouchableOpacity style={styles.emptyAddBtn} onPress={handleClearFilters}>
-            <Feather name="x" size={16} color="#FFFFFF" />
-            <Text style={styles.emptyAddText}>Clear Filters</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredProducts}
-          numColumns={2}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.gridContent}
-          columnWrapperStyle={styles.gridRow}
-          showsVerticalScrollIndicator={false}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          renderItem={({ item }) => (
-            <ProductCard
-              product={item}
-              imageUrl={getImageUrl(item.image)}
-              onEdit={() => handleEdit(item)}
-              onDelete={() => handleDelete(item)}
-            />
-          )}
-        />
-      )}
+      <FlatList
+        data={loading ? [] : filteredProducts}
+        numColumns={2}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={[
+          styles.gridContent,
+          (loading || filteredProducts.length === 0) && styles.emptyGridContent,
+        ]}
+        columnWrapperStyle={filteredProducts.length > 0 ? styles.gridRow : undefined}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+        alwaysBounceVertical={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#1B6B45']}
+            tintColor="#1B6B45"
+          />
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color="#1B6B45" />
+              <Text style={styles.loadingText}>Loading products...</Text>
+            </View>
+          ) : loadError ? (
+            <View style={styles.centered}>
+              <Feather name="alert-circle" size={40} color="#DC2626" />
+              <Text style={styles.emptyTitle}>Failed to load products</Text>
+              <Text style={styles.emptySubtext}>{loadError}</Text>
+              <TouchableOpacity style={styles.emptyAddBtn} onPress={() => loadProducts(true)}>
+                <Feather name="refresh-cw" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyAddText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : products.length === 0 ? (
+            <View style={styles.centered}>
+              <View style={styles.emptyIcon}>
+                <Feather name="shopping-bag" size={40} color="#D1D5DB" />
+              </View>
+              <Text style={styles.emptyTitle}>No products yet</Text>
+              <Text style={styles.emptySubtext}>
+                Add your first product to start selling
+              </Text>
+              <TouchableOpacity style={styles.emptyAddBtn} onPress={handleAdd}>
+                <Feather name="plus" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyAddText}>Add Product</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.centered}>
+              <View style={styles.emptyIcon}>
+                <Feather name="filter" size={40} color="#D1D5DB" />
+              </View>
+              <Text style={styles.emptyTitle}>No matching products</Text>
+              <Text style={styles.emptySubtext}>
+                Try adjusting your filters or search query
+              </Text>
+              <TouchableOpacity style={styles.emptyAddBtn} onPress={handleClearFilters}>
+                <Feather name="x" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyAddText}>Clear Filters</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <ProductCard
+            product={item}
+            imageUrl={getImageUrl(item.image)}
+            onEdit={() => handleEdit(item)}
+            onDelete={() => handleDelete(item)}
+          />
+        )}
+      />
 
       {/* Filter Modal */}
       <FilterModal
@@ -983,6 +1029,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
 
   // Search & Filter Bar
   searchFilterBar: {
@@ -1080,6 +1136,7 @@ const styles = StyleSheet.create({
 
   // Grid
   gridContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
+  emptyGridContent: { flexGrow: 1, justifyContent: 'center' },
   gridRow: { gap: 12, marginBottom: 12 },
 
   // Empty state

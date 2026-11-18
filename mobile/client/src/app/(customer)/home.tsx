@@ -42,7 +42,7 @@ import { CategoryChip } from '@/components/customer/CategoryChip';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { PRODUCT_CATEGORIES } from '@/types/vendor';
 import { getProductImageUrl } from '@/utils/image';
-import { getCategoryEmoji } from '@/constants/categories';
+import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min((SCREEN_WIDTH - 48 - 12) / 2, 240);
@@ -439,9 +439,11 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
             onError={() => setImageError(true)}
           />
         ) : (
-          <View style={styles.productImagePlaceholder}>
-            <Text style={{ fontSize: 32 }}>{getCategoryEmoji(product.category)}</Text>
-          </View>
+          <Image
+            source={getCategoryImage(product.category)}
+            style={styles.productImage}
+            resizeMode="cover"
+          />
         )}
         {/* Badge */}
         {product.is_ai_recommended ? (
