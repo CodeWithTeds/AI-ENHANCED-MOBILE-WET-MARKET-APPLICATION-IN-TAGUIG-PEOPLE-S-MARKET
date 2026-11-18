@@ -7,6 +7,7 @@ use App\Enums\StallStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Stall extends Model
 {
@@ -44,5 +45,15 @@ class Stall extends Model
     public function sectionRelation(): BelongsTo
     {
         return $this->belongsTo(Section::class, 'section_id');
+    }
+
+    public function complaints(): HasMany
+    {
+        return $this->hasMany(StallComplaint::class);
+    }
+
+    public function rentalPayments(): HasMany
+    {
+        return $this->hasMany(StallRentalPayment::class);
     }
 }

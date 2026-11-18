@@ -18,6 +18,29 @@ class StallManagementService
         $this->applyFilters($query, $filters);
         $this->applySort($query, $filters['sort'] ?? 'section_id', $filters['direction'] ?? 'asc');
 
+        $activeVendors = \App\Models\Vendor::with('user:id,name,email')
+            ->where('status', \App\Enums\VendorStatus::Approved->value)
+            ->get()
+            ->map(fn ($v) => [
+                'id' => $v->user_id,
+                'name' => ($v->user?->name ?: $v->stall_name).' ('.$v->stall_name.')',
+            ]);
+
+        $standardStallNumbers = collect(range(1, 30))->map(fn ($n) => "Stall {$n}")->all();
+
+        $occupiedSlots = Stall::query()
+            ->select('id', 'section_id', 'stall_number', 'store_name', 'status')
+            ->get()
+            ->groupBy('section_id')
+            ->map(fn ($items) => $items->map(fn ($s) => [
+                'id' => $s->id,
+                'stall_number' => $s->stall_number,
+                'store_name' => $s->store_name,
+                'status' => $s->status instanceof \BackedEnum ? $s->status->value : (string) $s->status,
+            ]));
+
+        $sectionCapacities = Section::all()->mapWithKeys(fn ($s) => [(string) $s->id => self::getSectionMaxCapacity($s)]);
+
         return [
             'stalls' => $query->paginate(15)->withQueryString(),
             'stats' => $this->getStats(),
@@ -25,13 +48,54 @@ class StallManagementService
             'sections' => $this->getSectionOptions(),
             'statuses' => collect(StallStatus::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
             'sizes' => collect(StallSize::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
+            'vendors' => $activeVendors,
+            'available_stall_numbers' => $standardStallNumbers,
+            'occupied_slots' => $occupiedSlots,
+            'section_capacities' => $sectionCapacities,
+            'market_capacity_per_section' => 30,
+            'market_total_capacity' => 365,
         ];
+    }
+
+    public static function getSectionMaxCapacity(?Section $section): int
+    {
+        if (! $section) {
+            return 30;
+        }
+
+        $slug = strtolower($section->slug ?? '');
+        $name = strtolower($section->name ?? '');
+
+        // Official Taguig People's Market (TPM) Stall Distribution (Total: 365 stalls)
+        // Eatery (E): 15
+        if ($slug === 'e' || $slug === 'eatery' || $name === 'eatery') {
+            return 15;
+        }
+        // Miscellaneous (MISC): 15
+        if ($slug === 'misc' || $slug === 'miscellaneous' || $name === 'miscellaneous') {
+            return 15;
+        }
+        // Dry Goods (DG): 254
+        if ($slug === 'dg' || $slug === 'dry-goods') {
+            return 254;
+        }
+
+        // Standard sub-section limit (Wet section WM, WF, WC, MP partitions of the 81 total)
+        return 30;
     }
 
     public function create(array $data, ?UploadedFile $image = null): Stall
     {
         $section = Section::find($data['section_id']);
         $data['section'] = $section->slug;
+
+        $maxCapacity = self::getSectionMaxCapacity($section);
+        $count = Stall::where('section_id', $data['section_id'])->count();
+        if ($count >= $maxCapacity) {
+            throw ValidationException::withMessages([
+                'section_id' => "Market capacity limit reached: Maximum {$maxCapacity} stalls allowed in the {$section->name} section.",
+            ]);
+        }
 
         $this->validateUniqueStall($data['section'], $data['stall_number'], $section->name);
 
@@ -46,6 +110,16 @@ class StallManagementService
     {
         $section = Section::find($data['section_id']);
         $data['section'] = $section->slug;
+
+        $maxCapacity = self::getSectionMaxCapacity($section);
+        if ((int) $stall->section_id !== (int) $data['section_id']) {
+            $count = Stall::where('section_id', $data['section_id'])->count();
+            if ($count >= $maxCapacity) {
+                throw ValidationException::withMessages([
+                    'section_id' => "Market capacity limit reached: Maximum {$maxCapacity} stalls allowed in the {$section->name} section.",
+                ]);
+            }
+        }
 
         $this->validateUniqueStall($data['section'], $data['stall_number'], $section->name, $stall->id);
 

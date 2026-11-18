@@ -14,6 +14,17 @@ class StoreStallRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('vendor_id') && ($this->vendor_id === '' || $this->vendor_id === '0')) {
+            $this->merge(['vendor_id' => null]);
+        }
+
+        if ($this->has('is_active')) {
+            $this->merge(['is_active' => filter_var($this->is_active, FILTER_VALIDATE_BOOLEAN)]);
+        }
+    }
+
     public function rules(): array
     {
         return [
