@@ -63,7 +63,7 @@ export default function Welcome() {
                                 className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
                             >
                                 <Download className="h-3.5 w-3.5" />
-                                Download App
+                                Download TaguigSuki App
                             </a>
                             {auth.user ? (
                                 <Link
@@ -124,7 +124,7 @@ export default function Welcome() {
                                         className="group inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/15 transition-all hover:bg-black hover:shadow-xl"
                                     >
                                         <Download className="h-4 w-4" />
-                                        Download App (APK)
+                                        Download TaguigSuki APK (v1.0.0)
                                     </a>
                                     <Link
                                         href={auth.user ? dashboard() : login()}
@@ -141,9 +141,9 @@ export default function Welcome() {
                                     </a>
                                 </div>
                                 <p className="mt-3 text-xs text-gray-500">
-                                    Android APK via EAS • Free install •{' '}
+                                    Android Package: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> (~42 MB) • Unified Customer &amp; Vendor App •{' '}
                                     <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2 hover:text-[#3a6e50]">
-                                        View build details
+                                        Expo EAS Direct Install
                                     </a>
                                 </p>
 
@@ -329,23 +329,23 @@ export default function Welcome() {
                                     className="mb-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl"
                                     style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
                                 >
-                                    Get the TaguigSuki app
+                                    Download the TaguigSuki Mobile App (APK)
                                 </h2>
                                 <p className="mb-6 text-base leading-relaxed text-gray-600">
-                                    Install the Android app directly from Expo EAS. Browse recipes, order from vendors, and track your palengke orders on your phone.
+                                    Official Android APK for Taguig People's Market. Browse fresh produce, compare vendors by rating and price, place pickup orders, or manage your vendor stall on your phone.
                                 </p>
                                 <div className="mb-8 space-y-3 text-sm text-gray-600">
                                     <div className="flex items-start gap-3">
                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">1</span>
-                                        <span>Tap <b>Download APK</b> → open the Expo build page</span>
+                                        <span>Tap <b>Download TaguigSuki.apk</b> → open the secure Expo build page</span>
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">2</span>
-                                        <span>Hit <b>Install</b> and allow “Install unknown apps” if prompted (Android only)</span>
+                                        <span>Hit <b>Install</b> and allow “Install unknown apps” if prompted by Android</span>
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#488562] text-xs font-bold text-white">3</span>
-                                        <span>Open TaguigSuki, register as Customer or Vendor and start ordering</span>
+                                        <span>Open <b>TaguigSuki</b>, sign in as Customer or Vendor, and start shopping</span>
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
@@ -356,7 +356,7 @@ export default function Welcome() {
                                         className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-black/10 transition hover:bg-black"
                                     >
                                         <Download className="h-4 w-4" />
-                                        Download APK — EAS Build
+                                        Download TaguigSuki.apk (v1.0.0)
                                     </a>
                                     <a
                                         href="https://expo.dev/accounts/teadlol12345/projects/taguig-suki"
@@ -369,7 +369,7 @@ export default function Welcome() {
                                     </a>
                                 </div>
                                 <p className="mt-4 text-xs text-gray-500">
-                                    Build bf803f86 • preview channel • Android APK • Requires Android 8.0+ •{' '}
+                                    File: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> • Build c4a36f15 • Package: com.taguigsuki.app • Requires Android 8.0+ •{' '}
                                     <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2">Expo build page</a>
                                 </p>
                             </div>
@@ -380,7 +380,7 @@ export default function Welcome() {
                                         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
                                             <Smartphone className="h-6 w-6 text-white" />
                                         </div>
-                                        <div className="mb-3 text-sm font-bold text-white">Scan to install</div>
+                                        <div className="mb-3 text-sm font-bold text-white">Scan to install TaguigSuki</div>
                                         <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-3">
                                             {/* QR code via qrserver */}
                                             <img
@@ -390,11 +390,11 @@ export default function Welcome() {
                                                 loading="lazy"
                                             />
                                         </div>
-                                        <div className="mt-3 text-[11px] font-medium text-white/60">Point your camera at the QR → open build → tap Install</div>
+                                        <div className="mt-3 text-[11px] font-medium text-white/60">Point camera at QR → open build → install TaguigSuki.apk</div>
                                     </div>
                                     <div className="mt-4 flex items-center justify-between px-2">
-                                        <span className="text-xs font-semibold text-gray-900">TaguigSuki.apk</span>
-                                        <span className="rounded-full bg-[#488562]/10 px-2.5 py-1 text-[11px] font-bold text-[#488562]">Android</span>
+                                        <span className="text-xs font-semibold text-gray-900">TaguigSuki-v1.0.0.apk (~42 MB)</span>
+                                        <span className="rounded-full bg-[#488562]/10 px-2.5 py-1 text-[11px] font-bold text-[#488562]">Android 8.0+</span>
                                     </div>
                                 </div>
                             </div>
