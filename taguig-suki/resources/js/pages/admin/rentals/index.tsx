@@ -88,6 +88,7 @@ export default function RentalMonitoringIndex({
     const [genModalOpen, setGenModalOpen] = useState(false);
     const genForm = useForm({
         billing_period: new Date().toISOString().slice(0, 7), // YYYY-MM
+        vendor_id: 'all',
     });
 
     function applyFilters(updates: Record<string, string | undefined> = {}) {
@@ -402,6 +403,25 @@ export default function RentalMonitoringIndex({
                             </p>
 
                             <form onSubmit={handleGenerateBills} className="mt-4 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700">Target Vendor / Stalls</label>
+                                    <select
+                                        value={genForm.data.vendor_id}
+                                        onChange={(e) => genForm.setData('vendor_id', e.target.value)}
+                                        className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-xs font-medium focus:border-[#488562] focus:ring-[#488562]"
+                                    >
+                                        <option value="all">All Occupied Market Stalls</option>
+                                        {vendors.map((v) => (
+                                            <option key={v.id} value={v.id}>
+                                                {v.stall_name} ({v.stall_location || `Vendor #${v.id}`})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-[11px] text-gray-400">
+                                        Choose a single vendor or keep &ldquo;All Occupied Market Stalls&rdquo; to generate for everyone.
+                                    </p>
+                                </div>
+
                                 <div>
                                     <label className="block text-xs font-bold text-gray-700">Billing Period (YYYY-MM)</label>
                                     <input

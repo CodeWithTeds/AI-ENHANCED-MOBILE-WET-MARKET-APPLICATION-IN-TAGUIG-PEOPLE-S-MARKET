@@ -34,6 +34,15 @@ type Product = {
 
 type FilterOption = { value: string; label: string };
 
+function getProductImageUrl(img: string | null | undefined): string | null {
+    if (!img) return null;
+    const trimmed = img.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+    const clean = trimmed.replace(/^\/?(storage\/)?/, '');
+    return `/storage/${clean}`;
+}
+
 type Props = {
     products: {
         data: Product[];
@@ -190,11 +199,14 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                                         <tr key={product.id} className="group transition hover:bg-[#488562]/[0.02]">
                                             <td className="px-4 py-3.5">
                                                 <div className="flex items-center gap-3">
-                                                    {product.image ? (
+                                                    {getProductImageUrl(product.image) ? (
                                                         <img
-                                                            src={`/storage/${product.image}`}
+                                                            src={getProductImageUrl(product.image)!}
                                                             alt={product.name}
                                                             className="h-10 w-10 shrink-0 rounded-lg object-cover border border-gray-100"
+                                                            onError={(e) => {
+                                                                e.currentTarget.style.display = 'none';
+                                                            }}
                                                         />
                                                     ) : (
                                                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100">
@@ -319,8 +331,15 @@ export default function ProductManagementIndex({ products, stats, filters, categ
                     <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                             <div className="flex items-center gap-3">
-                                {viewProduct.image ? (
-                                    <img src={`/storage/${viewProduct.image}`} alt={viewProduct.name} className="h-10 w-10 rounded-lg object-cover border" />
+                                {getProductImageUrl(viewProduct.image) ? (
+                                    <img
+                                        src={getProductImageUrl(viewProduct.image)!}
+                                        alt={viewProduct.name}
+                                        className="h-10 w-10 rounded-lg object-cover border"
+                                        onError={(e) => {
+                                            e.currentTarget.style.display = 'none';
+                                        }}
+                                    />
                                 ) : (
                                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
                                         <Package className="h-5 w-5 text-gray-400" />
@@ -419,7 +438,7 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
         _method: 'PUT' as const,
     });
 
-    const [preview, setPreview] = useState<string | null>(product.image ? `/storage/${product.image}` : null);
+    const [preview, setPreview] = useState<string | null>(getProductImageUrl(product.image));
 
     function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0] ?? null;
@@ -427,7 +446,7 @@ function EditModal({ product, onClose, categories }: { product: Product; onClose
         if (file) {
             setPreview(URL.createObjectURL(file));
         } else {
-            setPreview(product.image ? `/storage/${product.image}` : null);
+            setPreview(getProductImageUrl(product.image));
         }
     }
 

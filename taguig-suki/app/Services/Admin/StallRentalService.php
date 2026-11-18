@@ -79,18 +79,42 @@ class StallRentalService
     }
 
     /**
-     * Generate monthly rental billing for all occupied stalls for a given period (e.g. '2026-11').
+     * Generate monthly rental billing for all occupied stalls (or a single vendor) for a given period (e.g. '2026-11').
      */
-    public function generateMonthlyBills(string $billingPeriod, ?Carbon $dueDate = null): int
+    public function generateMonthlyBills(string $billingPeriod, ?Carbon $dueDate = null, ?int $vendorId = null): int
     {
         $due = $dueDate ?: Carbon::createFromFormat('Y-m', $billingPeriod)->startOfMonth()->addDays(14); // 15th of the month
-        $occupiedStalls = Stall::where('status', 'occupied')
-            ->whereNotNull('vendor_id')
-            ->get();
+
+        $query = Stall::query();
+
+        if ($vendorId) {
+            $query->where(function ($q) use ($vendorId) {
+                $q->where('vendor_id', $vendorId)
+                  ->orWhereHas('vendor', fn ($vq) => $vq->where('id', $vendorId)->orWhere('user_id', $vendorId));
+            });
+        } else {
+            $query->where('status', 'occupied')->whereNotNull('vendor_id');
+        }
+
+        $occupiedStalls = $query->get();
+
+        // Fallback for single vendor selection if stall status/vendor_id hasn't linked yet
+        if ($vendorId && $occupiedStalls->isEmpty()) {
+            $vendor = Vendor::find($vendorId);
+            if ($vendor && $vendor->stall_id) {
+                $stall = Stall::find($vendor->stall_id);
+                if ($stall) {
+                    $occupiedStalls = collect([$stall]);
+                }
+            }
+        }
 
         $count = 0;
         foreach ($occupiedStalls as $stall) {
             $vendor = Vendor::where('user_id', $stall->vendor_id)->orWhere('id', $stall->vendor_id)->first();
+            if (!$vendor && $vendorId) {
+                $vendor = Vendor::find($vendorId);
+            }
             if (!$vendor) continue;
 
             $exists = StallRentalPayment::where('stall_id', $stall->id)

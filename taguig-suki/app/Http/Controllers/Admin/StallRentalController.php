@@ -37,11 +37,15 @@ class StallRentalController extends Controller
     {
         $validated = $request->validate([
             'billing_period' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
+            'vendor_id' => ['nullable'],
         ]);
 
-        $count = $this->rentalService->generateMonthlyBills($validated['billing_period']);
+        $vendorId = !empty($validated['vendor_id']) && $validated['vendor_id'] !== 'all' ? (int) $validated['vendor_id'] : null;
 
-        return back()->with('success', "Generated {$count} rental bill(s) for period {$validated['billing_period']}.");
+        $count = $this->rentalService->generateMonthlyBills($validated['billing_period'], null, $vendorId);
+        $targetMsg = $vendorId ? 'for selected vendor' : 'for all occupied stalls';
+
+        return back()->with('success', "Generated {$count} rental bill(s) {$targetMsg} for period {$validated['billing_period']}.");
     }
 
     public function verifyPayment(Request $request, StallRentalPayment $rental): RedirectResponse

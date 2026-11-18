@@ -1,2 +1,8 @@
 *
 !.gitignore
+!products/
+!products/**
+!vendors/
+!vendors/**
+!vendor_qr/
+!vendor_qr/**
