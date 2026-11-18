@@ -181,10 +181,16 @@ class ReviewService
             ->orderByDesc('created_at')
             ->get();
 
-        $reviewedVendorIds = $this->reviewedTargetIds($user, Vendor::class);
-        $reviewedProductIds = $this->reviewedTargetIds($user, Product::class);
+        $orderIds = $orders->pluck('id')->all();
+        $existingReviews = Review::where('user_id', $user->id)
+            ->whereIn('order_id', $orderIds)
+            ->get();
 
-        return $orders->map(function (Order $order) use ($reviewedVendorIds, $reviewedProductIds) {
+        return $orders->map(function (Order $order) use ($existingReviews) {
+            $orderReviews = $existingReviews->where('order_id', $order->id);
+            $reviewedVendorIds = $orderReviews->where('reviewable_type', Vendor::class)->pluck('reviewable_id');
+            $reviewedProductIds = $orderReviews->where('reviewable_type', Product::class)->pluck('reviewable_id');
+
             $vendors = $order->items
                 ->pluck('vendor')
                 ->filter()
@@ -301,16 +307,17 @@ class ReviewService
                     // Recipe reviews: one per recipe name
                     $q->where('recipe_name', $attributes['recipe_name']);
                 } else {
-                    // Vendor/product reviews: one per target
+                    // Vendor/product reviews: one per target per order
                     $q->where('reviewable_type', $attributes['reviewable_type'])
-                        ->where('reviewable_id', $attributes['reviewable_id']);
+                        ->where('reviewable_id', $attributes['reviewable_id'])
+                        ->where('order_id', $attributes['order_id']);
                 }
             })
             ->first();
 
         if ($existing) {
             throw ValidationException::withMessages([
-                'rating' => ['You have already reviewed this.'],
+                'rating' => ['You have already reviewed this for this order.'],
             ]);
         }
 

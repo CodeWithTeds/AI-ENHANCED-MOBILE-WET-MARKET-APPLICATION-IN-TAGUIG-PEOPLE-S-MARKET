@@ -11,7 +11,7 @@
  *  - All errors shown inline (stock issues, network errors)
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -65,7 +65,14 @@ export default function CartScreen() {
   const { token } = useCustomerAuth();
 
   const isBuyNow = !!buyNowItem;
-  const items = isBuyNow ? [buyNowItem] : cartItems;
+  const items = useMemo(
+    () => (isBuyNow && buyNowItem ? [buyNowItem] : cartItems),
+    [isBuyNow, buyNowItem, cartItems]
+  );
+  const itemsKey = useMemo(
+    () => items.map((i) => `${i.product_id}:${i.quantity}`).join(','),
+    [items]
+  );
   const totalItems = isBuyNow ? buyNowItem.quantity : cartTotalItems;
   const totalPrice = isBuyNow
     ? Math.round(buyNowItem.price * buyNowItem.quantity * 100) / 100
@@ -83,6 +90,9 @@ export default function CartScreen() {
   const [vendorPaymentsLoading, setVendorPaymentsLoading] = useState(false);
   const [vendorPaymentsError, setVendorPaymentsError] = useState<string | null>(null);
 
+  // Sequence ref to prevent race conditions & cancelled promises leaving loading flag set
+  const fetchSeqRef = useRef(0);
+
   // Full-screen QR viewer (tap a vendor QR to enlarge for scanning)
   const [qrViewer, setQrViewer] = useState<{ uri: string; stallName: string } | null>(null);
 
@@ -91,32 +101,42 @@ export default function CartScreen() {
     if (paymentMethod === 'cash' || items.length === 0) {
       setVendorPayments(null);
       setVendorPaymentsError(null);
+      setVendorPaymentsLoading(false);
       return;
     }
 
-    let cancelled = false;
+    const seq = ++fetchSeqRef.current;
+    setVendorPaymentsLoading(true);
+    setVendorPaymentsError(null);
+
     async function fetchPayments() {
-      setVendorPaymentsLoading(true);
-      setVendorPaymentsError(null);
       try {
-        const authToken = token ?? await getCustomerToken();
+        const authToken = token ?? (await getCustomerToken());
         if (!authToken) {
-          setVendorPaymentsError('Sign in to load vendor payment details.');
+          if (seq === fetchSeqRef.current) {
+            setVendorPaymentsError('Sign in to load vendor payment details.');
+            setVendorPaymentsLoading(false);
+          }
           return;
         }
         const itemPayload = items.map((i) => ({ product_id: i.product_id, quantity: i.quantity }));
         const details = await getVendorsPaymentDetails(itemPayload, authToken);
-        if (!cancelled) setVendorPayments(details);
+        if (seq === fetchSeqRef.current) {
+          setVendorPayments(details);
+        }
       } catch (err: any) {
-        if (!cancelled) setVendorPaymentsError(err.message || 'Failed to load vendor payment details.');
+        if (seq === fetchSeqRef.current) {
+          setVendorPaymentsError(err.message || 'Failed to load vendor payment details.');
+        }
       } finally {
-        if (!cancelled) setVendorPaymentsLoading(false);
+        if (seq === fetchSeqRef.current) {
+          setVendorPaymentsLoading(false);
+        }
       }
     }
 
     fetchPayments();
-    return () => { cancelled = true; };
-  }, [paymentMethod, items, token]);
+  }, [paymentMethod, itemsKey, token]);
 
   async function handlePlaceOrder() {
     const authToken = token ?? await getCustomerToken();
@@ -182,6 +202,9 @@ export default function CartScreen() {
       }
       setReferenceNumber('');
       setVendorReferences({});
+      setVendorPayments(null);
+      setVendorPaymentsLoading(false);
+      setVendorPaymentsError(null);
       setConfirmedOrder(order);
     } catch (err) {
       const msg =
@@ -268,6 +291,30 @@ export default function CartScreen() {
         </View>
       )}
 
+      {/* Checkout Steps Progress Bar (Item 10) */}
+      <View style={styles.checkoutStepsBar}>
+        <View style={styles.stepItem}>
+          <View style={[styles.stepDot, styles.stepDotActive]}>
+            <Text style={styles.stepDotText}>1</Text>
+          </View>
+          <Text style={[styles.stepLabel, styles.stepLabelActive]}>Items</Text>
+        </View>
+        <View style={[styles.stepLine, styles.stepLineActive]} />
+        <View style={styles.stepItem}>
+          <View style={[styles.stepDot, styles.stepDotActive]}>
+            <Text style={styles.stepDotText}>2</Text>
+          </View>
+          <Text style={[styles.stepLabel, styles.stepLabelActive]}>Payment</Text>
+        </View>
+        <View style={styles.stepLine} />
+        <View style={styles.stepItem}>
+          <View style={styles.stepDot}>
+            <Text style={styles.stepDotTextInactive}>3</Text>
+          </View>
+          <Text style={styles.stepLabel}>Review</Text>
+        </View>
+      </View>
+
       {/* Item count */}
       <View style={styles.itemCountRow}>
         <Ionicons
@@ -299,6 +346,9 @@ export default function CartScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Cart Items */}
+        <View style={styles.stepSectionHeaderBox}>
+          <Text style={styles.stepSectionHeader}>Step 1: Review Items & Stalls</Text>
+        </View>
         {items.map((item) => (
           <CartItemCard
             key={item.product_id}
@@ -310,7 +360,7 @@ export default function CartScreen() {
 
         {/* Payment Method */}
         <View style={styles.sectionBox}>
-          <Text style={styles.sectionTitle}>Payment Method</Text>
+          <Text style={styles.sectionTitle}>Step 2: Payment Method</Text>
           <View style={styles.paymentGrid}>
             {PAYMENT_OPTIONS.map((opt) => (
               <TouchableOpacity
@@ -373,7 +423,36 @@ export default function CartScreen() {
               ) : vendorPaymentsError ? (
                 <View style={styles.ewalletError}>
                   <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
-                  <Text style={styles.ewalletErrorText}>{vendorPaymentsError}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.ewalletErrorText}>{vendorPaymentsError}</Text>
+                    <TouchableOpacity
+                      style={{ marginTop: 6, alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#DC262615', borderRadius: 6 }}
+                      onPress={() => {
+                        const nextSeq = ++fetchSeqRef.current;
+                        setVendorPaymentsLoading(true);
+                        setVendorPaymentsError(null);
+                        getCustomerToken().then((authToken) => {
+                          if (!authToken) {
+                            if (nextSeq === fetchSeqRef.current) {
+                              setVendorPaymentsError('Sign in to load vendor payment details.');
+                              setVendorPaymentsLoading(false);
+                            }
+                            return;
+                          }
+                          const itemPayload = items.map((i) => ({ product_id: i.product_id, quantity: i.quantity }));
+                          return getVendorsPaymentDetails(itemPayload, authToken).then((details) => {
+                            if (nextSeq === fetchSeqRef.current) setVendorPayments(details);
+                          });
+                        }).catch((err) => {
+                          if (nextSeq === fetchSeqRef.current) setVendorPaymentsError(err.message || 'Failed to load vendor payment details.');
+                        }).finally(() => {
+                          if (nextSeq === fetchSeqRef.current) setVendorPaymentsLoading(false);
+                        });
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>Retry Loading</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : vendorPayments && vendorPayments.length > 0 ? (
                 <View style={styles.vendorPaymentList}>
@@ -540,6 +619,7 @@ export default function CartScreen() {
 
       {/* Order Summary + Place Order */}
       <View style={styles.summaryCard}>
+        <Text style={styles.summaryStepBadge}>STEP 3 · FINAL ORDER SUMMARY</Text>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Subtotal</Text>
           <Text style={styles.summaryValue}>₱{totalPrice.toFixed(2)}</Text>
@@ -1216,6 +1296,79 @@ const styles = StyleSheet.create({
   },
   checkoutBtnDisabled: { backgroundColor: '#6B7280', shadowOpacity: 0, elevation: 0 },
   checkoutBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+
+  /* Step Progress Bar Styles */
+  checkoutStepsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDotActive: {
+    backgroundColor: '#10B981',
+  },
+  stepDotText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  stepDotTextInactive: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  stepLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  stepLabelActive: {
+    color: '#111827',
+    fontWeight: '700',
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#E5E7EB',
+    marginHorizontal: 8,
+  },
+  stepLineActive: {
+    backgroundColor: '#10B981',
+  },
+  stepSectionHeaderBox: {
+    marginBottom: 8,
+  },
+  stepSectionHeader: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#374151',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  summaryStepBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#10B981',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
 });
 
 /* ─── Confirmation Modal Styles ─── */

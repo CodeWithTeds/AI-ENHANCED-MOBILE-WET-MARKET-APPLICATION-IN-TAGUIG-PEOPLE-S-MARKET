@@ -7,6 +7,24 @@ import { api } from './api';
 
 /* ─── Types ─── */
 
+export interface VendorComparisonItem {
+  product_id: number;
+  name: string;
+  category: string;
+  price: number;
+  unit: string;
+  image: string | null;
+  is_available: boolean;
+  stock_quantity: number;
+  vendor_id: number;
+  stall_name: string;
+  stall_location: string;
+  rating: number;
+  reviews_count: number;
+  is_current: boolean;
+  is_ai_recommended: boolean;
+}
+
 export interface MarketProduct {
   id: number;
   vendor_id: number;
@@ -18,6 +36,10 @@ export interface MarketProduct {
   image: string | null;
   is_available: boolean;
   created_at: string;
+  vendor_rating?: number;
+  vendor_review_count?: number;
+  is_ai_recommended?: boolean;
+  comparison_vendors?: VendorComparisonItem[];
   vendor?: {
     id: number;
     stall_name: string;

@@ -160,6 +160,18 @@ class OrderController extends Controller
     }
 
     /**
+     * Get complete official customer receipt details.
+     *
+     * GET /orders/{id}/receipt
+     */
+    public function receipt(Request $request, int $id): JsonResponse
+    {
+        $receipt = $this->orderService->getReceiptData($request->user(), $id);
+
+        return $this->successResponse($receipt, 'Order receipt retrieved');
+    }
+
+    /**
      * Get orders for a vendor — only orders that contain their products.
      *
      * GET /vendor/orders

@@ -537,6 +537,74 @@ class OrderService
     }
 
     /**
+     * Get complete transaction receipt details for customer or vendor.
+     */
+    public function getReceiptData(User $user, int $orderId): array
+    {
+        $orderQuery = Order::with([
+            'user:id,name,phone,email',
+            'items.product:id,name,unit,price,image',
+            'items.vendor.stall',
+            'items.vendor:id,stall_name,stall_location',
+        ]);
+
+        if (! $user->is_admin) {
+            $vendorId = $user->vendor?->id;
+            $orderQuery->where(function ($q) use ($user, $vendorId) {
+                $q->where('user_id', $user->id);
+                if ($vendorId) {
+                    $q->orWhereHas('items', fn ($iq) => $iq->where('vendor_id', $vendorId));
+                }
+            });
+        }
+
+        $order = $orderQuery->findOrFail($orderId);
+
+        $items = $order->items->map(function ($item) {
+            $stallNumber = $item->vendor?->stall?->stall_number ?? ($item->vendor?->stall_location ?? 'Stall');
+
+            return [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'product_name' => $item->product_name ?? $item->product?->name ?? 'Market Item',
+                'vendor_id' => $item->vendor_id,
+                'vendor_name' => $item->vendor?->stall_name ?? 'Market Vendor',
+                'stall_number' => $stallNumber,
+                'stall_location' => $item->vendor?->stall_location ?? 'Taguig Public Market',
+                'quantity' => (float) $item->quantity,
+                'unit' => $item->unit ?? $item->product?->unit ?? 'pc',
+                'unit_price' => (float) $item->unit_price,
+                'subtotal' => (float) $item->subtotal,
+            ];
+        })->values()->all();
+
+        return [
+            'receipt_number' => 'TS-REC-'.str_pad((string) $order->id, 6, '0', STR_PAD_LEFT),
+            'order_number' => $order->order_number,
+            'created_at' => $order->created_at->format('M d, Y h:i A'),
+            'status' => $order->status,
+            'payment_method' => strtoupper($order->payment_method),
+            'payment_status' => ucfirst($order->payment_status),
+            'payment_reference' => $order->payment_reference_number ?? ($order->reference_number ?? null),
+            'customer' => [
+                'id' => $order->user?->id,
+                'name' => $order->user?->name ?? 'Customer',
+                'phone' => $order->user?->phone ?? 'N/A',
+                'email' => $order->user?->email ?? null,
+            ],
+            'items' => $items,
+            'subtotal' => (float) $order->total_amount,
+            'market_fee' => 0.00,
+            'total_amount' => (float) $order->total_amount,
+            'market_info' => [
+                'market_name' => 'Taguig City Public Market',
+                'address' => 'General Luna St, Taguig, Metro Manila',
+                'app_name' => 'Taguig Suki',
+            ],
+        ];
+    }
+
+    /**
      * Get all orders that contain items belonging to this vendor.
      * Groups by order, includes only items relevant to this vendor.
      */

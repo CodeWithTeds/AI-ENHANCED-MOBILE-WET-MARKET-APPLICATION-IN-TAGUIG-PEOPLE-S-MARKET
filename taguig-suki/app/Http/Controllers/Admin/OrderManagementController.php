@@ -28,4 +28,18 @@ class OrderManagementController extends Controller
 
         return back()->with('success', "Order {$updated->order_number} updated to ".ucfirst($request->status).'.');
     }
+
+    /**
+     * Printable customer & vendor transaction receipt.
+     */
+    public function receipt(Order $order): \Illuminate\Http\Response
+    {
+        $order->load(['user', 'items.product', 'items.vendor.stall']);
+        $receiptNumber = 'TS-REC-'.str_pad((string) $order->id, 6, '0', STR_PAD_LEFT);
+
+        return response()->view('receipts.order', [
+            'order' => $order,
+            'receiptNumber' => $receiptNumber,
+        ]);
+    }
 }

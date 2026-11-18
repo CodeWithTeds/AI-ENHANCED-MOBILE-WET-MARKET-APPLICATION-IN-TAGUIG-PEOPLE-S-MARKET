@@ -31,9 +31,12 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/vendor/register', [VendorRegistrationController::class, 'register']);
 
-// Public endpoints for registration form data
+// Public endpoints for registration form data & stall complaints
+Route::get('/stalls', [StallController::class, 'index']);
 Route::get('/sections', [StallController::class, 'sections']);
 Route::get('/stalls/vacant', [StallController::class, 'vacantStalls']);
+Route::post('/stalls/{stall}/complaints', [StallController::class, 'submitComplaint']);
+Route::post('/vendors/{vendor}/complaints', [StallController::class, 'submitVendorComplaint']);
 
 // Public marketplace endpoints (customer browsing)
 Route::prefix('marketplace')->group(function () {
@@ -90,6 +93,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::put('/vendor/profile/business', [VendorProfileController::class, 'updateBusiness']);
     Route::put('/vendor/profile/password', [VendorProfileController::class, 'changePassword']);
     Route::put('/vendor/profile/notifications', [VendorProfileController::class, 'updateNotifications']);
+    Route::post('/vendor/contract/renew', [VendorProfileController::class, 'requestContractRenewal']);
+    Route::get('/vendor/rentals', [VendorProfileController::class, 'getRentalDues']);
+    Route::post('/vendor/rentals/{rental}/pay', [VendorProfileController::class, 'payRentalDue']);
 
     // Vendor Payment Settings (GCash / Maya)
     Route::get('/vendor/payment-settings', [VendorPaymentSettingsController::class, 'show']);
@@ -113,6 +119,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/orders/payment-details', [OrderController::class, 'vendorsPaymentDetails']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/track', [OrderController::class, 'track']);
+    Route::get('/orders/{id}/receipt', [OrderController::class, 'receipt']);
     Route::post('/orders/{id}/payment-reference', [OrderController::class, 'submitPaymentReference']);
 
     // Customer–Vendor In-App Order Messaging & Confirmation
@@ -147,3 +154,5 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 });
 
 Route::apiResource('tasks', TaskController::class);
+
+
