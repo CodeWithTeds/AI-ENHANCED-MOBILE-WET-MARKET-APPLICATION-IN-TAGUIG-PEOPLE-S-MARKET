@@ -43,6 +43,8 @@ class ReportsAnalyticsService
             'vendors' => $this->getVendors($from, $to),
             'inventory' => $this->getInventory($from, $to),
             'system' => $this->getSystem($from, $to),
+            'daily_sales' => $this->getDailySalesReport($filters['date'] ?? null),
+            'product_report' => $this->getProductReportData(),
         ];
     }
 
@@ -486,5 +488,91 @@ class ReportsAnalyticsService
             'week' => $date->copy()->startOfWeek()->format('Y-m-d'),
             default => $date->format('Y-m'),
         };
+    }
+
+    /**
+     * Daily Sales and Revenue Report that can be generated as PDF or printed.
+     */
+    public function getDailySalesReport(?string $date = null): array
+    {
+        $day = $date ? Carbon::parse($date)->startOfDay() : now()->startOfDay();
+        $endDay = $day->copy()->endOfDay();
+
+        $orders = Order::whereBetween('created_at', [$day, $endDay])
+            ->with(['items.product', 'items.vendor'])
+            ->get();
+
+        $completed = $orders->where('status', 'completed');
+        $totalSales = (float) $completed->sum('total_amount');
+
+        $paymentBreakdown = [
+            'cash' => (float) $completed->where('payment_method', 'cash')->sum('total_amount'),
+            'gcash' => (float) $completed->where('payment_method', 'gcash')->sum('total_amount'),
+            'maya' => (float) $completed->where('payment_method', 'maya')->sum('total_amount'),
+        ];
+
+        return [
+            'date' => $day->toDateString(),
+            'formatted_date' => $day->format('F d, Y'),
+            'total_orders' => $orders->count(),
+            'completed_orders' => $completed->count(),
+            'cancelled_orders' => $orders->where('status', 'cancelled')->count(),
+            'total_revenue' => $totalSales,
+            'average_order_value' => $completed->count() > 0 ? round($totalSales / $completed->count(), 2) : 0,
+            'payment_breakdown' => $paymentBreakdown,
+            'transactions' => $orders->map(fn ($o) => [
+                'order_number' => $o->order_number,
+                'time' => $o->created_at->format('g:i A'),
+                'amount' => (float) $o->total_amount,
+                'status' => $o->status,
+                'payment_method' => $o->payment_method,
+                'items_count' => $o->items->count(),
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * Product Report clarifying purpose, pricing oversight, and stock supply monitoring.
+     */
+    public function getProductReportData(): array
+    {
+        $products = Product::with(['inventory', 'vendor'])->get();
+
+        $grouped = $products->groupBy(fn ($p) => strtolower(trim($p->name)));
+
+        $rows = $grouped->map(function ($group, $name) {
+            $first = $group->first();
+            $prices = $group->pluck('price')->map(fn ($p) => (float) $p);
+            $minPrice = $prices->min();
+            $maxPrice = $prices->max();
+            $avgPrice = round($prices->avg(), 2);
+            $stallsCount = $group->pluck('vendor_id')->unique()->count();
+            $totalStock = $group->sum(fn ($p) => $p->inventory?->stock_quantity ?? 0);
+            $category = $first->category;
+
+            $status = $totalStock <= 0 ? 'Out of Stock' : ($totalStock < 10 ? 'Low Stock Alert' : 'Healthy Supply');
+
+            return [
+                'name' => ucfirst($name),
+                'category' => $category,
+                'unit' => $first->unit,
+                'stalls_count' => $stallsCount,
+                'min_price' => $minPrice,
+                'max_price' => $maxPrice,
+                'avg_price' => $avgPrice,
+                'price_variance' => round($maxPrice - $minPrice, 2),
+                'total_stock' => $totalStock,
+                'status' => $status,
+            ];
+        })->values();
+
+        return [
+            'purpose' => 'Clarify the purpose of Product Report: The Product Report enables Taguig Market Administrators to monitor price stability against Suggested Retail Price (SRP) standards, track multi-stall inventory supply, prevent artificial shortages, and ensure fair consumer pricing across all market sections.',
+            'total_monitored_products' => $rows->count(),
+            'healthy_count' => $rows->where('status', 'Healthy Supply')->count(),
+            'low_stock_count' => $rows->where('status', 'Low Stock Alert')->count(),
+            'out_of_stock_count' => $rows->where('status', 'Out of Stock')->count(),
+            'products' => $rows->all(),
+        ];
     }
 }

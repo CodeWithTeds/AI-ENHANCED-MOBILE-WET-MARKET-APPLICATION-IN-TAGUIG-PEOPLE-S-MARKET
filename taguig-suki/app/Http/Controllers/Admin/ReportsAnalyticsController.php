@@ -15,7 +15,7 @@ class ReportsAnalyticsController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('admin/reports/index', $this->reportsService->getOverviewData(
-            $request->only(['range'])
+            $request->only(['range', 'date'])
         ));
     }
 }
