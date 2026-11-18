@@ -173,7 +173,9 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
               <View key={i} style={styles.marketRow}>
                 <View style={styles.marketInfo}>
                   <Text style={styles.marketName}>{mp.product_name}</Text>
-                  <Text style={styles.marketMeta}>{mp.category} · per {mp.unit}</Text>
+                  <Text style={styles.marketMeta}>
+                    {mp.category} · per {mp.unit}{mp.vendor_name ? ` · ${mp.vendor_name}` : ''}
+                  </Text>
                 </View>
                 <Text style={styles.marketPrice}>₱{Number(mp.price).toFixed(0)}</Text>
                 <View style={styles.marketRowActions}>

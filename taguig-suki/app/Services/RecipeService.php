@@ -16,12 +16,23 @@ class RecipeService
     public function generateRecipe(string $query): array
     {
         try {
+            $vendorIds = Product::where('is_available', true)->pluck('vendor_id')->unique()->filter()->values();
+            $vendorRatings = \App\Models\Review::where('reviewable_type', \App\Models\Vendor::class)
+                ->whereIn('reviewable_id', $vendorIds)
+                ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
+                ->groupBy('reviewable_id')
+                ->get()
+                ->keyBy('reviewable_id');
+
             $availableProducts = Product::where('is_available', true)
                 ->with(['vendor.stall', 'vendor:id,stall_name,stall_location'])
                 ->get()
-                ->map(function ($p) {
+                ->map(function ($p) use ($vendorRatings) {
                     $stallNumber = $p->vendor?->stall?->stall_number ?? $p->vendor?->stall_location ?? 'Stall';
                     $vendorName = $p->vendor?->stall_name ?? 'Market Vendor';
+                    $r = $vendorRatings->get($p->vendor_id);
+                    $rating = $r ? round((float) $r->avg_rating, 1) : 4.8;
+                    $reviewCount = $r ? (int) $r->review_count : 0;
 
                     return [
                         'id' => $p->id,
@@ -34,6 +45,8 @@ class RecipeService
                         'vendor_name' => $vendorName,
                         'stall_location' => $p->vendor?->stall_location ?? 'Taguig Public Market',
                         'stall_number' => $stallNumber,
+                        'rating' => $rating,
+                        'reviews_count' => $reviewCount,
                     ];
                 })
                 ->toArray();
@@ -370,9 +383,7 @@ PROMPT;
                 continue;
             }
 
-            $bestScore = 0;
-            $bestProduct = null;
-
+            $scoredProducts = [];
             foreach ($availableProducts as $product) {
                 $normProd = $this->normalize($product['name']);
                 if ($normProd === '') {
@@ -380,21 +391,67 @@ PROMPT;
                 }
 
                 $score = $this->matchScore($normIng, $normProd);
-                if ($score > $bestScore) {
-                    $bestScore = $score;
-                    $bestProduct = $product;
-                }
-                if ($score >= 1.0) {
-                    break;
+                if ($score >= 0.5) {
+                    $scoredProducts[] = [
+                        'score' => $score,
+                        'product' => $product,
+                    ];
                 }
             }
 
-            if ($bestProduct && $bestScore >= 0.5) {
-                if (! in_array($rawIng, $matchedIngredientNames, true)) {
+            if (! empty($scoredProducts)) {
+                // Sort by vendor rating descending, then match score descending, then price ascending
+                usort($scoredProducts, function ($a, $b) {
+                    $rA = (float) ($a['product']['rating'] ?? 4.5);
+                    $rB = (float) ($b['product']['rating'] ?? 4.5);
+                    if ($rB != $rA) {
+                        return $rB <=> $rA;
+                    }
+                    if ($b['score'] != $a['score']) {
+                        return $b['score'] <=> $a['score'];
+                    }
+                    return $a['product']['price'] <=> $b['product']['price'];
+                });
+
+                // Pick top 3 unique vendors selling this product/ingredient
+                $topVendors = [];
+                $seenVendors = [];
+                foreach ($scoredProducts as $sp) {
+                    $prod = $sp['product'];
+                    $vId = $prod['vendor_id'] ?? $prod['id'];
+                    if (in_array($vId, $seenVendors, true)) {
+                        continue;
+                    }
+                    $seenVendors[] = $vId;
+                    $topVendors[] = [
+                        'product_id' => $prod['id'],
+                        'product_name' => $prod['name'],
+                        'price' => (float) $prod['price'],
+                        'unit' => $prod['unit'],
+                        'category' => $prod['category'],
+                        'image' => $prod['image'] ?? null,
+                        'vendor_id' => $prod['vendor_id'] ?? null,
+                        'vendor_name' => $prod['vendor_name'] ?? 'Market Vendor',
+                        'stall_name' => $prod['vendor_name'] ?? 'Market Stall',
+                        'stall_number' => $prod['stall_number'] ?? 'Stall',
+                        'stall_location' => $prod['stall_location'] ?? 'Taguig People\'s Market',
+                        'rating' => (float) ($prod['rating'] ?? 4.8),
+                        'reviews_count' => (int) ($prod['reviews_count'] ?? 0),
+                        'is_ai_recommended' => count($topVendors) === 0,
+                    ];
+
+                    if (count($topVendors) >= 3) {
+                        break;
+                    }
+                }
+
+                $bestProduct = $topVendors[0] ?? null;
+
+                if ($bestProduct && ! in_array($rawIng, $matchedIngredientNames, true)) {
                     $matches[] = [
                         'ingredient' => $rawIng,
-                        'product_id' => $bestProduct['id'],
-                        'product_name' => $bestProduct['name'],
+                        'product_id' => $bestProduct['product_id'],
+                        'product_name' => $bestProduct['product_name'],
                         'price' => $bestProduct['price'],
                         'unit' => $bestProduct['unit'],
                         'category' => $bestProduct['category'],
@@ -403,6 +460,9 @@ PROMPT;
                         'vendor_name' => $bestProduct['vendor_name'] ?? 'Market Vendor',
                         'stall_number' => $bestProduct['stall_number'] ?? 'Stall',
                         'stall_location' => $bestProduct['stall_location'] ?? 'Taguig Public Market',
+                        'rating' => $bestProduct['rating'] ?? 4.8,
+                        'reviews_count' => $bestProduct['reviews_count'] ?? 0,
+                        'vendors' => $topVendors,
                     ];
                     $matchedIngredientNames[] = $rawIng;
                 }

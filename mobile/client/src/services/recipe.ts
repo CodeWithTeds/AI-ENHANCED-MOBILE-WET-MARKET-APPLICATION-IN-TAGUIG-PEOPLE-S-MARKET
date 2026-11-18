@@ -14,6 +14,23 @@ export interface RecipeIngredient {
   available_in_market: boolean;
 }
 
+export interface MatchingProductVendor {
+  product_id: number;
+  product_name: string;
+  price: number;
+  unit: string;
+  category?: string;
+  image?: string | null;
+  vendor_id?: number | null;
+  vendor_name?: string;
+  stall_name?: string;
+  stall_number?: string;
+  stall_location?: string;
+  rating?: number;
+  reviews_count?: number;
+  is_ai_recommended?: boolean;
+}
+
 export interface MatchingProduct {
   ingredient: string;
   product_id: number;
@@ -22,6 +39,13 @@ export interface MatchingProduct {
   unit: string;
   category: string;
   image?: string | null;
+  vendor_id?: number | null;
+  vendor_name?: string;
+  stall_number?: string;
+  stall_location?: string;
+  rating?: number;
+  reviews_count?: number;
+  vendors?: MatchingProductVendor[];
 }
 
 export interface RecipeResult {

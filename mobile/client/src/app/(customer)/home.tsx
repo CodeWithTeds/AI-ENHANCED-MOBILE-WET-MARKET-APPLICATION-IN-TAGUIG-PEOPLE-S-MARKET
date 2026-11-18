@@ -26,9 +26,10 @@ import {
   getFeaturedProducts,
   browseProducts,
   searchProducts,
+  getProductDetail,
   type MarketProduct,
 } from '@/services/marketplace';
-import { searchRecipe, type RecipeResult } from '@/services/recipe';
+import { searchRecipe, type RecipeResult, type MatchingProductVendor } from '@/services/recipe';
 import { getRecipeReviews, submitRecipeReview, type ReviewSummary } from '@/services/reviews';
 import { getCustomerToken } from '@/services/customer-auth';
 import { useCart } from '@/context/CartContext';
@@ -708,7 +709,69 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
   const { addItem, isInCart, startBuyNow } = useCart();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const checkAnim = useRef(new Animated.Value(0)).current;
-  const [added, setAdded] = useState(isInCart(product.product_id));
+
+  // Initialize selectedVendor from product.vendors[0] or fallback to product itself
+  const [selectedVendor, setSelectedVendor] = useState<MatchingProductVendor>(() => {
+    if (product.vendors && product.vendors.length > 0) {
+      return product.vendors[0];
+    }
+    return {
+      product_id: product.product_id,
+      product_name: product.product_name,
+      price: product.price,
+      unit: product.unit,
+      category: product.category,
+      image: product.image,
+      vendor_id: product.vendor_id,
+      vendor_name: product.vendor_name || 'Market Vendor',
+      stall_name: product.vendor_name || 'Market Stall',
+      stall_number: product.stall_number || 'Stall',
+      stall_location: product.stall_location || "Taguig People's Market",
+      rating: product.rating ?? 4.8,
+      reviews_count: product.reviews_count ?? 0,
+      is_ai_recommended: true,
+    };
+  });
+
+  const [vendorList, setVendorList] = useState<MatchingProductVendor[]>(() => product.vendors ?? []);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (product.vendors && product.vendors.length > 0) {
+      setVendorList(product.vendors.slice(0, 3));
+      setSelectedVendor(product.vendors[0]);
+    } else {
+      // Fallback: fetch vendor comparison list if not pre-populated
+      getProductDetail(product.product_id)
+        .then((detail) => {
+          if (detail.comparison_vendors && detail.comparison_vendors.length > 0) {
+            const top3: MatchingProductVendor[] = detail.comparison_vendors.slice(0, 3).map((cv, idx) => ({
+              product_id: cv.product_id,
+              product_name: cv.name,
+              price: cv.price,
+              unit: cv.unit,
+              category: cv.category,
+              image: cv.image,
+              vendor_id: cv.vendor_id,
+              vendor_name: cv.stall_name,
+              stall_name: cv.stall_name,
+              stall_number: cv.stall_location || 'Stall',
+              stall_location: cv.stall_location,
+              rating: cv.rating,
+              reviews_count: cv.reviews_count,
+              is_ai_recommended: idx === 0,
+            }));
+            setVendorList(top3);
+            if (top3.length > 0) {
+              setSelectedVendor(top3[0]);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [product.product_id, product.vendors]);
+
+  const added = isInCart(selectedVendor.product_id);
 
   function handleAddToCart() {
     if (added) return;
@@ -728,69 +791,160 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
     }).start();
 
     addItem({
-      product_id: product.product_id,
-      product_name: product.product_name,
-      price: product.price,
-      unit: product.unit,
-      category: product.category,
-      image: product.image,
+      product_id: selectedVendor.product_id,
+      product_name: selectedVendor.product_name,
+      price: selectedVendor.price,
+      unit: selectedVendor.unit,
+      category: selectedVendor.category || product.category,
+      image: selectedVendor.image || product.image,
     });
-
-    setAdded(true);
   }
 
   function handleBuyNow() {
     startBuyNow({
-      product_id: product.product_id,
-      product_name: product.product_name,
-      price: product.price,
-      unit: product.unit,
-      category: product.category,
-      image: product.image,
+      product_id: selectedVendor.product_id,
+      product_name: selectedVendor.product_name,
+      price: selectedVendor.price,
+      unit: selectedVendor.unit,
+      category: selectedVendor.category || product.category,
+      image: selectedVendor.image || product.image,
     }, 1);
     router.navigate('/(customer)/cart' as any);
   }
 
+  const vendorsToDisplay = vendorList.length > 0 ? vendorList.slice(0, 3) : [selectedVendor];
+
   return (
-    <View style={styles.matchingProductRow}>
-      <View style={styles.matchingProductInfo}>
-        <Text style={styles.matchingProductName}>{product.product_name}</Text>
-        <Text style={styles.matchingProductMeta}>{product.category} · per {product.unit}</Text>
-      </View>
-      <Text style={styles.matchingProductPrice}>₱{Number(product.price).toFixed(0)}</Text>
+    <View style={styles.matchingProductCard}>
+      <View style={styles.matchingProductRow}>
+        <View style={styles.matchingProductInfo}>
+          <Text style={styles.matchingProductName}>{selectedVendor.product_name || product.product_name}</Text>
+          <Text style={styles.matchingProductMeta}>
+            {selectedVendor.category || product.category} · per {selectedVendor.unit || product.unit}
+          </Text>
 
-      <View style={styles.matchingProductActions}>
-        <TouchableOpacity
-          onPress={handleAddToCart}
-          activeOpacity={0.8}
-          accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
-        >
-          <Animated.View
-            style={[
-              styles.addCartBtn,
-              added && styles.addCartBtnAdded,
-              { transform: [{ scale: scaleAnim }] },
-            ]}
+          {/* Vendor Selector Dropdown Trigger */}
+          <TouchableOpacity
+            style={styles.vendorDropdownTrigger}
+            onPress={() => setDropdownOpen(!dropdownOpen)}
+            activeOpacity={0.7}
+            accessibilityLabel="Choose vendor from top 3 vendors"
           >
-            <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
-              <Ionicons
-                name={added ? 'checkmark' : 'add'}
-                size={18}
-                color="#FFFFFF"
-              />
-            </Animated.View>
-          </Animated.View>
-        </TouchableOpacity>
+            <View style={styles.vendorDropdownTriggerLeft}>
+              <Ionicons name="storefront-outline" size={12} color="#1B6B45" />
+              <Text style={styles.vendorDropdownStallName} numberOfLines={1}>
+                {selectedVendor.stall_name || selectedVendor.vendor_name || 'Market Vendor'}
+              </Text>
+              <Text style={styles.vendorDropdownRating}>
+                ⭐ {Number(selectedVendor.rating || 4.8).toFixed(1)}
+              </Text>
+              {selectedVendor.is_ai_recommended && (
+                <View style={styles.aiChoiceTag}>
+                  <Text style={styles.aiChoiceTagText}>AI Top</Text>
+                </View>
+              )}
+            </View>
+            <Ionicons
+              name={dropdownOpen ? 'chevron-up' : 'chevron-down'}
+              size={13}
+              color="#1B6B45"
+            />
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          onPress={handleBuyNow}
-          activeOpacity={0.8}
-          style={styles.buyCartBtn}
-          accessibilityLabel="Buy now directly"
-        >
-          <Ionicons name="flash" size={15} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.matchingProductRight}>
+          <Text style={styles.matchingProductPrice}>₱{Number(selectedVendor.price).toFixed(0)}</Text>
+
+          <View style={styles.matchingProductActions}>
+            <TouchableOpacity
+              onPress={handleAddToCart}
+              activeOpacity={0.8}
+              accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
+            >
+              <Animated.View
+                style={[
+                  styles.addCartBtn,
+                  added && styles.addCartBtnAdded,
+                  { transform: [{ scale: scaleAnim }] },
+                ]}
+              >
+                <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
+                  <Ionicons
+                    name={added ? 'checkmark' : 'add'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                </Animated.View>
+              </Animated.View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleBuyNow}
+              activeOpacity={0.8}
+              style={styles.buyCartBtn}
+              accessibilityLabel="Buy now directly"
+            >
+              <Ionicons name="flash" size={15} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
+
+      {/* Top 3 Vendors Dropdown */}
+      {dropdownOpen && (
+        <View style={styles.vendorDropdownList}>
+          <View style={styles.vendorDropdownHeader}>
+            <Text style={styles.vendorDropdownHeaderTitle}>Top Vendors for this Item</Text>
+            <Text style={styles.vendorDropdownHeaderSub}>Sorted by rating · AI recommended</Text>
+          </View>
+          {vendorsToDisplay.map((v, idx) => {
+            const isSelected = v.product_id === selectedVendor.product_id;
+            return (
+              <TouchableOpacity
+                key={`${v.product_id}-${idx}`}
+                style={[
+                  styles.vendorOptionRow,
+                  isSelected && styles.vendorOptionRowSelected,
+                ]}
+                onPress={() => {
+                  setSelectedVendor(v);
+                  setDropdownOpen(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.vendorOptionLeft}>
+                  <Ionicons
+                    name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                    size={16}
+                    color={isSelected ? '#1B6B45' : '#9CA3AF'}
+                  />
+                  <View style={styles.vendorOptionInfo}>
+                    <View style={styles.vendorOptionNameRow}>
+                      <Text style={styles.vendorOptionStallName}>
+                        {v.stall_name || v.vendor_name || `Stall #${v.vendor_id}`}
+                      </Text>
+                      {v.is_ai_recommended && (
+                        <View style={styles.aiChoiceTag}>
+                          <Text style={styles.aiChoiceTagText}>AI Recommended</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.vendorOptionMeta}>
+                      ⭐ {Number(v.rating || 4.8).toFixed(1)} ({v.reviews_count ?? 0} reviews)
+                      {v.stall_number ? ` · ${v.stall_number}` : ''}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.vendorOptionRight}>
+                  <Text style={styles.vendorOptionPrice}>₱{Number(v.price).toFixed(0)}</Text>
+                  <Text style={styles.vendorOptionUnit}>/ {v.unit}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -982,12 +1136,169 @@ const styles = StyleSheet.create({
   ingredientBadgeText: { fontSize: 10, fontWeight: '600', color: '#1B6B45' },
 
   // Matching Products
-  matchingProductRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10, marginBottom: 6 },
-  matchingProductInfo: { flex: 1 },
-  matchingProductName: { fontSize: 13, fontWeight: '600', color: '#111827' },
-  matchingProductMeta: { fontSize: 11, color: '#9CA3AF' },
-  matchingProductPrice: { fontSize: 15, fontWeight: '800', color: '#1B6B45', marginRight: 10 },
-  matchingProductActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  matchingProductCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  matchingProductRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  matchingProductInfo: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  matchingProductName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  matchingProductMeta: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  vendorDropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  vendorDropdownTriggerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 1,
+  },
+  vendorDropdownStallName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1F2937',
+    maxWidth: 120,
+  },
+  vendorDropdownRating: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  aiChoiceTag: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  aiChoiceTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  matchingProductRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  matchingProductPrice: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1B6B45',
+  },
+  matchingProductActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  vendorDropdownList: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    gap: 6,
+  },
+  vendorDropdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  vendorDropdownHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#374151',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  vendorDropdownHeaderSub: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  vendorOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 8,
+  },
+  vendorOptionRowSelected: {
+    borderColor: '#1B6B45',
+    backgroundColor: '#F0FDF4',
+  },
+  vendorOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  vendorOptionInfo: {
+    flex: 1,
+  },
+  vendorOptionNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexWrap: 'wrap',
+  },
+  vendorOptionStallName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  vendorOptionMeta: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  vendorOptionRight: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  vendorOptionPrice: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1B6B45',
+  },
+  vendorOptionUnit: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
   addCartBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#1B6B45', alignItems: 'center', justifyContent: 'center' },
   addCartBtnAdded: { backgroundColor: '#16A34A' },
   buyCartBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#EA580C', alignItems: 'center', justifyContent: 'center' },
