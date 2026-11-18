@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Vendor extends Model
 {
@@ -25,6 +26,12 @@ class Vendor extends Model
         'rejection_reason',
         'approved_at',
         'notification_preferences',
+        'contract_duration_months',
+        'contract_start_date',
+        'contract_end_date',
+        'contract_status',
+        'renewal_requested_at',
+        'renewal_notes',
     ];
 
     protected $attributes = [
@@ -43,6 +50,9 @@ class Vendor extends Model
             'product_categories' => 'array',
             'notification_preferences' => 'array',
             'approved_at' => 'datetime',
+            'contract_start_date' => 'date',
+            'contract_end_date' => 'date',
+            'renewal_requested_at' => 'datetime',
         ];
     }
 
@@ -69,6 +79,16 @@ class Vendor extends Model
     public function conversations(): HasMany
     {
         return $this->hasMany(OrderConversation::class);
+    }
+
+    public function rentalPayments(): HasMany
+    {
+        return $this->hasMany(StallRentalPayment::class);
+    }
+
+    public function stall(): HasOne
+    {
+        return $this->hasOne(Stall::class, 'vendor_id', 'user_id');
     }
 
     public function isApproved(): bool
