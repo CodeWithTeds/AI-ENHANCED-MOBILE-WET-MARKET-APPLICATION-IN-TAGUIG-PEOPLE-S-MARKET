@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\Review;
 use App\Models\Vendor;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
 class MarketplaceService
@@ -38,25 +38,22 @@ class MarketplaceService
     }
 
     /**
-     * Search products by name or description.
-     */
-    /**
      * Search products with AI-based highest-rated vendor prioritization.
+     * Shows all stalls/vendors selling the product, while prioritizing the highest-rated vendor.
      */
     public function search(string $term, int $perPage = 20): LengthAwarePaginator
     {
-        $paginator = Product::where('is_available', true)
+        $allMatching = Product::where('is_available', true)
             ->where(function ($q) use ($term) {
                 $q->where('name', 'like', "%{$term}%")
                   ->orWhere('description', 'like', "%{$term}%")
                   ->orWhere('category', 'like', "%{$term}%");
             })
             ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
-            ->orderByDesc('created_at')
-            ->paginate($perPage);
+            ->get();
 
         // Enrich with vendor ratings and AI recommendations
-        $vendorIds = collect($paginator->items())->pluck('vendor_id')->unique()->filter()->values();
+        $vendorIds = $allMatching->pluck('vendor_id')->unique()->filter()->values();
         $vendorRatings = Review::where('reviewable_type', Vendor::class)
             ->whereIn('reviewable_id', $vendorIds)
             ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
@@ -66,16 +63,38 @@ class MarketplaceService
 
         $highestRating = $vendorRatings->max('avg_rating') ?: 5.0;
 
-        foreach ($paginator->items() as $item) {
+        foreach ($allMatching as $item) {
             $r = $vendorRatings->get($item->vendor_id);
             $avg = $r ? round((float) $r->avg_rating, 1) : 4.5;
             $count = $r ? (int) $r->review_count : 0;
             $item->vendor_rating = $avg;
             $item->vendor_review_count = $count;
-            $item->is_ai_recommended = ($avg >= $highestRating && $avg >= 4.0);
+            $item->stock_quantity = $item->inventory?->stock_quantity ?? 0;
+            $item->is_ai_recommended = false;
         }
 
-        return $paginator;
+        // AI Product Recommendation sorts highest-rated vendor first, keeping others visible
+        $sorted = $allMatching->sort(function ($a, $b) {
+            if ($b->vendor_rating != $a->vendor_rating) {
+                return $b->vendor_rating <=> $a->vendor_rating;
+            }
+            if ($b->vendor_review_count != $a->vendor_review_count) {
+                return $b->vendor_review_count <=> $a->vendor_review_count;
+            }
+            return $a->price <=> $b->price;
+        })->values();
+
+        if ($sorted->isNotEmpty()) {
+            $sorted->first()->is_ai_recommended = true;
+        }
+
+        $page = (int) request()->get('page', 1);
+        $slice = $sorted->slice(($page - 1) * $perPage, $perPage)->values();
+
+        return new LengthAwarePaginator($slice, $sorted->count(), $perPage, $page, [
+            'path' => request()->url(),
+            'query' => request()->query(),
+        ]);
     }
 
     /**
@@ -118,17 +137,18 @@ class MarketplaceService
             ->values();
 
         $query = Product::where('is_available', true)
-            ->where('category', $product->category)
             ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity']);
 
-        if ($keywords->isNotEmpty()) {
-            $query->where(function ($q) use ($keywords, $product) {
-                $q->where('id', $product->id);
+        $query->where(function ($q) use ($keywords, $product) {
+            $q->where('id', $product->id);
+            if ($keywords->isNotEmpty()) {
                 foreach ($keywords as $kw) {
                     $q->orWhere('name', 'like', "%{$kw}%");
                 }
-            });
-        }
+            } else {
+                $q->orWhere('category', $product->category);
+            }
+        });
 
         $allMatching = $query->get();
 

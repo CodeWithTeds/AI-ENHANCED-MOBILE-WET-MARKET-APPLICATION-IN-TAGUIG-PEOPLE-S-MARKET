@@ -25,6 +25,7 @@ import {
   getCategories,
   getFeaturedProducts,
   browseProducts,
+  searchProducts,
   type MarketProduct,
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult } from '@/services/recipe';
@@ -54,6 +55,7 @@ export default function CustomerHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MarketProduct[] | null>(null);
   const [recipe, setRecipe] = useState<RecipeResult | null>(null);
   const [recipeLoading, setRecipeLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<MarketProduct | null>(null);
@@ -90,6 +92,8 @@ export default function CustomerHomeScreen() {
 
   async function handleCategoryPress(category: string) {
     setSelectedCategory(category);
+    setSearchResults(null);
+    setRecipe(null);
     setLoading(true);
     try {
       if (category.toLowerCase() === 'all') {
@@ -109,30 +113,50 @@ export default function CustomerHomeScreen() {
   function onRefresh() {
     setRefreshing(true);
     setSelectedCategory('all');
+    setSearchResults(null);
     setRecipe(null);
     fetchData();
   }
 
-  async function handleRecipeSearch() {
+  async function handleSearch() {
     const query = searchQuery.trim();
     if (!query || query.length < 2) return;
 
+    setLoading(true);
     setRecipeLoading(true);
     setRecipe(null);
+
     try {
-      const result = await searchRecipe(query);
-      setRecipe(result);
+      const [productsRes, recipeRes] = await Promise.allSettled([
+        searchProducts(query),
+        searchRecipe(query),
+      ]);
+
+      if (productsRes.status === 'fulfilled') {
+        const data = productsRes.value.data ?? [];
+        setSearchResults(data);
+      } else {
+        setSearchResults([]);
+      }
+
+      if (recipeRes.status === 'fulfilled') {
+        setRecipe(recipeRes.value);
+      } else {
+        setRecipe(null);
+      }
     } catch (err) {
-      console.error('[Recipe] search failed:', err);
-      setRecipe({ found: false, message: 'Failed to search. Check your connection.' });
+      console.error('[Home] search failed:', err);
     } finally {
+      setLoading(false);
       setRecipeLoading(false);
     }
   }
 
-  function clearRecipe() {
+  function clearSearch() {
     setRecipe(null);
+    setSearchResults(null);
     setSearchQuery('');
+    fetchData();
   }
 
   return (
@@ -167,14 +191,19 @@ export default function CustomerHomeScreen() {
               <Ionicons name="search" size={18} color="#9CA3AF" />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search recipes or ingredients..."
+                placeholder="Search products (e.g. pork, tilapia, beef)..."
                 placeholderTextColor="#9CA3AF"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                onSubmitEditing={handleRecipeSearch}
+                onSubmitEditing={handleSearch}
                 returnKeyType="search"
               />
-              <TouchableOpacity style={styles.searchFilterBtn} onPress={handleRecipeSearch}>
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.searchFilterBtn} onPress={handleSearch}>
                 <Ionicons name="flash" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -193,69 +222,130 @@ export default function CustomerHomeScreen() {
         {recipeLoading && (
           <View style={styles.recipeLoading}>
             <ActivityIndicator size="small" color="#1B6B45" />
-            <Text style={styles.recipeLoadingText}>Generating recipe...</Text>
+            <Text style={styles.recipeLoadingText}>Searching products &amp; recipes with AI...</Text>
           </View>
         )}
 
         {recipe && !recipeLoading && (
-          <RecipeCard recipe={recipe} onClose={clearRecipe} />
+          <RecipeCard recipe={recipe} onClose={clearSearch} />
         )}
 
-        {/* Categories */}
-        <View style={styles.categoriesSection}>
-          <View style={styles.categoriesHeader}>
-            <Text style={styles.sectionTitle}>Categories</Text>
-            <Text style={styles.categoriesSubtext}>Fresh wet market goods</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesRow}
-          >
-            <CategoryChip
-              category="all"
-              label="All"
-              isActive={selectedCategory.toLowerCase() === 'all'}
-              onPress={() => handleCategoryPress('all')}
-            />
-            {categories.map((cat) => (
-              <CategoryChip
-                key={cat}
-                category={cat}
-                isActive={selectedCategory.toLowerCase() === cat.toLowerCase()}
-                onPress={() => handleCategoryPress(cat)}
-              />
-            ))}
-          </ScrollView>
-        </View>
+        {/* Search Results Mode */}
+        {searchResults !== null ? (
+          <View>
+            {/* AI Recommendation Banner */}
+            {searchResults.length > 0 && (
+              <View style={styles.aiSearchBanner}>
+                <View style={styles.aiBannerIconWrap}>
+                  <Ionicons name="sparkles" size={16} color="#B45309" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aiBannerTitle}>AI Product Recommendation</Text>
+                  <Text style={styles.aiBannerText}>
+                    Prioritizing{' '}
+                    <Text style={{ fontWeight: '800', color: '#92400E' }}>
+                      {searchResults[0].vendor?.stall_name ?? 'Top Rated Vendor'}
+                    </Text>{' '}
+                    with the highest rating (★ {(searchResults[0].vendor_rating ?? 5.0).toFixed(1)}). All {searchResults.length} {searchResults.length === 1 ? 'stall' : 'stalls'} selling &ldquo;{searchQuery}&rdquo; are visible below.
+                  </Text>
+                </View>
+              </View>
+            )}
 
-        {/* Featured Products */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <Ionicons name="flame-outline" size={16} color="#F97316" />
-            <Text style={styles.sectionTitle}>Featured Products</Text>
-          </View>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>See all &gt;</Text>
-          </TouchableOpacity>
-        </View>
+            {/* Results Header */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="storefront-outline" size={16} color="#1B6B45" />
+                <Text style={styles.sectionTitle}>
+                  Stalls Selling &ldquo;{searchQuery}&rdquo; ({searchResults.length})
+                </Text>
+              </View>
+              <TouchableOpacity onPress={clearSearch}>
+                <Text style={styles.seeAll}>Clear &times;</Text>
+              </TouchableOpacity>
+            </View>
 
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#1B6B45" />
-          </View>
-        ) : products.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="basket-outline" size={40} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No products available yet</Text>
-            <Text style={styles.emptySubtext}>Check back when vendors add their goods!</Text>
+            {loading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color="#1B6B45" />
+              </View>
+            ) : searchResults.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="search-outline" size={40} color="#D1D5DB" />
+                <Text style={styles.emptyText}>No stalls found selling &ldquo;{searchQuery}&rdquo;</Text>
+                <Text style={styles.emptySubtext}>Try searching another product keyword like pork, tilapia, or beef.</Text>
+                <TouchableOpacity onPress={clearSearch} style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1B6B45' }}>View All Products</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.productsGrid}>
+                {searchResults.map((product) => (
+                  <ProductCard key={product.id} product={product} onPress={() => setSelectedProduct(product)} />
+                ))}
+              </View>
+            )}
           </View>
         ) : (
-          <View style={styles.productsGrid}>
-            {products.slice(0, 6).map((product) => (
-              <ProductCard key={product.id} product={product} onPress={() => setSelectedProduct(product)} />
-            ))}
-          </View>
+          /* Normal Categories & Featured Products */
+          <>
+            {/* Categories */}
+            <View style={styles.categoriesSection}>
+              <View style={styles.categoriesHeader}>
+                <Text style={styles.sectionTitle}>Categories</Text>
+                <Text style={styles.categoriesSubtext}>Fresh wet market goods</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoriesRow}
+              >
+                <CategoryChip
+                  category="all"
+                  label="All"
+                  isActive={selectedCategory.toLowerCase() === 'all'}
+                  onPress={() => handleCategoryPress('all')}
+                />
+                {categories.map((cat) => (
+                  <CategoryChip
+                    key={cat}
+                    category={cat}
+                    isActive={selectedCategory.toLowerCase() === cat.toLowerCase()}
+                    onPress={() => handleCategoryPress(cat)}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Featured Products */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="flame-outline" size={16} color="#F97316" />
+                <Text style={styles.sectionTitle}>Featured Products</Text>
+              </View>
+              <TouchableOpacity>
+                <Text style={styles.seeAll}>See all &gt;</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color="#1B6B45" />
+              </View>
+            ) : products.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="basket-outline" size={40} color="#D1D5DB" />
+                <Text style={styles.emptyText}>No products available yet</Text>
+                <Text style={styles.emptySubtext}>Check back when vendors add their goods!</Text>
+              </View>
+            ) : (
+              <View style={styles.productsGrid}>
+                {products.slice(0, 6).map((product) => (
+                  <ProductCard key={product.id} product={product} onPress={() => setSelectedProduct(product)} />
+                ))}
+              </View>
+            )}
+          </>
         )}
 
         {/* Market Hours & Map Entry */}
@@ -354,10 +444,17 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
           </View>
         )}
         {/* Badge */}
-        <View style={styles.productBadge}>
-          <Ionicons name="star" size={10} color="#F97316" />
-          <Text style={styles.productBadgeText}>Fresh</Text>
-        </View>
+        {product.is_ai_recommended ? (
+          <View style={[styles.productBadge, { backgroundColor: '#B45309' }]}>
+            <Ionicons name="sparkles" size={10} color="#FFFFFF" />
+            <Text style={[styles.productBadgeText, { color: '#FFFFFF' }]}>AI Top Rated</Text>
+          </View>
+        ) : (
+          <View style={styles.productBadge}>
+            <Ionicons name="star" size={10} color="#F97316" />
+            <Text style={styles.productBadgeText}>Fresh</Text>
+          </View>
+        )}
         {/* Heart */}
         <TouchableOpacity style={styles.productHeartBtn} onPress={handleToggleFavorite}>
           <Animated.View style={{ transform: [{ scale: heartAnim }] }}>
@@ -377,6 +474,20 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
             <View style={[styles.cardDot, product.vendor.is_open ? styles.cardDotOpen : styles.cardDotClosed]} />
           )}
         </View>
+
+        {/* Vendor Rating & Availability */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Ionicons name="star" size={11} color="#F59E0B" />
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#374151' }}>
+              {(product.vendor_rating ?? 4.5).toFixed(1)}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: product.is_available ? '#059669' : '#DC2626' }}>
+            {product.is_available ? 'In Stock' : 'Out of stock'}
+          </Text>
+        </View>
+
         <View style={styles.productBottom}>
           <Text style={styles.productUnit}>per {product.unit}</Text>
           <Text style={styles.productPrice}>₱{Number(product.price).toFixed(0)}</Text>
@@ -766,6 +877,40 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   seeAll: { fontSize: 13, fontWeight: '600', color: '#1B6B45' },
+
+  // AI Search Banner
+  aiSearchBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  aiBannerIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FDE68A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  aiBannerText: {
+    fontSize: 12,
+    color: '#78350F',
+    marginTop: 2,
+    lineHeight: 16,
+  },
 
   // Categories
   categoriesSection: { marginBottom: 6 },

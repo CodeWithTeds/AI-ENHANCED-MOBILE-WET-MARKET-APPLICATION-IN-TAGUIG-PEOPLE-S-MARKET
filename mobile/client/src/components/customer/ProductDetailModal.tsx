@@ -187,6 +187,9 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
       .then((detail) => {
         if (detail.comparison_vendors) {
           setComparisonVendors(detail.comparison_vendors);
+          if (detail.comparison_vendors.length > 1) {
+            setShowVendorDropdown(true);
+          }
         }
       })
       .catch(() => {});

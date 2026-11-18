@@ -254,6 +254,13 @@ test('Item 6: AI recommendation prioritizes highest-rated vendor and returns ven
     $topVendor = $productData['comparison_vendors'][0];
     expect($topVendor['is_ai_recommended'])->toBeTrue()
         ->and($topVendor['vendor_id'])->toBe($vendor2->id);
+
+    // Verify search('Pork') returns all vendors selling pork, with top-rated vendor prioritized first
+    $searchResults = $marketService->search('Pork');
+    expect($searchResults->total())->toBeGreaterThanOrEqual(2)
+        ->and($searchResults->items()[0]->vendor_id)->toBe($vendor2->id)
+        ->and($searchResults->items()[0]->is_ai_recommended)->toBeTrue()
+        ->and($searchResults->items()[1]->vendor_id)->toBe($fx['vendor']->id);
 });
 
 test('Item 7: vendor contract expiration alerts and renewal workflow', function () {
