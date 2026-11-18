@@ -72,6 +72,8 @@ const mainNavItems: SidebarNavItem[] = [
         children: [
             { title: 'All Vendors', href: '/admin/dashboard/vendors' },
             { title: 'Stall Management', href: '/admin/dashboard/vendors/stalls' },
+            { title: 'Stall Monitoring & Complaints', href: '/admin/dashboard/vendors/stalls/monitoring' },
+            { title: 'Stall Rentals & Billing', href: '/admin/dashboard/vendors/rentals' },
             { title: 'Pending Approval', href: '/admin/dashboard/vendors/pending' },
             { title: 'Documents', href: '/admin/dashboard/vendors/documents' },
         ],

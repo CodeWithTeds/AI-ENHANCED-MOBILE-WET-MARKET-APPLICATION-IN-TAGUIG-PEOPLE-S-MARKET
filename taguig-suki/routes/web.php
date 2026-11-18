@@ -4,12 +4,15 @@ use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\CustomerVerificationController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeedbackController;
+use App\Http\Controllers\Admin\InventoryMonitoringController;
 use App\Http\Controllers\Admin\OrderManagementController;
 use App\Http\Controllers\Admin\PaymentManagementController;
 use App\Http\Controllers\Admin\ProductManagementController;
 use App\Http\Controllers\Admin\ReportsAnalyticsController;
 use App\Http\Controllers\Admin\SectionController;
+use App\Http\Controllers\Admin\StallComplaintController;
 use App\Http\Controllers\Admin\StallController;
+use App\Http\Controllers\Admin\StallRentalController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\VendorApprovalController;
 use App\Http\Controllers\Admin\VendorManagementController;
@@ -19,6 +22,8 @@ use Laravel\Fortify\Features;
 Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
+
+Route::get('orders/{order:order_number}/receipt', [OrderManagementController::class, 'receipt'])->name('orders.receipt');
 
 Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -34,6 +39,18 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::post('dashboard/vendors/stalls', [StallController::class, 'store'])->name('stalls.store');
     Route::put('dashboard/vendors/stalls/{stall}', [StallController::class, 'update'])->name('stalls.update');
     Route::delete('dashboard/vendors/stalls/{stall}', [StallController::class, 'destroy'])->name('stalls.destroy');
+
+    // Stall Monitoring & Customer Complaints
+    Route::get('dashboard/vendors/stalls/monitoring', [StallComplaintController::class, 'index'])->name('stalls.monitoring');
+    Route::patch('dashboard/vendors/stalls/complaints/{complaint}', [StallComplaintController::class, 'updateStatus'])->name('stalls.complaints.update');
+
+    // Monthly Stall Rental Payment Monitoring & Contracts
+    Route::get('dashboard/vendors/rentals', [StallRentalController::class, 'index'])->name('rentals.index');
+    Route::get('dashboard/rentals', fn () => redirect()->route('rentals.index'));
+    Route::post('dashboard/vendors/rentals/generate', [StallRentalController::class, 'generateBills'])->name('rentals.generate');
+    Route::patch('dashboard/vendors/rentals/{rental}/verify', [StallRentalController::class, 'verifyPayment'])->name('rentals.verify');
+    Route::post('dashboard/vendors/{vendor}/contract/renew-approve', [StallRentalController::class, 'renewContractApprove'])->name('vendors.contract.renew-approve');
+    Route::get('dashboard/reports/rentals', [StallRentalController::class, 'reports'])->name('reports.rentals');
 
     // Vendor Management (All Vendors)
     Route::get('dashboard/vendors', [VendorManagementController::class, 'index'])->name('vendors.index');
@@ -53,6 +70,9 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::put('dashboard/products/{product}', [ProductManagementController::class, 'update'])->name('products.update');
     Route::delete('dashboard/products/{product}', [ProductManagementController::class, 'destroy'])->name('products.destroy');
     Route::patch('dashboard/products/{product}/toggle', [ProductManagementController::class, 'toggleAvailability'])->name('products.toggle');
+
+    // Inventory Monitoring
+    Route::get('dashboard/inventory', [InventoryMonitoringController::class, 'index'])->name('inventory.index');
 
     // Payment & Order Management
     Route::get('dashboard/orders', [OrderManagementController::class, 'index'])->name('orders.index');
