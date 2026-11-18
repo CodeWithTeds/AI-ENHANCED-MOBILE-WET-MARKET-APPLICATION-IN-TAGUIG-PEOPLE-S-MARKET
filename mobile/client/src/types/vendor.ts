@@ -24,9 +24,11 @@ export interface DocumentUpload {
 }
 
 export interface DocumentsInfo {
-  businessPermit: DocumentUpload | null;
-  stallLease: DocumentUpload | null;
   validId: DocumentUpload | null;
+  businessPermit: DocumentUpload | null;
+  sanitaryPermit: DocumentUpload | null;
+  dtiRegistration: DocumentUpload | null;
+  stallLease?: DocumentUpload | null;
 }
 
 export interface VendorRegistrationData {

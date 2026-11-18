@@ -46,9 +46,11 @@ const initialBusiness: BusinessInfo = {
 };
 
 const initialDocuments: DocumentsInfo = {
-  businessPermit: null,
-  stallLease: null,
   validId: null,
+  businessPermit: null,
+  sanitaryPermit: null,
+  dtiRegistration: null,
+  stallLease: null,
 };
 
 export default function VendorRegistrationScreen() {

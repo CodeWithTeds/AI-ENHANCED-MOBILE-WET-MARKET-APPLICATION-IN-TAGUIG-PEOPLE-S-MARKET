@@ -55,6 +55,15 @@ export async function registerVendor(
   });
 
   // Documents — React Native FormData requires {uri, name, type} objects
+  if (data.documents.validId) {
+    const doc = data.documents.validId;
+    formData.append('valid_id', {
+      uri: doc.uri,
+      name: doc.name,
+      type: doc.type,
+    } as unknown as Blob);
+  }
+
   if (data.documents.businessPermit) {
     const doc = data.documents.businessPermit;
     formData.append('business_permit', {
@@ -64,18 +73,27 @@ export async function registerVendor(
     } as unknown as Blob);
   }
 
-  if (data.documents.stallLease) {
-    const doc = data.documents.stallLease;
-    formData.append('stall_lease', {
+  if (data.documents.sanitaryPermit) {
+    const doc = data.documents.sanitaryPermit;
+    formData.append('sanitary_permit', {
       uri: doc.uri,
       name: doc.name,
       type: doc.type,
     } as unknown as Blob);
   }
 
-  if (data.documents.validId) {
-    const doc = data.documents.validId;
-    formData.append('valid_id', {
+  if (data.documents.dtiRegistration) {
+    const doc = data.documents.dtiRegistration;
+    formData.append('dti_registration', {
+      uri: doc.uri,
+      name: doc.name,
+      type: doc.type,
+    } as unknown as Blob);
+  }
+
+  if (data.documents.stallLease) {
+    const doc = data.documents.stallLease;
+    formData.append('stall_lease', {
       uri: doc.uri,
       name: doc.name,
       type: doc.type,

@@ -92,7 +92,7 @@ class VendorRegistrationService
 
     private function uploadDocuments(Vendor $vendor, array $files): void
     {
-        $documentTypes = ['business_permit', 'stall_lease', 'valid_id'];
+        $documentTypes = ['valid_id', 'business_permit', 'sanitary_permit', 'dti_registration', 'stall_lease'];
 
         foreach ($documentTypes as $type) {
             if (!isset($files[$type])) {

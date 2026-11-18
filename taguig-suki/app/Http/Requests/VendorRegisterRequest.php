@@ -38,10 +38,12 @@ class VendorRegisterRequest extends FormRequest
             'product_categories' => ['required', 'array', 'min:1'],
             'product_categories.*' => ['string'],
 
-            // Documents
-            'business_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'stall_lease' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            // Documents — Required: Valid ID, Business Permit, Sanitary Permit, DTI Registration
             'valid_id' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'business_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'sanitary_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'dti_registration' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'stall_lease' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ];
     }
 

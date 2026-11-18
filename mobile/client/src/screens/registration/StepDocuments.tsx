@@ -63,14 +63,17 @@ export function StepDocuments({ data, onNext, onBack }: StepDocumentsProps) {
   function validate(): boolean {
     const newErrors: Partial<Record<keyof DocumentsInfo, string>> = {};
 
+    if (!form.validId) {
+      newErrors.validId = 'Valid government ID is required';
+    }
     if (!form.businessPermit) {
       newErrors.businessPermit = 'Business permit is required';
     }
-    if (!form.stallLease) {
-      newErrors.stallLease = 'Stall lease/contract is required';
+    if (!form.sanitaryPermit) {
+      newErrors.sanitaryPermit = 'Sanitary permit is required';
     }
-    if (!form.validId) {
-      newErrors.validId = 'Valid ID is required';
+    if (!form.dtiRegistration) {
+      newErrors.dtiRegistration = 'DTI registration is required';
     }
 
     setErrors(newErrors);
@@ -107,8 +110,17 @@ export function StepDocuments({ data, onNext, onBack }: StepDocumentsProps) {
 
       <View style={styles.form}>
         <DocumentUploader
-          label="Business / Mayor's Permit"
-          description="Your valid business or mayor's permit"
+          label="Valid Government ID *"
+          description="Government-issued ID (Passport, UMID, Driver's License, etc.)"
+          document={form.validId}
+          onPick={() => pickDocument('validId')}
+          onRemove={() => removeDocument('validId')}
+          error={errors.validId}
+        />
+
+        <DocumentUploader
+          label="Business / Mayor's Permit *"
+          description="Valid business or mayor's permit for Taguig People's Market"
           document={form.businessPermit}
           onPick={() => pickDocument('businessPermit')}
           onRemove={() => removeDocument('businessPermit')}
@@ -116,21 +128,30 @@ export function StepDocuments({ data, onNext, onBack }: StepDocumentsProps) {
         />
 
         <DocumentUploader
-          label="Market Stall Lease / Contract"
-          description="Proof of stall rental at Taguig People's Market"
-          document={form.stallLease}
-          onPick={() => pickDocument('stallLease')}
-          onRemove={() => removeDocument('stallLease')}
-          error={errors.stallLease}
+          label="Sanitary Permit *"
+          description="City health / sanitary clearance permit"
+          document={form.sanitaryPermit}
+          onPick={() => pickDocument('sanitaryPermit')}
+          onRemove={() => removeDocument('sanitaryPermit')}
+          error={errors.sanitaryPermit}
         />
 
         <DocumentUploader
-          label="Valid Government ID"
-          description="Government-issued ID for identity verification"
-          document={form.validId}
-          onPick={() => pickDocument('validId')}
-          onRemove={() => removeDocument('validId')}
-          error={errors.validId}
+          label="DTI Registration *"
+          description="Certificate of Business Name Registration (DTI)"
+          document={form.dtiRegistration}
+          onPick={() => pickDocument('dtiRegistration')}
+          onRemove={() => removeDocument('dtiRegistration')}
+          error={errors.dtiRegistration}
+        />
+
+        <DocumentUploader
+          label="Market Stall Lease / Contract (Optional)"
+          description="Proof of stall rental or contract at Taguig People's Market"
+          document={form.stallLease ?? null}
+          onPick={() => pickDocument('stallLease')}
+          onRemove={() => removeDocument('stallLease')}
+          error={errors.stallLease}
         />
       </View>
 

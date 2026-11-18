@@ -67,20 +67,32 @@ export function StepReview({ data, onSubmit, onBack, loading }: StepReviewProps)
         </View>
         <View style={styles.card}>
           <DocumentRow
+            label="Valid ID"
+            uploaded={!!data.documents.validId}
+            fileName={data.documents.validId?.name}
+          />
+          <DocumentRow
             label="Business Permit"
             uploaded={!!data.documents.businessPermit}
             fileName={data.documents.businessPermit?.name}
           />
           <DocumentRow
-            label="Stall Lease"
-            uploaded={!!data.documents.stallLease}
-            fileName={data.documents.stallLease?.name}
+            label="Sanitary Permit"
+            uploaded={!!data.documents.sanitaryPermit}
+            fileName={data.documents.sanitaryPermit?.name}
           />
           <DocumentRow
-            label="Valid ID"
-            uploaded={!!data.documents.validId}
-            fileName={data.documents.validId?.name}
+            label="DTI Registration"
+            uploaded={!!data.documents.dtiRegistration}
+            fileName={data.documents.dtiRegistration?.name}
           />
+          {data.documents.stallLease && (
+            <DocumentRow
+              label="Stall Lease"
+              uploaded={!!data.documents.stallLease}
+              fileName={data.documents.stallLease?.name}
+            />
+          )}
         </View>
       </View>
 
