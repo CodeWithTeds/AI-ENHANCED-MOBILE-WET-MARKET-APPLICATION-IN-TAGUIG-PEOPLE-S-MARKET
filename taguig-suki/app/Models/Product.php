@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'vendor_id',
         'name',
@@ -17,6 +21,8 @@ class Product extends Model
         'unit',
         'image',
         'is_available',
+        'deletion_reason',
+        'deleted_by',
     ];
 
     protected function casts(): array
@@ -24,6 +30,7 @@ class Product extends Model
         return [
             'price' => 'decimal:2',
             'is_available' => 'boolean',
+            'deleted_at' => 'datetime',
         ];
     }
 
@@ -35,5 +42,15 @@ class Product extends Model
     public function inventory(): HasOne
     {
         return $this->hasOne(Inventory::class);
+    }
+
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    public function deletionLogs(): HasMany
+    {
+        return $this->hasMany(ProductDeletionLog::class);
     }
 }
