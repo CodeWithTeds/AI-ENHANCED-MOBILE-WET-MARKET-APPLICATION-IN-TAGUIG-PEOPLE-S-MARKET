@@ -19,15 +19,34 @@ class Review extends Model
         'comment',
         'status',
         'admin_response',
+        'vendor_response',
+        'needs_response',
         'resolved_at',
+        'vendor_responded_at',
     ];
 
     protected function casts(): array
     {
         return [
             'rating' => 'integer',
+            'needs_response' => 'boolean',
             'resolved_at' => 'datetime',
+            'vendor_responded_at' => 'datetime',
         ];
+    }
+
+    public function hasComment(): bool
+    {
+        return ! empty(trim((string) ($this->comment ?? '')));
+    }
+
+    public function isComplaint(): bool
+    {
+        if (! $this->hasComment()) {
+            return false;
+        }
+
+        return $this->rating <= 3 || (bool) preg_match('/(complain|broken|rotten|dirty|bad|smell|spoil|damage|wrong|kulang|panis|sira|mabaho)/i', (string) $this->comment);
     }
 
     public function user(): BelongsTo
