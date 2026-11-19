@@ -5,6 +5,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   RefreshControl,
   ScrollView,
@@ -32,6 +33,10 @@ import {
   type TopProductSale,
   type VendorSalesAnalyticsResponse,
 } from '@/services/sales';
+import {
+  exportVendorSalesReportPDF,
+  printVendorSalesReport,
+} from '@/services/vendor-sales-pdf';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -80,6 +85,7 @@ export default function VendorSalesScreen() {
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [expandedTxId, setExpandedTxId] = useState<number | null>(null);
   const [selectedChartIndex, setSelectedChartIndex] = useState<number | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const loadData = useCallback(
     async (_isRefresh = false) => {
@@ -207,6 +213,78 @@ export default function VendorSalesScreen() {
   const activeChartPoint =
     selectedChartIndex !== null ? chartData[selectedChartIndex] : chartData[chartData.length - 1];
 
+  const periodLabel = useMemo(() => {
+    switch (selectedPeriod) {
+      case 'today':
+        return 'Today';
+      case 'week':
+        return 'This Week';
+      case 'month':
+        return 'This Month';
+      default:
+        return 'All Time';
+    }
+  }, [selectedPeriod]);
+
+  const handlePrintOrExport = useCallback(
+    async (action: 'print' | 'share' = 'print') => {
+      if (!data) return;
+      setPrinting(true);
+      try {
+        const options = {
+          metadata: {
+            stallName: vendor?.stall_name || 'My Stall',
+            stallLocation: vendor?.stall_location || 'Taguig People\'s Market',
+            vendorName: (vendor as any)?.user?.name || vendor?.stall_name || 'Vendor',
+            periodLabel,
+          },
+          summary: {
+            ...summary,
+            total_revenue: filteredRevenue,
+            completed_orders_count: filteredTransactions.length,
+          },
+          topProducts,
+          categoryBreakdown,
+          paymentMethods,
+          transactions: filteredTransactions,
+        };
+
+        if (action === 'print') {
+          await printVendorSalesReport(options);
+        } else {
+          await exportVendorSalesReportPDF(options);
+        }
+      } catch (err: any) {
+        Alert.alert('Report Error', err?.message || 'Could not generate report.');
+      } finally {
+        setPrinting(false);
+      }
+    },
+    [data, vendor, periodLabel, summary, filteredRevenue, filteredTransactions, topProducts, categoryBreakdown, paymentMethods],
+  );
+
+  const showPrintOptions = useCallback(() => {
+    Alert.alert(
+      'Print / Export Sales Report',
+      `Generate official sales report for "${periodLabel}" (${filteredTransactions.length} orders · ${formatPeso(filteredRevenue)})?`,
+      [
+        {
+          text: 'Print Report',
+          onPress: () => handlePrintOrExport('print'),
+        },
+        {
+          text: 'Share / Save PDF',
+          onPress: () => handlePrintOrExport('share'),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true },
+    );
+  }, [handlePrintOrExport, periodLabel, filteredTransactions.length, filteredRevenue]);
+
   if (loading && !data) {
     return (
       <View style={styles.screen}>
@@ -248,16 +326,30 @@ export default function VendorSalesScreen() {
                 <Text style={styles.headerEyebrow}>Performance & Analytics</Text>
                 <Text style={styles.headerTitle}>Sales & Revenue</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setRefreshing(true);
-                  loadData(true);
-                }}
-                style={styles.refreshBtn}
-                accessibilityLabel="Refresh sales data"
-              >
-                <Ionicons name="refresh" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TouchableOpacity
+                  onPress={showPrintOptions}
+                  style={styles.refreshBtn}
+                  accessibilityLabel="Print or Save PDF Sales Report"
+                  disabled={printing}
+                >
+                  {printing ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons name="print-outline" size={18} color="#FFFFFF" />
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setRefreshing(true);
+                    loadData(true);
+                  }}
+                  style={styles.refreshBtn}
+                  accessibilityLabel="Refresh sales data"
+                >
+                  <Ionicons name="refresh" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </SafeAreaView>
@@ -303,6 +395,34 @@ export default function VendorSalesScreen() {
             );
           })}
         </View>
+
+        {/* ─── Print / Export PDF Action Banner ─── */}
+        <TouchableOpacity
+          style={styles.printActionBanner}
+          onPress={showPrintOptions}
+          activeOpacity={0.85}
+          disabled={printing}
+        >
+          <View style={styles.printBannerLeft}>
+            <View style={styles.printIconCircle}>
+              {printing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="document-text" size={18} color="#FFFFFF" />
+              )}
+            </View>
+            <View style={styles.printTextWrap}>
+              <Text style={styles.printTitle}>Print / Export PDF Report</Text>
+              <Text style={styles.printSub}>
+                Official statement for {periodLabel} ({filteredTransactions.length} orders · {formatPeso(filteredRevenue)})
+              </Text>
+            </View>
+          </View>
+          <View style={styles.printBadge}>
+            <Ionicons name="print" size={13} color={C.brandDark} />
+            <Text style={styles.printBadgeText}>Print PDF</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* ─── Hero Revenue Card ─── */}
         <View style={styles.heroCard}>
@@ -892,6 +1012,67 @@ const styles = StyleSheet.create({
   },
   periodChipText: { fontSize: 12, fontWeight: '700', color: C.sub },
   periodChipTextActive: { color: C.brandDark, fontWeight: '800' },
+
+  /* Print Action Banner */
+  printActionBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#C6EAD7',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  printBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  printIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: C.brandDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  printTextWrap: {
+    flex: 1,
+  },
+  printTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.ink,
+  },
+  printSub: {
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 1,
+  },
+  printBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: C.brandSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  printBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.brandDark,
+  },
 
   /* Hero Card */
   heroCard: {
