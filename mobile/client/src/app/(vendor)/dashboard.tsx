@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -28,6 +29,9 @@ import {
   type OrderStatus,
 } from '@/services/orders';
 import { fetchInventorySummary, type InventorySummary } from '@/services/inventory';
+import { getVendorSalesAnalytics } from '@/services/sales';
+import { exportVendorSalesReportPDF, printVendorSalesReport } from '@/services/vendor-sales-pdf';
+import { getVendorContractDetails, type VendorContractDetails } from '@/services/vendor-contract';
 
 /* ─── Design tokens ─── */
 
@@ -69,6 +73,7 @@ export default function VendorDashboard() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<InventorySummary | null>(null);
+  const [contract, setContract] = useState<VendorContractDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,12 +86,14 @@ export default function VendorDashboard() {
         return;
       }
       try {
-        const [orderData, invSummary] = await Promise.all([
+        const [orderData, invSummary, contractData] = await Promise.all([
           getVendorOrders(authToken),
           fetchInventorySummary(authToken),
+          getVendorContractDetails(authToken).catch(() => null),
         ]);
         setOrders(Array.isArray(orderData) ? orderData : []);
         setSummary(invSummary);
+        if (contractData) setContract(contractData);
       } catch (err) {
         console.error('[VendorDashboard] Failed to load dashboard data:', err);
       } finally {
@@ -142,6 +149,71 @@ export default function VendorDashboard() {
 
   const operatingHours = (vendor as any)?.operating_hours ?? '4:00 AM - 8:00 PM';
   const isStoreOpen = (vendor as any)?.is_open ?? computeIsOpen((vendor as any)?.opening_time, (vendor as any)?.closing_time);
+
+  const handleDashboardPrint = () => {
+    Alert.alert(
+      'Print / Export Sales Report',
+      'Select a report period to generate and print or save as PDF:',
+      [
+        {
+          text: "Print Today's Sales",
+          onPress: async () => {
+            const authToken = token ?? (await getToken());
+            if (!authToken) return;
+            try {
+              const res = await getVendorSalesAnalytics(authToken, 'today');
+              await printVendorSalesReport({
+                metadata: {
+                  stallName,
+                  stallLocation,
+                  vendorName: (vendor as any)?.user?.name || stallName,
+                  periodLabel: 'Today',
+                },
+                summary: res.summary,
+                topProducts: res.top_products,
+                categoryBreakdown: res.category_breakdown,
+                paymentMethods: res.payment_methods,
+                transactions: res.completed_transactions,
+              });
+            } catch (err: any) {
+              Alert.alert('Report Error', err?.message || 'Failed to print report');
+            }
+          },
+        },
+        {
+          text: 'Print Lifetime Sales (All Time)',
+          onPress: async () => {
+            const authToken = token ?? (await getToken());
+            if (!authToken) return;
+            try {
+              const res = await getVendorSalesAnalytics(authToken, 'all');
+              await printVendorSalesReport({
+                metadata: {
+                  stallName,
+                  stallLocation,
+                  vendorName: (vendor as any)?.user?.name || stallName,
+                  periodLabel: 'All Time',
+                },
+                summary: res.summary,
+                topProducts: res.top_products,
+                categoryBreakdown: res.category_breakdown,
+                paymentMethods: res.payment_methods,
+                transactions: res.completed_transactions,
+              });
+            } catch (err: any) {
+              Alert.alert('Report Error', err?.message || 'Failed to print report');
+            }
+          },
+        },
+        {
+          text: 'Open Sales & Revenue Screen',
+          onPress: () => router.navigate('/(vendor)/sales' as any),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
+  };
 
   return (
     <View style={styles.screen}>
@@ -202,6 +274,59 @@ export default function VendorDashboard() {
           </View>
         </View>
 
+        {/* Contract Expiration / Pending Review Banner (Item 20) */}
+        {contract && (contract.is_expiring_soon || contract.is_expired || contract.contract_status === 'renewal_requested' || contract.contract_status === 'cancellation_requested') && (
+          <TouchableOpacity
+            style={[
+              styles.contractBanner,
+              contract.is_expired
+                ? styles.contractBannerExpired
+                : contract.is_expiring_soon
+                ? styles.contractBannerExpiring
+                : styles.contractBannerPending,
+            ]}
+            onPress={() => router.navigate('/(vendor)/profile' as any)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.contractBannerIcon}>
+              <Ionicons
+                name={
+                  contract.is_expired
+                    ? 'alert-circle'
+                    : contract.is_expiring_soon
+                    ? 'warning'
+                    : 'time'
+                }
+                size={20}
+                color={
+                  contract.is_expired
+                    ? '#DC2626'
+                    : contract.is_expiring_soon
+                    ? '#D97706'
+                    : '#7E22CE'
+                }
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.contractBannerTitle}>
+                {contract.is_expired
+                  ? 'Stall Lease Contract Expired'
+                  : contract.is_expiring_soon
+                  ? `Stall Lease Expiring Soon (${contract.days_until_expiration} Days Left)`
+                  : contract.contract_status === 'renewal_requested'
+                  ? 'Contract Renewal Request Under Review'
+                  : 'Contract Cancellation Request Under Review'}
+              </Text>
+              <Text style={styles.contractBannerText}>
+                {contract.is_expired || contract.is_expiring_soon
+                  ? 'Tap to request Contract Renewal (1, 3, 6, 12 mos) or Cancellation.'
+                  : 'Market administration is reviewing your submission. Tap to view status.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+          </TouchableOpacity>
+        )}
+
         {/* Hero — all-time revenue & sales analytics entry */}
         <TouchableOpacity
           style={styles.heroCard}
@@ -211,9 +336,23 @@ export default function VendorDashboard() {
           <View style={styles.heroLeft}>
             <View style={styles.heroHeaderRow}>
               <Text style={styles.heroLabel}>Total Revenue</Text>
-              <View style={styles.heroArrowBadge}>
-                <Text style={styles.heroArrowText}>Analytics</Text>
-                <Ionicons name="chevron-forward" size={12} color={C.brandDark} />
+              <View style={styles.heroActionGroup}>
+                <TouchableOpacity
+                  style={styles.heroPrintBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDashboardPrint();
+                  }}
+                  accessibilityLabel="Print or Export PDF Sales Report"
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="print-outline" size={13} color={C.brandDark} />
+                  <Text style={styles.heroPrintText}>Print PDF</Text>
+                </TouchableOpacity>
+                <View style={styles.heroArrowBadge}>
+                  <Text style={styles.heroArrowText}>Analytics</Text>
+                  <Ionicons name="chevron-forward" size={12} color={C.brandDark} />
+                </View>
               </View>
             </View>
             <Text style={styles.heroAmount}>{formatMoney(totalRevenue)}</Text>
@@ -552,6 +691,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   heroArrowText: { fontSize: 10, fontWeight: '700', color: C.brandDark },
+  heroActionGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroPrintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: C.brandSoft,
+    borderWidth: 1,
+    borderColor: '#C6EAD7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  heroPrintText: { fontSize: 10, fontWeight: '700', color: C.brandDark },
   heroAmount: {
     fontSize: 34,
     fontWeight: '800',
@@ -801,6 +953,46 @@ const styles = StyleSheet.create({
   hoursStatusSubtitle: {
     fontSize: 12,
     color: C.muted,
+  },
+
+  /* Contract alert banner (Item 20) */
+  contractBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+    gap: 10,
+  },
+  contractBannerExpiring: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  contractBannerExpired: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  contractBannerPending: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#E9D5FF',
+  },
+  contractBannerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contractBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.ink,
+  },
+  contractBannerText: {
+    fontSize: 11,
+    color: C.sub,
+    marginTop: 2,
   },
 
   /* Reviews Quick-action */
