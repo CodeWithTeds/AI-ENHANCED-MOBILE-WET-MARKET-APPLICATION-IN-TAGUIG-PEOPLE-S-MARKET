@@ -104,11 +104,14 @@ class StallRentalService
             $vendor = Vendor::with('stall')->find($vendorId);
             if ($vendor) {
                 $stall = Stall::where('vendor_id', $vendor->user_id)->first();
-                if (!$stall && $vendor->stall_id) {
+                if (!$stall && !empty($vendor->stall_id)) {
                     $stall = Stall::find($vendor->stall_id);
                 }
                 if (!$stall) {
                     $stall = Stall::where('vendor_id', $vendor->id)->first();
+                }
+                if (!$stall && !empty($vendor->stall_name)) {
+                    $stall = Stall::where('store_name', $vendor->stall_name)->first();
                 }
                 if ($stall) {
                     $targets->push(['stall' => $stall, 'vendor' => $vendor]);
@@ -130,8 +133,14 @@ class StallRentalService
                     continue;
                 }
                 $stall = Stall::where('vendor_id', $vendor->user_id)->first();
-                if (!$stall && $vendor->stall_id) {
+                if (!$stall && !empty($vendor->stall_id)) {
                     $stall = Stall::find($vendor->stall_id);
+                }
+                if (!$stall) {
+                    $stall = Stall::where('vendor_id', $vendor->id)->first();
+                }
+                if (!$stall && !empty($vendor->stall_name)) {
+                    $stall = Stall::where('store_name', $vendor->stall_name)->first();
                 }
                 $isOccupied = $stall && ($stall->status instanceof StallStatus ? $stall->status === StallStatus::Occupied : $stall->status === 'occupied');
                 if ($stall && $isOccupied) {

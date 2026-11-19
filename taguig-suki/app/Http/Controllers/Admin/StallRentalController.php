@@ -56,6 +56,13 @@ class StallRentalController extends Controller
             $targetMsg = 'for all occupied stalls';
         }
 
+        if ($count === 0) {
+            if ($vendorId) {
+                return back()->with('error', "No bill was generated {$targetMsg} for period {$validated['billing_period']}. Possible reasons: the vendor has no assigned occupied stall in Stall Management, or an unpaid/existing bill for this period already exists.");
+            }
+            return back()->with('error', "No new bills were generated for period {$validated['billing_period']}. All eligible occupied stalls may already have existing bills for this period, or no stalls are currently occupied with an assigned vendor.");
+        }
+
         return back()->with('success', "Generated {$count} rental bill(s) {$targetMsg} for period {$validated['billing_period']}. Affected vendor(s) have been notified.");
     }
 
