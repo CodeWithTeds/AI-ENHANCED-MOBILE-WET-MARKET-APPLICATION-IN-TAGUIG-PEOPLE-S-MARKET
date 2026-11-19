@@ -8,6 +8,7 @@ use App\Models\Review;
 use App\Models\ReviewImage;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Notifications\ReviewResponseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -103,9 +104,12 @@ class ReviewService
     {
         $this->assertOwns($user, $review);
 
+        $hasComment = ! empty(trim((string) ($data['comment'] ?? $review->comment ?? '')));
         $review->update([
             'rating' => $data['rating'],
             'comment' => $data['comment'] ?? $review->comment,
+            'needs_response' => $hasComment && empty($review->vendor_response) && empty($review->admin_response),
+            'status' => (! $hasComment || $review->vendor_response || $review->admin_response) ? 'resolved' : 'pending',
         ]);
 
         // Handle image removal
@@ -321,6 +325,15 @@ class ReviewService
             ]);
         }
 
+        // Ratings without comments do NOT require a response and are automatically resolved.
+        // Written customer comments and complaints are flagged as pending response.
+        $hasComment = ! empty(trim((string) ($attributes['comment'] ?? '')));
+        $attributes['status'] = $hasComment ? 'pending' : 'resolved';
+        $attributes['needs_response'] = $hasComment;
+        if (! $hasComment) {
+            $attributes['resolved_at'] = now();
+        }
+
         $review = DB::transaction(function () use ($attributes, $user, $images) {
             $review = Review::create($attributes + ['user_id' => $user->id]);
 
@@ -406,6 +419,13 @@ class ReviewService
                 'id' => $r->id,
                 'rating' => $r->rating,
                 'comment' => $r->comment,
+                'status' => $r->status,
+                'needs_response' => (bool) $r->needs_response,
+                'has_comment' => $r->hasComment(),
+                'is_complaint' => $r->isComplaint(),
+                'vendor_response' => $r->vendor_response,
+                'vendor_responded_at' => $r->vendor_responded_at?->format('M d, Y g:i A'),
+                'admin_response' => $r->admin_response,
                 'created_at' => $r->created_at,
                 'user' => $r->user?->name ?? 'Anonymous',
                 'product_id' => $r->reviewable_id,
@@ -434,6 +454,74 @@ class ReviewService
         ];
     }
 
+    /**
+     * Vendor responds to a customer's review or complaint.
+     * Ratings without comments do NOT require and cannot accept responses.
+     *
+     * @throws ValidationException
+     */
+    public function vendorRespond(User $vendorUser, Review $review, string $responseText): Review
+    {
+        $vendor = $vendorUser->vendor;
+        if (! $vendor) {
+            throw ValidationException::withMessages([
+                'vendor' => ['Only authorized vendors can respond to customer feedback.'],
+            ]);
+        }
+
+        // Verify that this review belongs to the vendor's stall or one of the vendor's products
+        $belongsToVendor = false;
+        if ($review->reviewable_type === Vendor::class && (int) $review->reviewable_id === (int) $vendor->id) {
+            $belongsToVendor = true;
+        } elseif ($review->reviewable_type === Product::class) {
+            $product = Product::find($review->reviewable_id);
+            if ($product && (int) $product->vendor_id === (int) $vendor->id) {
+                $belongsToVendor = true;
+            }
+        }
+
+        if (! $belongsToVendor) {
+            throw ValidationException::withMessages([
+                'review' => ['You can only respond to feedback or complaints directed to your own stall or products.'],
+            ]);
+        }
+
+        // Enforce: Ratings without comments do not require or allow responses
+        if (! $review->hasComment()) {
+            throw ValidationException::withMessages([
+                'comment' => ['Ratings without customer comments do not require a response. Responses are only for complaints or written customer concerns.'],
+            ]);
+        }
+
+        $cleanResponse = trim($responseText);
+        if (mb_strlen($cleanResponse) < 3) {
+            throw ValidationException::withMessages([
+                'response' => ['Your response must be at least 3 characters.'],
+            ]);
+        }
+
+        $review->update([
+            'vendor_response' => $cleanResponse,
+            'vendor_responded_at' => now(),
+            'needs_response' => false,
+            'status' => 'resolved',
+            'resolved_at' => now(),
+        ]);
+
+        $fresh = $review->fresh(['user', 'reviewable']);
+
+        // Notify customer who submitted the review
+        if ($fresh->user) {
+            $fresh->user->notify(new ReviewResponseNotification(
+                $fresh,
+                $vendor->stall_name ?: ($vendorUser->name ?? 'Vendor'),
+                $cleanResponse
+            ));
+        }
+
+        return $fresh;
+    }
+
     private function summarize(Collection $reviews): array
     {
         $total = $reviews->count();
@@ -443,6 +531,13 @@ class ReviewService
                 'id' => $r->id,
                 'rating' => $r->rating,
                 'comment' => $r->comment,
+                'status' => $r->status,
+                'needs_response' => (bool) $r->needs_response,
+                'has_comment' => $r->hasComment(),
+                'is_complaint' => $r->isComplaint(),
+                'vendor_response' => $r->vendor_response,
+                'vendor_responded_at' => $r->vendor_responded_at?->format('M d, Y g:i A'),
+                'admin_response' => $r->admin_response,
                 'created_at' => $r->created_at,
                 'user' => $r->user?->name ?? 'Anonymous',
                 'images' => $r->images->map(fn ($img) => [

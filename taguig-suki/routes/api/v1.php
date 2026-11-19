@@ -76,6 +76,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
     Route::put('/products/{product}', [ProductController::class, 'update']);
     Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+    Route::get('/vendor/products/deleted-history', [ProductController::class, 'deletedHistory']);
 
     // Customer Profile & Settings
     Route::get('/profile', [CustomerProfileController::class, 'show']);
@@ -93,6 +94,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::put('/vendor/profile/business', [VendorProfileController::class, 'updateBusiness']);
     Route::put('/vendor/profile/password', [VendorProfileController::class, 'changePassword']);
     Route::put('/vendor/profile/notifications', [VendorProfileController::class, 'updateNotifications']);
+    Route::get('/vendor/contract', [VendorProfileController::class, 'getContractDetails']);
+    Route::post('/vendor/contract/request', [VendorProfileController::class, 'submitContractRequest']);
     Route::post('/vendor/contract/renew', [VendorProfileController::class, 'requestContractRenewal']);
     Route::get('/vendor/rentals', [VendorProfileController::class, 'getRentalDues']);
     Route::post('/vendor/rentals/{rental}/pay', [VendorProfileController::class, 'payRentalDue']);
@@ -151,6 +154,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::patch('/vendor/orders/{id}/verify-payment', [OrderController::class, 'verifyPayment']);
     Route::get('/vendor/sales', [OrderController::class, 'vendorSales']);
     Route::get('/vendor/reviews', [ReviewController::class, 'vendorReviewsDashboard']);
+    Route::post('/vendor/reviews/{review}/respond', [ReviewController::class, 'vendorRespond']);
 });
 
 Route::apiResource('tasks', TaskController::class);

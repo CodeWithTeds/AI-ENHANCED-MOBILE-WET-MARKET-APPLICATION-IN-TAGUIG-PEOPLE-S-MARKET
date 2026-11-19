@@ -196,6 +196,26 @@ class ReviewController extends Controller
     }
 
     /**
+     * Vendor responds to a customer's review or complaint.
+     * Ratings without comments do not require or allow responses.
+     *
+     * POST /vendor/reviews/{review}/respond
+     */
+    public function vendorRespond(Request $request, Review $review): JsonResponse
+    {
+        $validated = $request->validate([
+            'response' => 'required|string|min:3|max:2000',
+        ]);
+
+        $updated = $this->reviewService->vendorRespond($request->user(), $review, $validated['response']);
+
+        return $this->successResponse(
+            $updated,
+            'Response submitted successfully. The customer has been notified.'
+        );
+    }
+
+    /**
      * Shared rating validation + the target-specific rules.
      */
     private function validateReview(Request $request, array $rules = []): array
