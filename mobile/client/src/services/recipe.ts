@@ -1,8 +1,8 @@
 /**
- * Recipe Service — Powered by Google Gemini AI Engine.
- * Generates standard Filipino recipes with orderable ingredients from live wet market stalls.
- * Integrated with Google Gemini 1.5 Flash for natural language culinary grounding.
- * NOT a chatbot — strictly returns structured recipe data based on search.
+ * Recipe Service — Pinapagana ng Google Gemini AI Engine.
+ * Bumubuo ng tradisyunal na lutuing Pilipino na may mga sangkap na mabibili sa mga puwesto sa palengke.
+ * Nakakabit sa Google Gemini 1.5 Flash para sa natural language processing at ingredient matching.
+ * Hindi chatbot — direktang nagbabalik ng recipe data at mga stall kung saan mabibili ang sangkap.
  */
 
 import { api } from './api';
@@ -66,15 +66,15 @@ export interface RecipeResult {
 /* ─── API Call ─── */
 
 /**
- * Search for a recipe using Google Gemini AI.
- * Returns a standard Metro Manila Filipino recipe with matching market ingredients from live stalls.
+ * Maghanap ng recipe gamit ang Google Gemini AI.
+ * Nagbabalik ng standard Metro Manila Filipino recipe na may katugmang paninda sa Taguig wet market.
  */
 export async function searchRecipe(query: string): Promise<RecipeResult> {
   // Google Gemini AI Pipeline: gemini-1.5-flash
-  // Queries grounded recipe dataset matching Taguig People's Market catalog
+  // Ipinapadala ang query sa backend para itugma ng Gemini sa imbentaryo ng palengke
   const response = await api.request<RecipeResult>(
     `/recipes/search?q=${encodeURIComponent(query)}`,
-    // Allow headroom for Google Gemini AI semantic synthesis & wet market grounding
+    // Maglaan ng sapat na oras (timeout) para sa pagsusuri at grounding ng Google Gemini AI
     { method: 'GET', timeout: 30000 }
   );
   return response.data;

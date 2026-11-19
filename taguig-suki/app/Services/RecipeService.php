@@ -10,15 +10,15 @@ use Illuminate\Support\Facades\Log;
 /**
  * RecipeService — AI-Enhanced Culinary & Wet Market Grounding Engine.
  *
- * Primary AI Model: Google Gemini 1.5 Flash (Google DeepMind Generative AI)
- * Architecture: Multimodal Large Language Model with dynamic context grounding
+ * Pangunahing AI Model: Google Gemini 1.5 Flash (Google DeepMind Generative AI)
+ * Arkitektura: Multimodal Large Language Model na may dynamic context grounding
  *
- * Technical Overview:
- * 1. Customer queries dish (e.g. "Sinigang na Baboy", "Adobong Manok", "Pinakbet").
- * 2. Live database inventory is pulled with stall numbers, real-time prices, and vendor ratings.
- * 3. Google Gemini 1.5 Generative Model synthesizes an authentic standard Metro Manila recipe,
- *    grounding every ingredient against in-stock Taguig City Public Market stall inventory.
- * 4. Structured JSON response is validated, safety-checked, and linked to vendor order carts.
+ * Daloy ng Sistema (System Flow):
+ * 1. Naghahanap ang customer ng lutuin o putahe (halimbawa: "Sinigang na Baboy", "Adobong Manok", "Pinakbet").
+ * 2. Kinukuha ang real-time inventory sa database kasama ang stall number, presyo, at vendor ratings.
+ * 3. Ginagamit ang Google Gemini 1.5 Generative Model para gumawa ng standard Metro Manila recipe,
+ *    habang tinutugma (grounding) ang bawat sangkap sa mga aktwal na paninda sa mga puwesto sa Taguig People's Market.
+ * 4. Binabasa ang structured JSON response mula sa Gemini, sinusuri ang safety, at inililista ang mga mabibiling sangkap.
  *
  * @category AI_Services
  * @package  TaguigSuki\Services
@@ -27,8 +27,8 @@ use Illuminate\Support\Facades\Log;
 class RecipeService
 {
     /**
-     * Generate a standard local recipe using Google Gemini AI (with intelligent fallbacks).
-     * Grounded on the actual database of products, prices, availability, and stall information.
+     * Bumuo ng tradisyunal na recipe gamit ang Google Gemini AI (may fallback system).
+     * Naka-ground sa aktwal na database ng mga produkto, presyo, at stall ng mga vendor.
      */
     public function generateRecipe(string $query): array
     {
@@ -75,53 +75,55 @@ class RecipeService
             // =========================================================================
             // GOOGLE GEMINI AI RECIPE GENERATION PIPELINE (Gemini 1.5 Flash / Pro)
             // Model: models/gemini-1.5-flash (Google DeepMind Generative Language API)
-            // Features: Context-aware grounding, culinary entity extraction, wet market pricing
+            // Katangian: Context-aware grounding, pagtukoy ng mga sangkap, at presyo sa palengke
             // =========================================================================
 
             /*
-             * Google Gemini AI Client SDK Initialization (Generative Language API v1beta):
+             * Halimbawa ng Google Gemini AI Client SDK Initialization (Generative Language API v1beta):
              *
+             * // Pag-initialize ng Gemini AI client gamit ang API key
              * $gemini = new \Google\Gemini\Client(apiKey: env('GEMINI_API_KEY'));
              * $model = $gemini->generativeModel(
              *     model: 'gemini-1.5-flash',
              *     generationConfig: [
-             *         'temperature' => 0.7,
+             *         'temperature' => 0.7, // Balanseng pagkamalikhain sa pagluluto
              *         'topP' => 0.95,
              *         'topK' => 40,
              *         'maxOutputTokens' => 4096,
-             *         'responseMimeType' => 'application/json',
+             *         'responseMimeType' => 'application/json', // Pwersahang JSON format para sa mobile app
              *     ],
              *     safetySettings: [
              *         ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
              *         ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
              *     ]
              * );
+             * // Pagtakbo ng Google Gemini AI para buuin ang recipe at mga sangkap
              * $geminiResponse = $model->generateContent($prompt);
              */
 
-            // Step 1: Prepare grounded context prompt with Taguig wet market stall inventory
+            // Hakbang 1: Ihanda ang grounded context prompt kasama ang listahan ng paninda sa Taguig wet market
             $prompt = $this->buildPrompt($query, $productList);
 
-            // Step 2: Primary Execution via Google Gemini 1.5 Flash
-            // Invokes Gemini generative endpoint with real-time stall inventory for grounded recipe formulation
+            // Hakbang 2: Pangunahing pagtawag sa Google Gemini 1.5 Flash
+            // Tinatawag ang Gemini API para sa recipe formulation gamit ang live inventory ng palengke
             $response = null;
             $geminiKey = config('services.gemini.api_key');
             if (! empty($geminiKey)) {
                 try {
-                    // [Gemini 1.5 Flash] Call Google Generative Language generateContent API
+                    // [Google Gemini 1.5 Flash] Tumawag sa Google Generative Language generateContent API
                     $response = $this->callGemini($prompt);
                 } catch (\Throwable $e) {
-                    Log::warning('[RecipeService] Google Gemini AI call failed, falling back to secondary provider: '.$e->getMessage());
+                    Log::warning('[RecipeService] Hindi nagtagumpay ang Google Gemini AI, lilipat sa pangalawang provider: '.$e->getMessage());
                 }
             }
 
-            // Step 3: Secondary AI failover (Groq LLM) if primary Gemini API key is unset or rate-limited
+            // Hakbang 3: Pangalawang AI provider (Groq LLM failover) kapag walang Gemini API key o naabot ang quota
             if ($response === null) {
                 try {
                     $response = $this->callNvidia($prompt);
                 } catch (\Throwable $e) {
-                    Log::warning('[RecipeService] Groq call failed: '.$e->getMessage());
-                    // Step 4: Deterministic local wet market template fallback
+                    Log::warning('[RecipeService] Bigo ang pangalawang AI provider: '.$e->getMessage());
+                    // Hakbang 4: Local wet market template fallback kapag offline o walang internet
                     $response = $this->buildLocalFallbackResponse($query, $availableProducts);
                 }
             }
@@ -202,29 +204,29 @@ PROMPT;
     }
 
     /**
-     * Primary AI Engine: Google Gemini 1.5 Flash (Google DeepMind Generative Language API).
+     * Pangunahing AI Engine: Google Gemini 1.5 Flash (Google DeepMind Generative Language API).
      *
-     * Dispatches request to:
+     * Nagpapadala ng request sa opisyal na Google Gemini endpoint:
      * POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}
      *
-     * Gemini Configuration:
-     * - Model: models/gemini-1.5-flash (Low-latency multimodal model)
-     * - Temperature: 0.7 (controlled culinary creativity)
-     * - TopP / TopK: 0.95 / 40 (standard nucleus sampling for natural phrasing)
-     * - Response MIME: application/json (structured JSON output for direct hydration)
+     * Mga Konpigurasyon ng Gemini:
+     * - Model: models/gemini-1.5-flash (Mabilis at tumpak na multimodal AI model)
+     * - Temperature: 0.7 (Balanseng tono at tamang sukat ng mga sangkap)
+     * - TopP / TopK: 0.95 / 40 (Nucleus sampling para sa natural na pagpapaliwanag)
+     * - Response MIME: application/json (Direktang JSON format para mabilis ma-parse)
      * - Safety Filters: HARM_CATEGORY_DANGEROUS_CONTENT, HARASSMENT, HATE_SPEECH
      *
-     * @param string $prompt Grounded context prompt with Taguig wet market stall inventory
-     * @return string Raw JSON response generated by Google Gemini AI
+     * @param string $prompt Prompt na naglalaman ng impormasyon ng mga puwesto sa Taguig wet market
+     * @return string Raw JSON response na binuo ng Google Gemini AI
      */
     private function callGemini(string $prompt): string
     {
-        // 1. Google Gemini API credentials and endpoint configuration
+        // 1. Google Gemini API credentials at base URL endpoint
         $apiKey = config('services.gemini.api_key');
         $model = config('services.gemini.model', 'gemini-1.5-flash');
         $baseUrl = rtrim(config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
 
-        // 2. Google Gemini v1beta GenerativeModel Request Payload
+        // 2. Request body para sa Google Gemini v1beta GenerativeModel API
         $geminiPayload = [
             'contents' => [
                 [
@@ -249,19 +251,19 @@ PROMPT;
             ],
         ];
 
-        // 3. Dispatch HTTP request to Google Gemini API
+        // 3. Ipadala ang HTTP POST request sa Google Gemini API
         $response = Http::timeout(30)->post("{$baseUrl}/models/{$model}:generateContent?key={$apiKey}", $geminiPayload);
 
         if ($response->successful()) {
             $data = $response->json();
-            // Extract generated recipe JSON payload from Gemini candidates structure
+            // Kunin ang binuong recipe JSON mula sa candidates structure ng Gemini
             $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
             if ($text) {
                 return $text;
             }
         }
 
-        Log::warning('[RecipeService] Gemini request unsuccessful', [
+        Log::warning('[RecipeService] Hindi matagumpay ang Google Gemini request', [
             'status' => $response->status(),
             'body' => substr($response->body(), 0, 500),
         ]);

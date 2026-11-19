@@ -9,11 +9,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * RecipeController — Customer AI Recipe Recommendation API Endpoint.
+ * RecipeController — Controller para sa AI Recipe Recommendations ng TaguigSuki.
  *
- * Exposes endpoints for the mobile client to query Google Gemini 1.5 Flash AI,
- * retrieving authentic Filipino recipes matched directly with in-stock Taguig
- * People's Market products and vendor stall locations.
+ * Dito dumadaan ang request mula sa customer mobile app patungo sa Google Gemini 1.5 Flash AI,
+ * upang makabuo ng authentic Filipino recipe na direktang nakatugma sa mga puwesto at
+ * paninda sa Taguig People's Market.
  */
 class RecipeController extends Controller
 {
@@ -22,10 +22,10 @@ class RecipeController extends Controller
     public function __construct(private readonly RecipeService $recipeService) {}
 
     /**
-     * Search and generate a recipe using Google Gemini AI Engine.
+     * Maghanap at bumuo ng recipe gamit ang Google Gemini AI Engine.
      *
-     * @param Request $request Query string parameter 'q' (e.g. "Sinigang", "Tinola")
-     * @return JsonResponse Grounded recipe JSON payload with live stall ingredients
+     * @param Request $request Naglalaman ng 'q' query (halimbawa: "Sinigang na Baboy", "Tinola")
+     * @return JsonResponse Recipe data na may listahan ng mga mabibiling sangkap sa palengke
      */
     public function search(Request $request): JsonResponse
     {
@@ -34,14 +34,14 @@ class RecipeController extends Controller
         ]);
 
         try {
-            // Invoke Gemini AI generation pipeline with Taguig wet market inventory grounding
+            // Patakbuhin ang recipe generation sa tulong ng Google Gemini AI at database inventory
             $result = $this->recipeService->generateRecipe($request->query('q'));
 
-            return $this->successResponse($result, 'Recipe generated successfully via Google Gemini AI');
+            return $this->successResponse($result, 'Matagumpay na nabuo ang recipe gamit ang Google Gemini AI');
         } catch (\Throwable $e) {
             return $this->successResponse(
                 ['found' => false, 'message' => $e->getMessage()],
-                'Recipe generation failed'
+                'Hindi nabuo ang recipe'
             );
         }
     }
