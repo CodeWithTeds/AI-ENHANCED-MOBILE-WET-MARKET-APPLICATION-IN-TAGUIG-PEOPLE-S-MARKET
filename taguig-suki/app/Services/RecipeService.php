@@ -10,15 +10,15 @@ use Illuminate\Support\Facades\Log;
 /**
  * RecipeService — AI-Enhanced Culinary & Wet Market Grounding Engine.
  *
- * Pangunahing AI Model: Google Gemini 1.5 Flash (Google DeepMind Generative AI)
- * Arkitektura: Multimodal Large Language Model na may dynamic context grounding
+ * Main AI Model: Google Gemini 1.5 Flash (Google DeepMind Generative AI)
+ * Architecture: Multimodal LLM na may dynamic context grounding sa market inventory
  *
- * Daloy ng Sistema (System Flow):
- * 1. Naghahanap ang customer ng lutuin o putahe (halimbawa: "Sinigang na Baboy", "Adobong Manok", "Pinakbet").
- * 2. Kinukuha ang real-time inventory sa database kasama ang stall number, presyo, at vendor ratings.
- * 3. Ginagamit ang Google Gemini 1.5 Generative Model para gumawa ng standard Metro Manila recipe,
- *    habang tinutugma (grounding) ang bawat sangkap sa mga aktwal na paninda sa mga puwesto sa Taguig People's Market.
- * 4. Binabasa ang structured JSON response mula sa Gemini, sinusuri ang safety, at inililista ang mga mabibiling sangkap.
+ * System Flow:
+ * 1. Magse-search ang user ng ulam o putahe (e.g., "Sinigang na Baboy", "Adobong Manok", "Pinakbet").
+ * 2. Kukunin ang real-time inventory sa database kasama ang stall number, presyo, at vendor ratings.
+ * 3. Gagamitin ang Google Gemini para mag-generate ng standard Metro Manila style recipe,
+ *    habang naka-ground (matched) ang bawat ingredient sa actual na paninda sa Taguig People's Market stalls.
+ * 4. I-parse ang structured JSON response mula sa Gemini, i-check ang safety, at ilista ang available na ingredients.
  *
  * @category AI_Services
  * @package  TaguigSuki\Services
@@ -27,8 +27,8 @@ use Illuminate\Support\Facades\Log;
 class RecipeService
 {
     /**
-     * Bumuo ng tradisyunal na recipe gamit ang Google Gemini AI (may fallback system).
-     * Naka-ground sa aktwal na database ng mga produkto, presyo, at stall ng mga vendor.
+     * Mag-generate ng recipe gamit ang Google Gemini AI (may fallback system).
+     * Naka-ground sa actual database ng products, presyo, at stall ng mga vendors.
      */
     public function generateRecipe(string $query): array
     {
@@ -73,57 +73,57 @@ class RecipeService
                 ->implode(', ');
 
             // =========================================================================
-            // GOOGLE GEMINI AI RECIPE GENERATION PIPELINE (Gemini 1.5 Flash / Pro)
+            // GOOGLE GEMINI AI RECIPE GENERATION PIPELINE (Gemini 1.5 Flash)
             // Model: models/gemini-1.5-flash (Google DeepMind Generative Language API)
-            // Katangian: Context-aware grounding, pagtukoy ng mga sangkap, at presyo sa palengke
+            // Features: Context-aware grounding, ingredient matching, at pricing sa market
             // =========================================================================
 
             /*
-             * Halimbawa ng Google Gemini AI Client SDK Initialization (Generative Language API v1beta):
+             * Example ng Google Gemini Client SDK Setup (v1beta API):
              *
-             * // Pag-initialize ng Gemini AI client gamit ang API key
+             * // Initialize ang Gemini client gamit ang API key
              * $gemini = new \Google\Gemini\Client(apiKey: env('GEMINI_API_KEY'));
              * $model = $gemini->generativeModel(
              *     model: 'gemini-1.5-flash',
              *     generationConfig: [
-             *         'temperature' => 0.7, // Balanseng pagkamalikhain sa pagluluto
+             *         'temperature' => 0.7, // Tamang timpla ng creativity para consistent ang recipe
              *         'topP' => 0.95,
              *         'topK' => 40,
              *         'maxOutputTokens' => 4096,
-             *         'responseMimeType' => 'application/json', // Pwersahang JSON format para sa mobile app
+             *         'responseMimeType' => 'application/json', // Force JSON format para ready sa frontend/mobile
              *     ],
              *     safetySettings: [
              *         ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
              *         ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
              *     ]
              * );
-             * // Pagtakbo ng Google Gemini AI para buuin ang recipe at mga sangkap
+             * // Tawagin ang Gemini para buuin ang recipe at matching ingredients
              * $geminiResponse = $model->generateContent($prompt);
              */
 
-            // Hakbang 1: Ihanda ang grounded context prompt kasama ang listahan ng paninda sa Taguig wet market
+            // Step 1: Ihanda ang prompt kasama ang listahan ng paninda sa Taguig wet market
             $prompt = $this->buildPrompt($query, $productList);
 
-            // Hakbang 2: Pangunahing pagtawag sa Google Gemini 1.5 Flash
-            // Tinatawag ang Gemini API para sa recipe formulation gamit ang live inventory ng palengke
+            // Step 2: Primary AI call gamit ang Google Gemini 1.5 Flash
+            // Tatawagin ang Gemini API gamit ang live inventory ng palengke
             $response = null;
             $geminiKey = config('services.gemini.api_key');
             if (! empty($geminiKey)) {
                 try {
-                    // [Google Gemini 1.5 Flash] Tumawag sa Google Generative Language generateContent API
+                    // [Google Gemini 1.5 Flash] Call sa generateContent API
                     $response = $this->callGemini($prompt);
                 } catch (\Throwable $e) {
-                    Log::warning('[RecipeService] Hindi nagtagumpay ang Google Gemini AI, lilipat sa pangalawang provider: '.$e->getMessage());
+                    Log::warning('[RecipeService] Nag-fail ang Google Gemini AI, lilipat sa backup provider: '.$e->getMessage());
                 }
             }
 
-            // Hakbang 3: Pangalawang AI provider (Groq LLM failover) kapag walang Gemini API key o naabot ang quota
+            // Step 3: Backup AI provider (Groq failover) kapag walang Gemini key o na-hit ang rate limit
             if ($response === null) {
                 try {
                     $response = $this->callNvidia($prompt);
                 } catch (\Throwable $e) {
-                    Log::warning('[RecipeService] Bigo ang pangalawang AI provider: '.$e->getMessage());
-                    // Hakbang 4: Local wet market template fallback kapag offline o walang internet
+                    Log::warning('[RecipeService] Nag-fail din ang backup AI provider: '.$e->getMessage());
+                    // Step 4: Local fallback template na lang kapag offline o down ang AI services
                     $response = $this->buildLocalFallbackResponse($query, $availableProducts);
                 }
             }
@@ -141,7 +141,7 @@ class RecipeService
     }
 
     /**
-     * Persist an AI recommendation so admins can monitor and manage them.
+     * I-save ang AI recommendation para ma-monitor ng admin.
      */
     private function record(string $query, array $recipe, ?\Throwable $error = null): void
     {
@@ -160,7 +160,7 @@ class RecipeService
                 'error_message' => $error?->getMessage() ?? ($found ? null : ($recipe['message'] ?? null)),
             ]);
         } catch (\Throwable) {
-            // Logging is best-effort — never let it take down recipe search.
+            // Best-effort lang ang logging — huwag hayaang mag-fail ang recipe search dahil lang dito.
         }
     }
 
@@ -204,20 +204,20 @@ PROMPT;
     }
 
     /**
-     * Pangunahing AI Engine: Google Gemini 1.5 Flash (Google DeepMind Generative Language API).
+     * Primary AI Engine: Google Gemini 1.5 Flash (Google DeepMind Generative Language API).
      *
-     * Nagpapadala ng request sa opisyal na Google Gemini endpoint:
+     * Nagpapadala ng request sa official Google Gemini endpoint:
      * POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}
      *
-     * Mga Konpigurasyon ng Gemini:
-     * - Model: models/gemini-1.5-flash (Mabilis at tumpak na multimodal AI model)
-     * - Temperature: 0.7 (Balanseng tono at tamang sukat ng mga sangkap)
-     * - TopP / TopK: 0.95 / 40 (Nucleus sampling para sa natural na pagpapaliwanag)
-     * - Response MIME: application/json (Direktang JSON format para mabilis ma-parse)
-     * - Safety Filters: HARM_CATEGORY_DANGEROUS_CONTENT, HARASSMENT, HATE_SPEECH
+     * Gemini Config:
+     * - Model: models/gemini-1.5-flash (Mabilis at accurate na AI model)
+     * - Temperature: 0.7 (Balanseng timpla para tama ang measurements ng ingredients)
+     * - TopP / TopK: 0.95 / 40 (Sampling para natural ang explanation)
+     * - Response MIME: application/json (Diretsong JSON format para madaling i-parse)
+     * - Safety Filters: HARM_CATEGORY_DANGEROUS_CONTENT, HARASSMENT, atbp.
      *
-     * @param string $prompt Prompt na naglalaman ng impormasyon ng mga puwesto sa Taguig wet market
-     * @return string Raw JSON response na binuo ng Google Gemini AI
+     * @param string $prompt Prompt na naglalaman ng recipe request at live wet market inventory
+     * @return string Raw JSON response mula kay Google Gemini
      */
     private function callGemini(string $prompt): string
     {
@@ -226,7 +226,7 @@ PROMPT;
         $model = config('services.gemini.model', 'gemini-1.5-flash');
         $baseUrl = rtrim(config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
 
-        // 2. Request body para sa Google Gemini v1beta GenerativeModel API
+        // 2. Request body para sa Gemini v1beta GenerativeModel API
         $geminiPayload = [
             'contents' => [
                 [
@@ -251,19 +251,19 @@ PROMPT;
             ],
         ];
 
-        // 3. Ipadala ang HTTP POST request sa Google Gemini API
+        // 3. I-send ang HTTP POST request sa Google Gemini API
         $response = Http::timeout(30)->post("{$baseUrl}/models/{$model}:generateContent?key={$apiKey}", $geminiPayload);
 
         if ($response->successful()) {
             $data = $response->json();
-            // Kunin ang binuong recipe JSON mula sa candidates structure ng Gemini
+            // Kunin ang generated recipe JSON mula sa candidates ng Gemini
             $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? null;
             if ($text) {
                 return $text;
             }
         }
 
-        Log::warning('[RecipeService] Hindi matagumpay ang Google Gemini request', [
+        Log::warning('[RecipeService] Hindi nag-succeed ang Google Gemini request', [
             'status' => $response->status(),
             'body' => substr($response->body(), 0, 500),
         ]);
@@ -348,13 +348,13 @@ PROMPT;
     }
 
     /**
-     * Intelligent local fallback recipe when AI APIs are unreachable.
+     * Fallback recipe kapag offline o down ang AI APIs.
      */
     private function buildLocalFallbackResponse(string $query, array $availableProducts): string
     {
         $normalizedQuery = strtolower(trim($query));
 
-        // Find matches in products
+        // Maghanap ng match sa inventory
         $matching = array_filter($availableProducts, function ($p) use ($normalizedQuery) {
             return str_contains(strtolower($p['name']), $normalizedQuery) || str_contains($normalizedQuery, strtolower($p['name']));
         });
@@ -427,11 +427,11 @@ PROMPT;
             return $recipe;
         }
 
-        // Match ingredients to available market products with stall info
+        // I-match ang ingredients sa live market products kasama ang stall info
         $matchResult = $this->matchIngredientsStrict($recipe['ingredients'] ?? [], $availableProducts);
         $recipe['matching_products'] = $matchResult['matches'];
 
-        // Overwrite LLM flags so UI "In Market" badge matches actual matched products
+        // I-sync ang 'available_in_market' flag para tugma ang 'In Market' badge sa UI
         $matchedIngredients = array_column($matchResult['matches'], 'ingredient');
         foreach ($recipe['ingredients'] as &$ing) {
             $ingName = $ing['name'] ?? '';
@@ -443,7 +443,7 @@ PROMPT;
     }
 
     /**
-     * Strict ingredient → product matcher that includes stall details.
+     * Strict ingredient-to-product matcher kasama ang stall details.
      */
     private function matchIngredientsStrict(array $ingredients, array $availableProducts): array
     {
@@ -478,7 +478,7 @@ PROMPT;
             }
 
             if (! empty($scoredProducts)) {
-                // Sort by vendor rating descending, then match score descending, then price ascending
+                // Sort ayon sa rating (highest), match score (highest), at presyo (lowest)
                 usort($scoredProducts, function ($a, $b) {
                     $rA = (float) ($a['product']['rating'] ?? 4.5);
                     $rB = (float) ($b['product']['rating'] ?? 4.5);
@@ -491,7 +491,7 @@ PROMPT;
                     return $a['product']['price'] <=> $b['product']['price'];
                 });
 
-                // Pick top 3 unique vendors selling this product/ingredient
+                // Kunin ang top 3 unique vendors na nagtitinda ng ingredient na 'to
                 $topVendors = [];
                 $seenVendors = [];
                 foreach ($scoredProducts as $sp) {
