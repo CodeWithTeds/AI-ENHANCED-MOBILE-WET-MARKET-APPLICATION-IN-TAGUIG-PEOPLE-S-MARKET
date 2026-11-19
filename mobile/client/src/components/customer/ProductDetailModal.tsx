@@ -5,10 +5,15 @@
  *  - Swipeable image gallery (placeholder emoji fallback)
  *  - Full product info: name, category, price, unit, description, vendor stall & location
  *  - Availability badge
+ *  - Prominent Stall Reporting:
+ *      1. Top-right action button overlay with amber flag icon
+ *      2. Vendor stall card inline "Report" badge button
+ *      3. Dedicated "Report Stall or Product Concern" banner row
  *  - Quantity selector with animated Add to Cart button
  *  - "Added to Cart" snackbar toast with slide-up animation
  *  - Heart / favorite toggle with pulse animation
  *  - Subtotal live calculation
+ *  - Vendor comparison & AI recommendations dropdown
  */
 
 import { useEffect, useRef, useState } from 'react';
