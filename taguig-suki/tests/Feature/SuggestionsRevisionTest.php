@@ -1,14 +1,18 @@
 <?php
 
+use App\Enums\StallStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductDeletionLog;
+use App\Models\Review;
 use App\Models\Section;
 use App\Models\Stall;
-use App\Models\StallComplaint;
 use App\Models\StallRentalPayment;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\VendorContractRequest;
+use App\Services\Admin\FeedbackManagementService;
 use App\Services\Admin\ReportsAnalyticsService;
 use App\Services\Admin\StallComplaintService;
 use App\Services\Admin\StallManagementService;
@@ -117,6 +121,16 @@ test('Item 3: product report clarifies admin purpose, price variance, and multi-
         'stall_location' => 'Stall 2, Meat Section',
         'product_categories' => ['meat'],
         'status' => 'approved',
+    ]);
+
+    Stall::create([
+        'stall_number' => 'Stall 2',
+        'section_id' => $fx['section']->id,
+        'section' => 'meat-section',
+        'store_name' => 'Nena Pork Center',
+        'vendor_id' => $vendorUser2->id,
+        'status' => 'occupied',
+        'monthly_rent' => 2500.00,
     ]);
 
     Product::create([
@@ -518,4 +532,584 @@ test('Item 15: AI recommendation recipe service grounds on live database product
         ->and(count($recipe['matching_products']))->toBeGreaterThanOrEqual(1)
         ->and($recipe['matching_products'][0]['stall_number'])->toContain('Stall 1')
         ->and($recipe['matching_products'][0]['vendor_name'])->toBe('Pedro Meat Shop');
+});
+
+test('Item 16: Product Deletion Reason and Vendor Notification (Admin and Vendor Interface)', function () {
+    $fx = makeSuggestionsRevisionFixture();
+    $admin = $fx['admin'];
+    $vendorUser = $fx['vendorUser'];
+    $vendor = $fx['vendor'];
+
+    $product = Product::create([
+        'vendor_id' => $vendor->id,
+        'name' => 'Expired Canned Meat',
+        'description' => 'Suspect expired batch',
+        'category' => 'meat',
+        'price' => 150.00,
+        'unit' => 'pcs',
+        'is_available' => true,
+    ]);
+
+    // 1. Admin deletion fails without a reason
+    $responseNoReason = $this->actingAs($admin)
+        ->delete(route('products.destroy', $product), []);
+    $responseNoReason->assertSessionHasErrors(['reason']);
+
+    // Reason must be at least 5 characters
+    $responseShortReason = $this->actingAs($admin)
+        ->delete(route('products.destroy', $product), ['reason' => 'bad']);
+    $responseShortReason->assertSessionHasErrors(['reason']);
+
+    // 2. Admin deletion succeeds with a valid reason
+    $reason = 'Item violated public health guidelines due to expired packaging date.';
+    $responseSuccess = $this->actingAs($admin)
+        ->delete(route('products.destroy', $product), [
+            'reason' => $reason,
+        ]);
+    $responseSuccess->assertRedirect();
+    $responseSuccess->assertSessionHas('success');
+
+    // 3. Product record is soft deleted and reason is recorded
+    $deletedProduct = Product::withTrashed()->find($product->id);
+    expect($deletedProduct->trashed())->toBeTrue()
+        ->and($deletedProduct->deletion_reason)->toBe($reason)
+        ->and((int) $deletedProduct->deleted_by)->toBe((int) $admin->id);
+
+    // 4. Product deletion log was created
+    $log = ProductDeletionLog::where('product_id', $product->id)->first();
+    expect($log)->not->toBeNull()
+        ->and($log->vendor_id)->toBe($vendor->id)
+        ->and($log->product_name)->toBe('Expired Canned Meat')
+        ->and($log->reason)->toBe($reason)
+        ->and((int) $log->deleted_by_id)->toBe((int) $admin->id);
+
+    // 5. Vendor received the automatic in-app notification
+    expect($vendorUser->notifications()->count())->toBe(1);
+    $notification = $vendorUser->notifications()->first();
+    expect($notification->data['category'])->toBe('product_deleted')
+        ->and($notification->data['reason'])->toBe($reason)
+        ->and($notification->data['product_name'])->toBe('Expired Canned Meat')
+        ->and($notification->data['admin_name'])->toBe($admin->name);
+
+    // 6. Vendor can view this notification and its details via the API
+    $notifResponse = $this->actingAs($vendorUser, 'sanctum')
+        ->getJson('/api/v1/notifications');
+    $notifResponse->assertOk()
+        ->assertJsonPath('data.notifications.0.category', 'product_deleted')
+        ->assertJsonPath('data.notifications.0.product_name', 'Expired Canned Meat')
+        ->assertJsonPath('data.notifications.0.reason', $reason);
+
+    // 7. Vendor can view their deletion history via the vendor audit endpoint
+    $historyResponse = $this->actingAs($vendorUser, 'sanctum')
+        ->getJson('/api/v1/vendor/products/deleted-history');
+    $historyResponse->assertOk()
+        ->assertJsonPath('data.0.product_name', 'Expired Canned Meat')
+        ->assertJsonPath('data.0.reason', $reason)
+        ->assertJsonPath('data.0.deleted_by', $admin->name);
+});
+
+test('Item 17: Stall Occupancy Filtering in Reports (Admin Interface) excludes unoccupied stalls', function () {
+    $fx = makeSuggestionsRevisionFixture();
+    $reportsService = app(ReportsAnalyticsService::class);
+    $rentalService = app(StallRentalService::class);
+    $complaintService = app(StallComplaintService::class);
+
+    // 1. Fixture has 1 occupied stall: $fx['stall'] (status: 'occupied')
+    expect($fx['stall']->status->value)->toBe('occupied');
+
+    // 2. Create an unoccupied/vacant stall with a vendor and product
+    $vacantVendorUser = User::factory()->create(['name' => 'Vacant Vendor']);
+    $vacantVendor = Vendor::create([
+        'user_id' => $vacantVendorUser->id,
+        'stall_name' => 'Vacant Meat Shop',
+        'stall_location' => 'Stall 20, Meat Section',
+        'product_categories' => ['meat'],
+        'status' => 'approved',
+    ]);
+    $vacantStall = Stall::create([
+        'stall_number' => 'Stall 20',
+        'section_id' => $fx['section']->id,
+        'section' => 'meat-section',
+        'store_name' => 'Vacant Meat Shop',
+        'vendor_id' => $vacantVendorUser->id,
+        'status' => 'vacant',
+        'monthly_rent' => 2000.00,
+    ]);
+
+    // Create another stall that is under_maintenance (unoccupied)
+    $maintStall = Stall::create([
+        'stall_number' => 'Stall 21',
+        'section_id' => $fx['section']->id,
+        'section' => 'meat-section',
+        'store_name' => 'Under Repair Stall',
+        'vendor_id' => null,
+        'status' => 'under_maintenance',
+        'monthly_rent' => 2000.00,
+    ]);
+
+    // Product belonging to the vacant/unoccupied stall
+    $vacantProduct = Product::create([
+        'vendor_id' => $vacantVendor->id,
+        'name' => 'Ghost Pork Chop',
+        'description' => 'Unoccupied product',
+        'category' => 'Meat',
+        'price' => 450.00,
+        'unit' => 'kg',
+        'is_available' => true,
+    ]);
+
+    // Order placed on the vacant vendor
+    $vacantOrder = Order::create([
+        'user_id' => $fx['customer']->id,
+        'order_number' => 'TS-VACANT-ORDER-001',
+        'status' => 'completed',
+        'total_amount' => 450.00,
+        'payment_method' => 'cash',
+        'payment_status' => 'paid',
+    ]);
+    OrderItem::create([
+        'order_id' => $vacantOrder->id,
+        'product_id' => $vacantProduct->id,
+        'vendor_id' => $vacantVendor->id,
+        'product_name' => $vacantProduct->name,
+        'category' => 'Meat',
+        'unit' => 'kg',
+        'quantity' => 1,
+        'unit_price' => 450.00,
+        'subtotal' => 450.00,
+    ]);
+
+    // 3. Rental Reports: only occupied stalls are included; vacant stalls are excluded
+    $rentalReports = $rentalService->getRentalReportData();
+    $rentalVendorIds = collect($rentalReports['vendor_reports'])->pluck('vendor_id')->all();
+    expect($rentalVendorIds)->toContain($fx['vendor']->id)
+        ->and($rentalVendorIds)->not->toContain($vacantVendor->id);
+
+    // 4. Product & SRP Monitoring Report: only products from occupied stalls are included
+    $productReport = $reportsService->getProductReportData();
+    $productNames = collect($productReport['products'])->pluck('name')->map(fn ($n) => strtolower($n))->all();
+    expect($productNames)->toContain('pork belly (liempo)')
+        ->and($productNames)->not->toContain('ghost pork chop');
+
+    // 5. Daily Sales & Revenue Report: only sales from occupied stalls are included
+    $dailyReport = $reportsService->getDailySalesReport(now()->toDateString());
+    $reportedOrderNumbers = collect($dailyReport['transactions'])->pluck('order_number')->all();
+    expect($reportedOrderNumbers)->not->toContain('TS-VACANT-ORDER-001');
+
+    // 6. Stall Complaint Selector: only occupied stalls are selectable
+    $complaintIndexData = $complaintService->getIndexData([]);
+    $selectableStallIds = collect($complaintIndexData['stalls'])->pluck('id')->all();
+    expect($selectableStallIds)->toContain($fx['stall']->id)
+        ->and($selectableStallIds)->not->toContain($vacantStall->id)
+        ->and($selectableStallIds)->not->toContain($maintStall->id);
+});
+
+test('Item 18 & 19: Monthly Stall Rental Payments (Individual/Collective Billing) and Status Management', function () {
+    $fx = makeSuggestionsRevisionFixture();
+    $rentalService = app(StallRentalService::class);
+
+    $billingPeriod = '2026-12';
+
+    // 1. Generate bills individually for a selected vendor via Controller / Service
+    $response = $this->actingAs($fx['admin'])
+        ->post('/admin/dashboard/vendors/rentals/generate', [
+            'billing_period' => $billingPeriod,
+            'vendor_id' => $fx['vendor']->id,
+            'due_date' => '2026-12-15',
+            'amount' => 2500.00,
+        ]);
+    $response->assertRedirect();
+    $response->assertSessionHas('success');
+
+    // Verify bill was created in database
+    $rental = StallRentalPayment::where('vendor_id', $fx['vendor']->id)
+        ->where('billing_period', $billingPeriod)
+        ->first();
+
+    expect($rental)->not->toBeNull()
+        ->and((float) $rental->amount)->toBe(2500.00)
+        ->and($rental->status)->toBe('unpaid');
+
+    // Verify vendor received the rental_bill_generated notification
+    $vendorUser = $fx['vendorUser']->fresh();
+    $billNotif = $vendorUser->notifications()
+        ->where('data->category', 'rental_bill_generated')
+        ->first();
+
+    expect($billNotif)->not->toBeNull()
+        ->and($billNotif->data['billing_period'])->toBe('2026-12')
+        ->and((float) $billNotif->data['amount'])->toBe(2500.00);
+
+    // 2. Generate bills collectively for all occupied stalls for another period
+    $collectivePeriod = '2027-01';
+    $collectiveResp = $this->actingAs($fx['admin'])
+        ->post('/admin/dashboard/vendors/rentals/generate', [
+            'billing_period' => $collectivePeriod,
+            'vendor_id' => 'all',
+        ]);
+    $collectiveResp->assertRedirect();
+    $collectiveResp->assertSessionHas('success');
+
+    $collectiveRental = StallRentalPayment::where('vendor_id', $fx['vendor']->id)
+        ->where('billing_period', $collectivePeriod)
+        ->first();
+    expect($collectiveRental)->not->toBeNull()
+        ->and($collectiveRental->status)->toBe('unpaid');
+
+    // 3. Item 19: Administrator updates payment status to PAID
+    $updatePaidResp = $this->actingAs($fx['admin'])
+        ->patch("/admin/dashboard/vendors/rentals/{$rental->id}/status", [
+            'status' => 'paid',
+            'payment_method' => 'cash',
+            'payment_reference' => 'OR-2026-98765',
+            'paid_at' => '2026-12-10',
+            'notes' => 'Settled in cash at market administration counter.',
+        ]);
+    $updatePaidResp->assertRedirect();
+    $updatePaidResp->assertSessionHas('success');
+
+    $rental->refresh();
+    expect($rental->status)->toBe('paid')
+        ->and($rental->payment_method)->toBe('cash')
+        ->and($rental->payment_reference)->toBe('OR-2026-98765')
+        ->and($rental->verified_by)->toBe($fx['admin']->id)
+        ->and($rental->notes)->toBe('Settled in cash at market administration counter.');
+
+    // Verify vendor received status update notification
+    $vendorUser->refresh();
+    $paidNotif = $vendorUser->notifications()
+        ->where('data->category', 'rental_payment_updated')
+        ->latest()
+        ->first();
+
+    expect($paidNotif)->not->toBeNull()
+        ->and($paidNotif->data['status'])->toBe('paid');
+
+    // 4. Item 19: Administrator updates payment status back to UNPAID
+    $updateUnpaidResp = $this->actingAs($fx['admin'])
+        ->patch("/admin/dashboard/vendors/rentals/{$rental->id}/status", [
+            'status' => 'unpaid',
+            'notes' => 'Payment bounced or adjusted.',
+        ]);
+    $updateUnpaidResp->assertRedirect();
+    $updateUnpaidResp->assertSessionHas('success');
+
+    $rental->refresh();
+    expect($rental->status)->toBe('unpaid')
+        ->and($rental->paid_at)->toBeNull()
+        ->and($rental->verified_by)->toBeNull()
+        ->and($rental->notes)->toBe('Payment bounced or adjusted.');
+
+    // Verify vendor received another status update notification
+    $vendorUser->refresh();
+    $statusNotifs = $vendorUser->notifications()
+        ->where('data->category', 'rental_payment_updated')
+        ->get();
+
+    $unpaidNotif = $statusNotifs->last();
+
+    expect($unpaidNotif)->not->toBeNull()
+        ->and($unpaidNotif->data['status'])->toBe('unpaid');
+});
+
+test('Item 20: Vendor Rental Reports – Contract Renewal and Cancellation Requests', function () {
+    $fx = makeSuggestionsRevisionFixture();
+    $rentalService = app(StallRentalService::class);
+
+    // 1. Automatic notification check for expiring contracts
+    // The fixture vendor's contract expires in 20 days.
+    // Running the artisan command should update status to expiring_soon and send notification.
+    $this->artisan('contracts:check-expiring')->assertExitCode(0);
+
+    $fx['vendor']->refresh();
+    expect($fx['vendor']->contract_status)->toBe('expiring_soon');
+
+    $expiringNotif = $fx['vendorUser']->notifications()
+        ->where('data->category', 'contract_expiring')
+        ->first();
+    expect($expiringNotif)->not->toBeNull()
+        ->and($expiringNotif->data['days_remaining'])->toBeLessThanOrEqual(20);
+
+    // 2. Vendor gets contract details via API
+    $detailsResp = $this->actingAs($fx['vendorUser'])->getJson('/api/v1/vendor/contract');
+    $detailsResp->assertStatus(200)
+        ->assertJsonPath('status', 'success')
+        ->assertJsonPath('data.contract_status', 'expiring_soon')
+        ->assertJsonPath('data.is_expiring_soon', true);
+
+    // 3. Validation: Vendor submits invalid duration (e.g. 5 months)
+    $invalidResp = $this->actingAs($fx['vendorUser'])->postJson('/api/v1/vendor/contract/request', [
+        'type' => 'renewal',
+        'duration_months' => 5,
+    ]);
+    $invalidResp->assertStatus(422);
+
+    // 4. Vendor submits Contract Renewal request (6 months)
+    $originalEndDate = $fx['vendor']->contract_end_date;
+    $renewalResp = $this->actingAs($fx['vendorUser'])->postJson('/api/v1/vendor/contract/request', [
+        'type' => 'renewal',
+        'duration_months' => 6,
+        'reason' => 'Business is going well and we want to extend our stall lease for 6 months.',
+    ]);
+    $renewalResp->assertStatus(200)
+        ->assertJsonPath('status', 'success')
+        ->assertJsonPath('data.status', 'pending')
+        ->assertJsonPath('data.type', 'renewal')
+        ->assertJsonPath('data.requested_duration_months', 6);
+
+    // Verify contract is NOT automatically renewed upon submission!
+    $fx['vendor']->refresh();
+    expect($fx['vendor']->contract_status)->toBe('renewal_requested')
+        ->and($fx['vendor']->contract_end_date->toDateString())->toBe($originalEndDate->toDateString());
+
+    $renewalRequest = VendorContractRequest::where('vendor_id', $fx['vendor']->id)
+        ->where('type', 'renewal')
+        ->first();
+    expect($renewalRequest)->not->toBeNull()
+        ->and($renewalRequest->status)->toBe('pending')
+        ->and($renewalRequest->requested_duration_months)->toBe(6);
+
+    // 5. Admin side: Vendor Rental Reports includes the submitted request
+    $reportData = $rentalService->getRentalReportData();
+    expect($reportData['summary']['pending_requests_count'])->toBeGreaterThanOrEqual(1)
+        ->and($reportData['summary']['pending_renewals_count'])->toBeGreaterThanOrEqual(1);
+
+    $pendingInReport = collect($reportData['contract_requests'])->firstWhere('id', $renewalRequest->id);
+    expect($pendingInReport)->not->toBeNull()
+        ->and($pendingInReport['stall_name'])->toBe('Pedro Meat Shop');
+
+    // 6. Admin approves the renewal request via Admin Web Portal route
+    $adminReviewResp = $this->actingAs($fx['admin'])
+        ->post("/admin/dashboard/vendors/rentals/contract-requests/{$renewalRequest->id}/review", [
+            'decision' => 'approved',
+            'additional_months' => 6,
+            'admin_notes' => 'Approved. Stall lease renewed for 6 months.',
+        ]);
+    $adminReviewResp->assertRedirect();
+    $adminReviewResp->assertSessionHas('success');
+
+    // Verify contract is now officially extended and status is active
+    $fx['vendor']->refresh();
+    $renewalRequest->refresh();
+    expect($renewalRequest->status)->toBe('approved')
+        ->and($renewalRequest->reviewed_by)->toBe($fx['admin']->id)
+        ->and($fx['vendor']->contract_status)->toBe('active')
+        ->and($fx['vendor']->contract_end_date->toDateString())
+        ->toBe($originalEndDate->copy()->addMonths(6)->toDateString());
+
+    // Vendor automatically received notification with approval and updated contract status
+    $approvedNotif = $fx['vendorUser']->fresh()->notifications()
+        ->where('data->category', 'contract_approved')
+        ->first();
+    expect($approvedNotif)->not->toBeNull()
+        ->and($approvedNotif->data['contract_status'])->toBe('active')
+        ->and($approvedNotif->data['contract_end_date'])->toBe($fx['vendor']->contract_end_date->toDateString());
+
+    // 7. Vendor submits Cancellation request
+    $cancelResp = $this->actingAs($fx['vendorUser'])->postJson('/api/v1/vendor/contract/request', [
+        'type' => 'cancellation',
+        'reason' => 'Relocating to another province.',
+    ]);
+    $cancelResp->assertStatus(200)
+        ->assertJsonPath('status', 'success')
+        ->assertJsonPath('data.status', 'pending')
+        ->assertJsonPath('data.type', 'cancellation');
+
+    $fx['vendor']->refresh();
+    expect($fx['vendor']->contract_status)->toBe('cancellation_requested');
+
+    $cancelRequest = VendorContractRequest::where('vendor_id', $fx['vendor']->id)
+        ->where('type', 'cancellation')
+        ->first();
+    expect($cancelRequest)->not->toBeNull()
+        ->and($cancelRequest->status)->toBe('pending');
+
+    // 8. Admin rejects the cancellation request first
+    $rejectResp = $this->actingAs($fx['admin'])
+        ->post("/admin/dashboard/vendors/rentals/contract-requests/{$cancelRequest->id}/review", [
+            'decision' => 'rejected',
+            'admin_notes' => 'Please settle outstanding utility fees before cancelling.',
+        ]);
+    $rejectResp->assertRedirect();
+
+    $cancelRequest->refresh();
+    $fx['vendor']->refresh();
+    expect($cancelRequest->status)->toBe('rejected')
+        ->and($fx['vendor']->contract_status)->toBe('active');
+
+    $rejectedNotif = $fx['vendorUser']->fresh()->notifications()
+        ->where('data->category', 'contract_rejected')
+        ->first();
+    expect($rejectedNotif)->not->toBeNull()
+        ->and($rejectedNotif->data['admin_notes'])->toBe('Please settle outstanding utility fees before cancelling.');
+
+    // 9. Vendor submits cancellation again and Admin approves it
+    $cancelResp2 = $this->actingAs($fx['vendorUser'])->postJson('/api/v1/vendor/contract/request', [
+        'type' => 'cancellation',
+        'reason' => 'All dues settled, requesting final contract release.',
+    ]);
+    $cancelResp2->assertStatus(200);
+
+    $cancelRequest2 = VendorContractRequest::where('vendor_id', $fx['vendor']->id)
+        ->where('status', 'pending')
+        ->first();
+
+    $approveCancelResp = $this->actingAs($fx['admin'])
+        ->post("/admin/dashboard/vendors/rentals/contract-requests/{$cancelRequest2->id}/review", [
+            'decision' => 'approved',
+            'admin_notes' => 'Clearance confirmed. Stall released.',
+        ]);
+    $approveCancelResp->assertRedirect();
+
+    $fx['vendor']->refresh();
+    $cancelRequest2->refresh();
+    expect($cancelRequest2->status)->toBe('approved')
+        ->and($fx['vendor']->contract_status)->toBe('cancelled');
+
+    // Verify stall was released / marked vacant
+    $stall = $fx['stall']->fresh();
+    expect($stall->status)->toBe(StallStatus::Vacant)
+        ->and($stall->vendor_id)->toBeNull();
+});
+
+test('Item 21: ratings without comments do not require response while complaints require and accept vendor responses', function () {
+    $fx = makeSuggestionsRevisionFixture();
+    $reviewService = app(ReviewService::class);
+    $feedbackService = app(FeedbackManagementService::class);
+
+    // Create completed order for customer with vendor
+    $order1 = Order::create([
+        'user_id' => $fx['customer']->id,
+        'order_number' => 'TS-FB-001',
+        'status' => 'completed',
+        'total_amount' => 320.00,
+        'payment_method' => 'cash',
+        'payment_status' => 'paid',
+    ]);
+
+    OrderItem::create([
+        'order_id' => $order1->id,
+        'product_id' => $fx['product']->id,
+        'vendor_id' => $fx['vendor']->id,
+        'product_name' => $fx['product']->name,
+        'category' => 'Meat',
+        'unit' => 'kg',
+        'quantity' => 1,
+        'unit_price' => 320.00,
+        'subtotal' => 320.00,
+    ]);
+
+    // 1. Customer submits a rating-only review (5 stars, no comment)
+    $ratingOnlyReview = $reviewService->createVendorReview($fx['customer'], [
+        'order_id' => $order1->id,
+        'vendor_id' => $fx['vendor']->id,
+        'rating' => 5,
+        'comment' => null,
+    ]);
+
+    // Verify rating-only is automatically resolved and does NOT need response
+    expect($ratingOnlyReview->status)->toBe('resolved')
+        ->and($ratingOnlyReview->needs_response)->toBeFalse()
+        ->and($ratingOnlyReview->resolved_at)->not->toBeNull()
+        ->and($ratingOnlyReview->hasComment())->toBeFalse()
+        ->and($ratingOnlyReview->isComplaint())->toBeFalse();
+
+    // 2. Vendor attempts to respond to rating-only review -> should fail with 422
+    $failVendorResp = $this->actingAs($fx['vendorUser'])
+        ->postJson("/api/v1/vendor/reviews/{$ratingOnlyReview->id}/respond", [
+            'response' => 'Thank you for the 5 stars!',
+        ]);
+    $failVendorResp->assertStatus(422);
+    expect($failVendorResp->json('data'))->toHaveKey('comment')
+        ->and($failVendorResp->json('message'))->toContain('Ratings without customer comments do not require a response');
+
+    // Admin attempts to respond to rating-only review -> should be redirected with error flash
+    $failAdminResp = $this->actingAs($fx['admin'])
+        ->post("/admin/dashboard/feedback/{$ratingOnlyReview->id}/respond", [
+            'admin_response' => 'Thank you for your rating!',
+        ]);
+    $failAdminResp->assertRedirect();
+    $failAdminResp->assertSessionHas('error');
+
+    // 3. Customer places a second order and submits a review with a complaint/comment
+    $order2 = Order::create([
+        'user_id' => $fx['customer']->id,
+        'order_number' => 'TS-FB-002',
+        'status' => 'completed',
+        'total_amount' => 320.00,
+        'payment_method' => 'cash',
+        'payment_status' => 'paid',
+    ]);
+
+    OrderItem::create([
+        'order_id' => $order2->id,
+        'product_id' => $fx['product']->id,
+        'vendor_id' => $fx['vendor']->id,
+        'product_name' => $fx['product']->name,
+        'category' => 'Meat',
+        'unit' => 'kg',
+        'quantity' => 1,
+        'unit_price' => 320.00,
+        'subtotal' => 320.00,
+    ]);
+
+    $complaintReview = $reviewService->createVendorReview($fx['customer'], [
+        'order_id' => $order2->id,
+        'vendor_id' => $fx['vendor']->id,
+        'rating' => 2,
+        'comment' => 'The meat was slightly tough and had excess fat.',
+    ]);
+
+    // Verify complaint/comment review requires response and defaults to pending
+    expect($complaintReview->status)->toBe('pending')
+        ->and($complaintReview->needs_response)->toBeTrue()
+        ->and($complaintReview->resolved_at)->toBeNull()
+        ->and($complaintReview->hasComment())->toBeTrue()
+        ->and($complaintReview->isComplaint())->toBeTrue();
+
+    // 4. Verify Admin Feedback stats
+    $stats = $feedbackService->getIndexData([])['stats'];
+    expect($stats['pending'])->toBe(1)
+        ->and($stats['ratings_only'])->toBe(1)
+        ->and($stats['complaints'])->toBe(1)
+        ->and($stats['total'])->toBe(2);
+
+    // 5. Vendor dashboard reviews separation
+    $dashboardData = $reviewService->getVendorReviewsDashboard($fx['vendorUser']);
+    $stallReviews = collect($dashboardData['stall']['reviews']);
+    $pendingStallReview = $stallReviews->firstWhere('id', $complaintReview->id);
+    $ratingOnlyStallReview = $stallReviews->firstWhere('id', $ratingOnlyReview->id);
+
+    expect($pendingStallReview['needs_response'])->toBeTrue()
+        ->and($pendingStallReview['has_comment'])->toBeTrue()
+        ->and($ratingOnlyStallReview['needs_response'])->toBeFalse()
+        ->and($ratingOnlyStallReview['has_comment'])->toBeFalse();
+
+    // 6. Vendor submits an official response to the complaint
+    $vendorResp = $this->actingAs($fx['vendorUser'])
+        ->postJson("/api/v1/vendor/reviews/{$complaintReview->id}/respond", [
+            'response' => 'We apologize for the cut quality. We have instructed our butchers to inspect fat trimming carefully and will offer a discount on your next visit.',
+        ]);
+
+    $vendorResp->assertStatus(200)
+        ->assertJsonPath('status', 'success');
+
+    $complaintReview->refresh();
+    expect($complaintReview->status)->toBe('resolved')
+        ->and($complaintReview->needs_response)->toBeFalse()
+        ->and($complaintReview->vendor_response)->toContain('We apologize for the cut quality')
+        ->and($complaintReview->vendor_responded_at)->not->toBeNull()
+        ->and($complaintReview->resolved_at)->not->toBeNull();
+
+    // 7. Verify customer received notification
+    $customerNotif = $fx['customer']->fresh()->notifications()
+        ->where('data->category', 'review_response')
+        ->first();
+    expect($customerNotif)->not->toBeNull()
+        ->and($customerNotif->data['vendor_response'])->toContain('We apologize for the cut quality');
+
+    // 8. Admin Feedback pending count drops to 0
+    $statsAfter = $feedbackService->getIndexData([])['stats'];
+    expect($statsAfter['pending'])->toBe(0)
+        ->and($statsAfter['resolved'])->toBe(2);
 });
