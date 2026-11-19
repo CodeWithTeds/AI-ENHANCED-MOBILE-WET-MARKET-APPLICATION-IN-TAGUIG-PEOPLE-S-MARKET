@@ -17,7 +17,7 @@ class ProductManagementController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('admin/products/index', $this->productService->getIndexData(
-            $request->only(['search', 'category', 'vendor', 'status', 'availability', 'sort', 'direction'])
+            $request->only(['search', 'category', 'vendor', 'status', 'availability', 'view', 'sort', 'direction'])
         ));
     }
 
@@ -42,12 +42,20 @@ class ProductManagementController extends Controller
         return back()->with('success', "Product \"{$product->name}\" updated successfully.");
     }
 
-    public function destroy(Product $product): RedirectResponse
+    public function destroy(Request $request, Product $product): RedirectResponse
     {
-        $name = $product->name;
-        $this->productService->destroy($product);
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
+        ], [
+            'reason.required' => 'A deletion reason is required to remove this product.',
+            'reason.min' => 'Please provide at least 5 characters explaining the reason for removal.',
+            'reason.max' => 'The deletion reason cannot exceed 1000 characters.',
+        ]);
 
-        return back()->with('success', "Product \"{$name}\" removed successfully.");
+        $name = $product->name;
+        $this->productService->destroy($product, $validated['reason'], $request->user());
+
+        return back()->with('success', "Product \"{$name}\" removed successfully and notification sent to vendor.");
     }
 
     public function toggleAvailability(Product $product): RedirectResponse
