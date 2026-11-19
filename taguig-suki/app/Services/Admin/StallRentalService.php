@@ -2,17 +2,26 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\StallStatus;
 use App\Models\Notification;
 use App\Models\Stall;
 use App\Models\StallRentalPayment;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\VendorContractRequest;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 
 class StallRentalService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct(?NotificationService $notificationService = null)
+    {
+        $this->notificationService = $notificationService ?: app(NotificationService::class);
+    }
     /**
      * Get index data for the admin rental payment monitoring dashboard.
      */
@@ -81,52 +90,72 @@ class StallRentalService
     /**
      * Generate monthly rental billing for all occupied stalls (or a single vendor) for a given period (e.g. '2026-11').
      */
-    public function generateMonthlyBills(string $billingPeriod, ?Carbon $dueDate = null, ?int $vendorId = null): int
-    {
+    public function generateMonthlyBills(
+        string $billingPeriod,
+        ?Carbon $dueDate = null,
+        ?int $vendorId = null,
+        ?float $customAmount = null
+    ): int {
         $due = $dueDate ?: Carbon::createFromFormat('Y-m', $billingPeriod)->startOfMonth()->addDays(14); // 15th of the month
 
-        $query = Stall::query();
+        $targets = collect();
 
         if ($vendorId) {
-            $query->where(function ($q) use ($vendorId) {
-                $q->where('vendor_id', $vendorId)
-                  ->orWhereHas('vendor', fn ($vq) => $vq->where('id', $vendorId)->orWhere('user_id', $vendorId));
-            });
-        } else {
-            $query->where('status', 'occupied')->whereNotNull('vendor_id');
-        }
-
-        $occupiedStalls = $query->get();
-
-        // Fallback for single vendor selection if stall status/vendor_id hasn't linked yet
-        if ($vendorId && $occupiedStalls->isEmpty()) {
-            $vendor = Vendor::find($vendorId);
-            if ($vendor && $vendor->stall_id) {
-                $stall = Stall::find($vendor->stall_id);
+            $vendor = Vendor::with('stall')->find($vendorId);
+            if ($vendor) {
+                $stall = Stall::where('vendor_id', $vendor->user_id)->first();
+                if (!$stall && $vendor->stall_id) {
+                    $stall = Stall::find($vendor->stall_id);
+                }
+                if (!$stall) {
+                    $stall = Stall::where('vendor_id', $vendor->id)->first();
+                }
                 if ($stall) {
-                    $occupiedStalls = collect([$stall]);
+                    $targets->push(['stall' => $stall, 'vendor' => $vendor]);
+                }
+            }
+        } else {
+            $occupiedStalls = Stall::where('status', 'occupied')->whereNotNull('vendor_id')->get();
+            foreach ($occupiedStalls as $stall) {
+                $vendor = Vendor::where('user_id', $stall->vendor_id)->orWhere('id', $stall->vendor_id)->first();
+                if ($vendor) {
+                    $targets->push(['stall' => $stall, 'vendor' => $vendor]);
+                }
+            }
+
+            // Also check approved vendors that have an assigned occupied stall
+            $approvedVendors = Vendor::where('status', 'approved')->whereNotNull('user_id')->get();
+            foreach ($approvedVendors as $vendor) {
+                if ($targets->contains(fn ($t) => $t['vendor']->id === $vendor->id)) {
+                    continue;
+                }
+                $stall = Stall::where('vendor_id', $vendor->user_id)->first();
+                if (!$stall && $vendor->stall_id) {
+                    $stall = Stall::find($vendor->stall_id);
+                }
+                $isOccupied = $stall && ($stall->status instanceof StallStatus ? $stall->status === StallStatus::Occupied : $stall->status === 'occupied');
+                if ($stall && $isOccupied) {
+                    $targets->push(['stall' => $stall, 'vendor' => $vendor]);
                 }
             }
         }
 
         $count = 0;
-        foreach ($occupiedStalls as $stall) {
-            $vendor = Vendor::where('user_id', $stall->vendor_id)->orWhere('id', $stall->vendor_id)->first();
-            if (!$vendor && $vendorId) {
-                $vendor = Vendor::find($vendorId);
-            }
-            if (!$vendor) continue;
+        foreach ($targets as $pair) {
+            $stall = $pair['stall'];
+            $vendor = $pair['vendor'];
 
             $exists = StallRentalPayment::where('stall_id', $stall->id)
                 ->where('billing_period', $billingPeriod)
                 ->exists();
 
             if (!$exists) {
+                $amount = $customAmount ?: ($stall->monthly_rent ?: 3500.00);
                 $rental = StallRentalPayment::create([
                     'vendor_id' => $vendor->id,
                     'stall_id' => $stall->id,
                     'billing_period' => $billingPeriod,
-                    'amount' => $stall->monthly_rent ?: 3500.00,
+                    'amount' => $amount,
                     'due_date' => $due->toDateString(),
                     'status' => 'unpaid',
                 ]);
@@ -164,29 +193,89 @@ class StallRentalService
     }
 
     /**
+     * Admin updates stall rental payment status (e.g. paid, unpaid, pending, overdue).
+     */
+    public function updatePaymentStatus(
+        StallRentalPayment $rental,
+        string $status,
+        array $attributes = [],
+        ?User $admin = null
+    ): StallRentalPayment {
+        $previousStatus = $rental->status;
+        $updates = ['status' => $status];
+
+        if ($status === 'paid') {
+            $updates['paid_at'] = !empty($attributes['paid_at'])
+                ? Carbon::parse($attributes['paid_at'])
+                : ($rental->paid_at ?: now());
+            $updates['payment_method'] = $attributes['payment_method'] ?? ($rental->payment_method ?: 'cash');
+            if (isset($attributes['payment_reference'])) {
+                $updates['payment_reference'] = $attributes['payment_reference'];
+            }
+            if ($admin) {
+                $updates['verified_by'] = $admin->id;
+            }
+        } elseif ($status === 'unpaid') {
+            $updates['paid_at'] = null;
+            $updates['verified_by'] = null;
+            if (isset($attributes['payment_reference'])) {
+                $updates['payment_reference'] = $attributes['payment_reference'];
+            }
+        } elseif ($status === 'pending') {
+            $updates['verified_by'] = null;
+            if (!empty($attributes['payment_method'])) {
+                $updates['payment_method'] = $attributes['payment_method'];
+            }
+            if (isset($attributes['payment_reference'])) {
+                $updates['payment_reference'] = $attributes['payment_reference'];
+            }
+        } elseif ($status === 'overdue') {
+            $updates['paid_at'] = null;
+            $updates['verified_by'] = null;
+        }
+
+        if (array_key_exists('notes', $attributes)) {
+            $updates['notes'] = $attributes['notes'];
+        }
+
+        $rental->update($updates);
+        $fresh = $rental->fresh(['vendor', 'stall', 'verifier']);
+
+        $this->notifyPaymentStatusUpdated($fresh, $previousStatus, $admin);
+
+        return $fresh;
+    }
+
+    /**
      * Admin verifies rental payment.
      */
     public function verifyPayment(StallRentalPayment $rental, User $admin): StallRentalPayment
     {
-        $rental->update([
-            'status' => 'paid',
-            'verified_by' => $admin->id,
-        ]);
-
-        $this->notifyPaymentVerified($rental);
-
-        return $rental->fresh(['vendor', 'stall', 'verifier']);
+        return $this->updatePaymentStatus($rental, 'paid', [
+            'payment_method' => $rental->payment_method ?: 'cash',
+            'paid_at' => $rental->paid_at ?: now(),
+        ], $admin);
     }
 
     /**
      * Get rental reports showing vendor rental records, payments, and document requirements.
+     * Excludes unoccupied (vacant, under maintenance, or unassigned) stalls.
      */
     public function getRentalReportData(array $filters = []): array
     {
         $vendors = Vendor::where('status', 'approved')
-            ->with(['user', 'documents', 'rentalPayments' => fn ($q) => $q->orderByDesc('billing_period')])
+            ->whereHas('stall', function ($q) {
+                $q->where('status', StallStatus::Occupied->value);
+            })
+            ->with([
+                'user',
+                'stall',
+                'documents',
+                'rentalPayments' => fn ($q) => $q->orderByDesc('billing_period'),
+            ])
             ->get()
             ->map(function (Vendor $vendor) {
+                $stall = $vendor->stall;
                 $payments = $vendor->rentalPayments;
                 $docTypes = $vendor->documents->pluck('document_type')->all();
 
@@ -203,10 +292,17 @@ class StallRentalService
                 $totalOverdue = $payments->where('status', 'overdue')->sum('amount');
                 $latestPayment = $payments->first();
 
+                $stallLocation = $stall
+                    ? "{$stall->stall_number}, " . ucfirst(str_replace('-', ' ', $stall->section ?? ''))
+                    : $vendor->stall_location;
+
                 return [
                     'vendor_id' => $vendor->id,
-                    'stall_name' => $vendor->stall_name,
-                    'stall_location' => $vendor->stall_location,
+                    'stall_id' => $stall?->id,
+                    'stall_number' => $stall?->stall_number,
+                    'stall_name' => $stall?->store_name ?: $vendor->stall_name,
+                    'stall_location' => $stallLocation,
+                    'stall_status' => $stall?->status instanceof \BackedEnum ? $stall->status->value : ($stall?->status ?? 'occupied'),
                     'contract_start' => $vendor->contract_start_date,
                     'contract_end' => $vendor->contract_end_date,
                     'contract_status' => $vendor->contract_status,
@@ -220,57 +316,68 @@ class StallRentalService
                 ];
             });
 
+        $contractRequests = VendorContractRequest::with(['vendor.stall', 'reviewer'])
+            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (VendorContractRequest $req) {
+                $vendor = $req->vendor;
+                $stall = $vendor?->stall;
+                $stallLocation = $stall
+                    ? "{$stall->stall_number}, " . ucfirst(str_replace('-', ' ', $stall->section ?? ''))
+                    : $vendor?->stall_location;
+
+                return [
+                    'id' => $req->id,
+                    'vendor_id' => $req->vendor_id,
+                    'vendor_name' => $vendor?->user?->name ?? $vendor?->stall_name,
+                    'stall_name' => $stall?->store_name ?: $vendor?->stall_name,
+                    'stall_number' => $stall?->stall_number,
+                    'stall_location' => $stallLocation,
+                    'type' => $req->type, // 'renewal' or 'cancellation'
+                    'requested_duration_months' => $req->requested_duration_months,
+                    'status' => $req->status, // 'pending', 'approved', 'rejected'
+                    'reason' => $req->reason,
+                    'admin_notes' => $req->admin_notes,
+                    'reviewer_name' => $req->reviewer?->name,
+                    'reviewed_at' => $req->reviewed_at?->format('M d, Y g:i A'),
+                    'created_at' => $req->created_at->format('M d, Y g:i A'),
+                    'contract_start' => $vendor?->contract_start_date,
+                    'contract_end' => $vendor?->contract_end_date,
+                    'contract_status' => $vendor?->contract_status,
+                ];
+            });
+
         return [
             'vendor_reports' => $vendors,
+            'contract_requests' => $contractRequests,
             'summary' => [
                 'total_vendors' => $vendors->count(),
+                'occupied_stalls' => $vendors->count(),
                 'compliant_requirements' => $vendors->where('requirements_complete', true)->count(),
                 'up_to_date_rent' => $vendors->where('current_status', 'Up to date')->count(),
                 'overdue_rent' => $vendors->where('current_status', 'Overdue')->count(),
                 'total_rent_collected' => $vendors->sum('total_paid'),
                 'total_rent_overdue' => $vendors->sum('total_overdue'),
+                'pending_requests_count' => $contractRequests->where('status', 'pending')->count(),
+                'pending_renewals_count' => $contractRequests->where('status', 'pending')->where('type', 'renewal')->count(),
+                'pending_cancellations_count' => $contractRequests->where('status', 'pending')->where('type', 'cancellation')->count(),
             ],
         ];
     }
 
     private function notifyRentalGenerated(StallRentalPayment $rental): void
     {
-        $vendor = $rental->vendor;
-        if ($vendor && $vendor->user_id) {
-            Notification::create([
-                'id' => (string) Str::uuid(),
-                'type' => 'App\Notifications\RentalDueNotification',
-                'notifiable_type' => 'App\Models\User',
-                'notifiable_id' => $vendor->user_id,
-                'data' => json_encode([
-                    'title' => "Monthly Stall Rent Due ({$rental->billing_period})",
-                    'message' => "Stall rent of ₱{$rental->amount} for {$rental->billing_period} is due on {$rental->due_date}. Please submit payment promptly.",
-                    'rental_id' => $rental->id,
-                    'due_date' => $rental->due_date,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+        $this->notificationService->notifyVendorRentalBillGenerated($rental);
+    }
+
+    private function notifyPaymentStatusUpdated(StallRentalPayment $rental, string $previousStatus = 'unpaid', ?User $admin = null): void
+    {
+        $this->notificationService->notifyVendorRentalPaymentStatusUpdated($rental, $previousStatus, $admin);
     }
 
     private function notifyPaymentVerified(StallRentalPayment $rental): void
     {
-        $vendor = $rental->vendor;
-        if ($vendor && $vendor->user_id) {
-            Notification::create([
-                'id' => (string) Str::uuid(),
-                'type' => 'App\Notifications\RentalPaymentVerifiedNotification',
-                'notifiable_type' => 'App\Models\User',
-                'notifiable_id' => $vendor->user_id,
-                'data' => json_encode([
-                    'title' => "Stall Rental Payment Verified ({$rental->billing_period})",
-                    'message' => "Your stall rent payment of ₱{$rental->amount} has been verified and marked Paid.",
-                    'rental_id' => $rental->id,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+        $this->notifyPaymentStatusUpdated($rental, 'pending');
     }
 }

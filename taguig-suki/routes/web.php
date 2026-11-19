@@ -48,8 +48,10 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard/vendors/rentals', [StallRentalController::class, 'index'])->name('rentals.index');
     Route::get('dashboard/rentals', fn () => redirect()->route('rentals.index'));
     Route::post('dashboard/vendors/rentals/generate', [StallRentalController::class, 'generateBills'])->name('rentals.generate');
+    Route::patch('dashboard/vendors/rentals/{rental}/status', [StallRentalController::class, 'updateStatus'])->name('rentals.update-status');
     Route::patch('dashboard/vendors/rentals/{rental}/verify', [StallRentalController::class, 'verifyPayment'])->name('rentals.verify');
     Route::post('dashboard/vendors/{vendor}/contract/renew-approve', [StallRentalController::class, 'renewContractApprove'])->name('vendors.contract.renew-approve');
+    Route::post('dashboard/vendors/rentals/contract-requests/{contractRequest}/review', [StallRentalController::class, 'reviewContractRequest'])->name('rentals.contract-requests.review');
     Route::get('dashboard/reports/rentals', [StallRentalController::class, 'reports'])->name('reports.rentals');
 
     // Vendor Management (All Vendors)
