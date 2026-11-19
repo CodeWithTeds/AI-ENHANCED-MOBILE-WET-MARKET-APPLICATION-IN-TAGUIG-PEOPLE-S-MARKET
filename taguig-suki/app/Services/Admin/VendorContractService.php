@@ -2,11 +2,15 @@
 
 namespace App\Services\Admin;
 
-use App\Models\Notification;
+use App\Enums\StallStatus;
+use App\Models\User;
 use App\Models\Vendor;
+use App\Models\VendorContractRequest;
+use App\Notifications\ContractExpiredNotification;
+use App\Notifications\ContractExpiringNotification;
+use App\Notifications\ContractRequestReviewedNotification;
 use Carbon\Carbon;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class VendorContractService
 {
@@ -30,13 +34,14 @@ class VendorContractService
 
     /**
      * Check contract statuses, flagging expiring_soon (within 30 days) and expired.
-     * Generates notifications for vendors and admins when status changes.
+     * Generates automatic notifications for vendors when status changes.
      */
     public function checkExpiringContracts(): array
     {
         $today = now()->startOfDay();
         $thirtyDays = $today->copy()->addDays(30);
 
+        // Active contracts expiring within the next 30 days
         $expiring = Vendor::where('status', 'approved')
             ->whereNotNull('contract_end_date')
             ->where('contract_end_date', '>=', $today->toDateString())
@@ -49,6 +54,7 @@ class VendorContractService
             $this->notifyContractExpiring($vendor);
         }
 
+        // Contracts that have passed their expiration date
         $expired = Vendor::where('status', 'approved')
             ->whereNotNull('contract_end_date')
             ->where('contract_end_date', '<', $today->toDateString())
@@ -67,104 +73,201 @@ class VendorContractService
     }
 
     /**
-     * Vendor submits a renewal request.
+     * Vendor initiates either Contract Renewal (1, 3, 6, 12 months) or Contract Cancellation.
+     * Contracts must NOT be automatically renewed or cancelled; they are submitted as pending requests.
      */
-    public function requestRenewal(Vendor $vendor, ?string $notes = null): Vendor
-    {
-        $vendor->update([
-            'contract_status' => 'renewal_requested',
-            'renewal_requested_at' => now(),
-            'renewal_notes' => $notes,
+    public function submitContractRequest(
+        Vendor $vendor,
+        string $type,
+        ?int $durationMonths = null,
+        ?string $reason = null
+    ): VendorContractRequest {
+        $normalizedType = strtolower(trim($type));
+        if (!in_array($normalizedType, ['renewal', 'cancellation'], true)) {
+            throw new InvalidArgumentException("Invalid request type. Must be 'renewal' or 'cancellation'.");
+        }
+
+        if ($normalizedType === 'renewal') {
+            $validDurations = [1, 3, 6, 12];
+            $durationMonths = (int) ($durationMonths ?: 12);
+            if (!in_array($durationMonths, $validDurations, true)) {
+                throw new InvalidArgumentException('Renewal duration must be 1 month, 3 months, 6 months, or 1 year (12 months).');
+            }
+        } else {
+            $durationMonths = null;
+        }
+
+        // Create the contract request pending admin review
+        $contractRequest = VendorContractRequest::create([
+            'vendor_id' => $vendor->id,
+            'type' => $normalizedType,
+            'requested_duration_months' => $durationMonths,
+            'reason' => $reason,
+            'status' => 'pending',
         ]);
 
-        $this->notifyAdminRenewalRequested($vendor);
+        // Update vendor contract status without automatically renewing or cancelling
+        if ($normalizedType === 'renewal') {
+            $vendor->update([
+                'contract_status' => 'renewal_requested',
+                'renewal_requested_at' => now(),
+                'renewal_notes' => $reason,
+            ]);
+        } else {
+            $vendor->update([
+                'contract_status' => 'cancellation_requested',
+                'cancellation_requested_at' => now(),
+                'renewal_notes' => $reason,
+            ]);
+        }
 
-        return $vendor;
+        return $contractRequest;
     }
 
     /**
-     * Admin approves renewal, extending contract.
+     * Admin reviews a submitted contract request and either approves or rejects it.
      */
-    public function approveRenewal(Vendor $vendor, int $additionalMonths = 12): Vendor
-    {
-        $currentEnd = $vendor->contract_end_date ? Carbon::parse($vendor->contract_end_date) : now();
-        $base = $currentEnd->isPast() ? now() : $currentEnd;
-        $newEnd = $base->copy()->addMonths($additionalMonths);
+    public function reviewContractRequest(
+        VendorContractRequest $request,
+        string $decision,
+        ?string $adminNotes = null,
+        ?User $reviewer = null,
+        ?int $customMonths = null
+    ): VendorContractRequest {
+        $decision = strtolower(trim($decision));
+        if (!in_array($decision, ['approved', 'rejected'], true)) {
+            throw new InvalidArgumentException("Review decision must be 'approved' or 'rejected'.");
+        }
 
-        $vendor->update([
-            'contract_duration_months' => $vendor->contract_duration_months + $additionalMonths,
-            'contract_end_date' => $newEnd->toDateString(),
-            'contract_status' => 'active',
-            'renewal_notes' => null,
+        $vendor = $request->vendor;
+
+        if ($decision === 'approved') {
+            if ($request->type === 'renewal') {
+                $additionalMonths = $customMonths ?: ($request->requested_duration_months ?: 12);
+                $currentEnd = $vendor->contract_end_date ? Carbon::parse($vendor->contract_end_date) : now();
+                $base = $currentEnd->isPast() ? now() : $currentEnd;
+                $newEnd = $base->copy()->addMonths($additionalMonths);
+
+                $vendor->update([
+                    'contract_duration_months' => (int) $vendor->contract_duration_months + $additionalMonths,
+                    'contract_end_date' => $newEnd->toDateString(),
+                    'contract_status' => 'active',
+                    'renewal_notes' => null,
+                ]);
+            } else {
+                // Cancellation approved: contract is officially cancelled
+                $vendor->update([
+                    'contract_status' => 'cancelled',
+                    'renewal_notes' => null,
+                ]);
+
+                // Vacate assigned stall if present
+                if ($vendor->stall) {
+                    $vendor->stall->update([
+                        'status' => StallStatus::Vacant,
+                        'vendor_id' => null,
+                    ]);
+                }
+            }
+        } else {
+            // Rejected: Revert vendor contract status based on end date
+            $today = now()->startOfDay();
+            if ($vendor->contract_end_date) {
+                $endDate = Carbon::parse($vendor->contract_end_date)->startOfDay();
+                $daysRemaining = (int) $today->diffInDays($endDate, false);
+                if ($daysRemaining < 0) {
+                    $newStatus = 'expired';
+                } elseif ($daysRemaining <= 30) {
+                    $newStatus = 'expiring_soon';
+                } else {
+                    $newStatus = 'active';
+                }
+            } else {
+                $newStatus = 'active';
+            }
+
+            $vendor->update([
+                'contract_status' => $newStatus,
+            ]);
+        }
+
+        // Record request resolution
+        $request->update([
+            'status' => $decision,
+            'admin_notes' => $adminNotes,
+            'reviewed_by' => $reviewer?->id,
+            'reviewed_at' => now(),
         ]);
 
-        $this->notifyVendorRenewalApproved($vendor, $newEnd);
+        // Automatically notify vendor of the approval or rejection
+        if ($vendor->user) {
+            $vendor->user->notify(new ContractRequestReviewedNotification($request->fresh(['vendor'])));
+        }
 
-        return $vendor;
+        return $request;
+    }
+
+    /**
+     * Backward-compatible helper for renewal request.
+     */
+    public function requestRenewal(Vendor $vendor, ?string $notes = null, int $durationMonths = 12): Vendor
+    {
+        $this->submitContractRequest($vendor, 'renewal', $durationMonths, $notes);
+        return $vendor->fresh();
+    }
+
+    /**
+     * Backward-compatible helper for approving renewal directly.
+     */
+    public function approveRenewal(Vendor $vendor, int $additionalMonths = 12, ?User $reviewer = null, ?string $notes = null): Vendor
+    {
+        $pending = $vendor->contractRequests()->where('type', 'renewal')->where('status', 'pending')->latest()->first();
+
+        if ($pending) {
+            $this->reviewContractRequest($pending, 'approved', $notes, $reviewer, $additionalMonths);
+        } else {
+            // Direct admin renewal extension without prior request
+            $currentEnd = $vendor->contract_end_date ? Carbon::parse($vendor->contract_end_date) : now();
+            $base = $currentEnd->isPast() ? now() : $currentEnd;
+            $newEnd = $base->copy()->addMonths($additionalMonths);
+
+            $vendor->update([
+                'contract_duration_months' => (int) $vendor->contract_duration_months + $additionalMonths,
+                'contract_end_date' => $newEnd->toDateString(),
+                'contract_status' => 'active',
+                'renewal_notes' => null,
+            ]);
+
+            // Create record as approved
+            $req = VendorContractRequest::create([
+                'vendor_id' => $vendor->id,
+                'type' => 'renewal',
+                'requested_duration_months' => $additionalMonths,
+                'status' => 'approved',
+                'admin_notes' => $notes ?: 'Renewed by market administration.',
+                'reviewed_by' => $reviewer?->id,
+                'reviewed_at' => now(),
+            ]);
+
+            if ($vendor->user) {
+                $vendor->user->notify(new ContractRequestReviewedNotification($req));
+            }
+        }
+
+        return $vendor->fresh();
     }
 
     private function notifyContractExpiring(Vendor $vendor): void
     {
-        if ($vendor->user_id) {
-            Notification::create([
-                'id' => (string) Str::uuid(),
-                'type' => 'App\Notifications\ContractExpiringNotification',
-                'notifiable_type' => 'App\Models\User',
-                'notifiable_id' => $vendor->user_id,
-                'data' => json_encode([
-                    'title' => 'Stall Contract Expiring Soon',
-                    'message' => "Your stall lease contract for {$vendor->stall_name} expires on {$vendor->contract_end_date}. You can request renewal now in your vendor settings.",
-                    'contract_end_date' => $vendor->contract_end_date,
-                    'vendor_id' => $vendor->id,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+        if ($vendor->user) {
+            $vendor->user->notify(new ContractExpiringNotification($vendor));
         }
     }
 
     private function notifyContractExpired(Vendor $vendor): void
     {
-        if ($vendor->user_id) {
-            Notification::create([
-                'id' => (string) Str::uuid(),
-                'type' => 'App\Notifications\ContractExpiredNotification',
-                'notifiable_type' => 'App\Models\User',
-                'notifiable_id' => $vendor->user_id,
-                'data' => json_encode([
-                    'title' => 'Stall Contract Expired',
-                    'message' => "Your stall lease contract for {$vendor->stall_name} expired on {$vendor->contract_end_date}. Please submit a renewal request or contact the market office.",
-                    'contract_end_date' => $vendor->contract_end_date,
-                    'vendor_id' => $vendor->id,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-    }
-
-    private function notifyAdminRenewalRequested(Vendor $vendor): void
-    {
-        // Admin notifications or logging
-    }
-
-    private function notifyVendorRenewalApproved(Vendor $vendor, Carbon $newEnd): void
-    {
-        if ($vendor->user_id) {
-            Notification::create([
-                'id' => (string) Str::uuid(),
-                'type' => 'App\Notifications\ContractRenewedNotification',
-                'notifiable_type' => 'App\Models\User',
-                'notifiable_id' => $vendor->user_id,
-                'data' => json_encode([
-                    'title' => 'Stall Contract Renewed!',
-                    'message' => "Your lease contract for {$vendor->stall_name} has been renewed until {$newEnd->toDateString()}.",
-                    'contract_end_date' => $newEnd->toDateString(),
-                    'vendor_id' => $vendor->id,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+        if ($vendor->user) {
+            $vendor->user->notify(new ContractExpiredNotification($vendor));
         }
     }
 }
