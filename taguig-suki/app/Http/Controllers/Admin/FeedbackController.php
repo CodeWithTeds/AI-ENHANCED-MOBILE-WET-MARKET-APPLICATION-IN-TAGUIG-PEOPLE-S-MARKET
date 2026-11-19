@@ -23,6 +23,10 @@ class FeedbackController extends Controller
 
     public function respond(Request $request, Review $review): RedirectResponse
     {
+        if (! $review->hasComment()) {
+            return back()->with('error', 'Ratings without customer comments do not require a response.');
+        }
+
         $request->validate([
             'admin_response' => 'required|string|max:2000',
         ]);

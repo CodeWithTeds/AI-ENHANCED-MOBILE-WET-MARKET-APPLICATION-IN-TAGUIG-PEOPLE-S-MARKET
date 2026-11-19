@@ -393,6 +393,16 @@ function StoreReviewItem({
 
       {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
 
+      {review.vendor_response ? (
+        <View style={styles.customerVendorResponseBox}>
+          <View style={styles.customerVendorResponseHeader}>
+            <Ionicons name="storefront" size={12} color="#059669" />
+            <Text style={styles.customerVendorResponseTitle}>Store Response</Text>
+          </View>
+          <Text style={styles.customerVendorResponseText}>{review.vendor_response}</Text>
+        </View>
+      ) : null}
+
       {review.images && review.images.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reviewPhotoScroll}>
           {review.images.map((img) => {
@@ -958,6 +968,30 @@ const styles = StyleSheet.create({
     color: Colors.text,
     lineHeight: 18,
     marginTop: 4,
+  },
+  customerVendorResponseBox: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    padding: 10,
+    marginTop: 8,
+  },
+  customerVendorResponseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 3,
+  },
+  customerVendorResponseTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  customerVendorResponseText: {
+    fontSize: 12,
+    color: '#14532D',
+    lineHeight: 16,
   },
   reviewPhotoScroll: {
     marginTop: 10,

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   Modal,
@@ -13,6 +14,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,6 +26,7 @@ import { getToken } from '@/services/auth';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
   getVendorReviewsDashboard,
+  respondToCustomerReview,
   resolveReviewImageUrl,
   type ProductReviewItem,
   type Review,
@@ -75,7 +78,13 @@ export default function VendorReviewsScreen() {
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | null>(null);
+  const [feedbackTypeFilter, setFeedbackTypeFilter] = useState<'all' | 'complaints' | 'ratings_only'>('all');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Response Modal State (Item 21: Vendor responds to complaints/concerns)
+  const [respondingReview, setRespondingReview] = useState<(Review | ProductReviewItem) | null>(null);
+  const [responseText, setResponseText] = useState('');
+  const [submittingResponse, setSubmittingResponse] = useState(false);
 
   useEffect(() => {
     if (tab === 'stall' || tab === 'products') {
@@ -113,6 +122,35 @@ export default function VendorReviewsScreen() {
     }, [loadData]),
   );
 
+  const handleSubmitResponse = async () => {
+    if (!respondingReview) return;
+    const clean = responseText.trim();
+    if (clean.length < 3) {
+      Alert.alert('Validation Error', 'Please write at least 3 characters in your response.');
+      return;
+    }
+
+    const authToken = token ?? (await getToken()) ?? (await getCustomerToken());
+    if (!authToken) {
+      Alert.alert('Authentication Required', 'Please log in again to submit a response.');
+      return;
+    }
+
+    try {
+      setSubmittingResponse(true);
+      await respondToCustomerReview(respondingReview.id, clean, authToken);
+      Alert.alert('Response Published', 'Your response has been published and the customer was notified.');
+      setRespondingReview(null);
+      setResponseText('');
+      loadData();
+    } catch (err: any) {
+      console.error('[VendorReviews] Failed to respond to review:', err);
+      Alert.alert('Submission Failed', err?.message || 'Could not submit your response. Please try again.');
+    } finally {
+      setSubmittingResponse(false);
+    }
+  };
+
   const stall = data?.stall ?? { reviews: [], average_rating: 0, total: 0, rating_counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
   const products = data?.products ?? { reviews: [], average_rating: 0, total: 0, rating_counts: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
 
@@ -127,6 +165,12 @@ export default function VendorReviewsScreen() {
   // Apply filter + sort
   const filteredReviews = useMemo(() => {
     let list: (Review | ProductReviewItem)[] = [...activeData.reviews];
+
+    if (feedbackTypeFilter === 'complaints') {
+      list = list.filter((r) => Boolean(r.comment && r.comment.trim()));
+    } else if (feedbackTypeFilter === 'ratings_only') {
+      list = list.filter((r) => !Boolean(r.comment && r.comment.trim()));
+    }
 
     if (selectedRatingFilter !== null) {
       list = list.filter((r) => r.rating === selectedRatingFilter);
@@ -147,7 +191,7 @@ export default function VendorReviewsScreen() {
         break;
     }
     return list;
-  }, [activeData.reviews, selectedRatingFilter, sortBy]);
+  }, [activeData.reviews, feedbackTypeFilter, selectedRatingFilter, sortBy]);
 
   return (
     <View style={styles.screen}>
@@ -275,18 +319,86 @@ export default function VendorReviewsScreen() {
         <View style={styles.controlsRow}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterPills}>
             <TouchableOpacity
-              style={[styles.filterPill, selectedRatingFilter === null && styles.filterPillActive]}
-              onPress={() => setSelectedRatingFilter(null)}
+              style={[
+                styles.filterPill,
+                selectedRatingFilter === null && feedbackTypeFilter === 'all' && styles.filterPillActive,
+              ]}
+              onPress={() => {
+                setSelectedRatingFilter(null);
+                setFeedbackTypeFilter('all');
+              }}
             >
-              <Text style={[styles.filterPillText, selectedRatingFilter === null && styles.filterPillTextActive]}>All</Text>
+              <Text
+                style={[
+                  styles.filterPillText,
+                  selectedRatingFilter === null && feedbackTypeFilter === 'all' && styles.filterPillTextActive,
+                ]}
+              >
+                All
+              </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.filterPill,
+                feedbackTypeFilter === 'complaints' && styles.filterPillActive,
+                feedbackTypeFilter === 'complaints' && { backgroundColor: C.amber },
+              ]}
+              onPress={() => {
+                setFeedbackTypeFilter(feedbackTypeFilter === 'complaints' ? 'all' : 'complaints');
+                setSelectedRatingFilter(null);
+              }}
+            >
+              <Ionicons
+                name="chatbubble-ellipses"
+                size={11}
+                color={feedbackTypeFilter === 'complaints' ? '#FFF' : C.amber}
+              />
+              <Text
+                style={[
+                  styles.filterPillText,
+                  feedbackTypeFilter === 'complaints' && styles.filterPillTextActive,
+                ]}
+              >
+                Customer Concerns
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.filterPill,
+                feedbackTypeFilter === 'ratings_only' && styles.filterPillActive,
+              ]}
+              onPress={() => {
+                setFeedbackTypeFilter(feedbackTypeFilter === 'ratings_only' ? 'all' : 'ratings_only');
+                setSelectedRatingFilter(null);
+              }}
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={11}
+                color={feedbackTypeFilter === 'ratings_only' ? '#FFF' : '#059669'}
+              />
+              <Text
+                style={[
+                  styles.filterPillText,
+                  feedbackTypeFilter === 'ratings_only' && styles.filterPillTextActive,
+                ]}
+              >
+                Ratings Only (No Response)
+              </Text>
+            </TouchableOpacity>
+
             {[5, 4, 3, 2, 1].map((star) => {
-              const active = selectedRatingFilter === star;
+              const active = selectedRatingFilter === star && feedbackTypeFilter === 'all';
               return (
                 <TouchableOpacity
                   key={star}
                   style={[styles.filterPill, active && styles.filterPillActive]}
-                  onPress={() => setSelectedRatingFilter(active ? null : star)}
+                  onPress={() => {
+                    setSelectedRatingFilter(active ? null : star);
+                    setFeedbackTypeFilter('all');
+                  }}
                 >
                   <Ionicons name="star" size={11} color={active ? '#FFF' : C.starFilled} />
                   <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{star}</Text>
@@ -367,6 +479,10 @@ export default function VendorReviewsScreen() {
                 expanded={expandedId === review.id}
                 onToggle={() => setExpandedId(expandedId === review.id ? null : review.id)}
                 onPreviewImage={setPreviewImage}
+                onOpenRespond={(rev) => {
+                  setRespondingReview(rev);
+                  setResponseText('');
+                }}
               />
             ))
           )}
@@ -395,6 +511,101 @@ export default function VendorReviewsScreen() {
               resizeMode="contain"
             />
           )}
+        </View>
+      </Modal>
+
+      {/* ─── Vendor Complaint & Concern Response Modal (Item 21) ─── */}
+      <Modal
+        visible={!!respondingReview}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRespondingReview(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalEyebrow}>FEEDBACK & COMPLAINTS</Text>
+                <Text style={styles.modalTitle}>Respond to Customer</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setRespondingReview(null)}
+                style={styles.modalCloseBtn}
+                accessibilityLabel="Close response modal"
+              >
+                <Ionicons name="close" size={20} color={C.sub} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {respondingReview && (
+                <>
+                  <View style={styles.modalCustomerCard}>
+                    <View style={styles.modalCustomerRow}>
+                      <Text style={styles.modalCustomerName}>
+                        {respondingReview.user || 'Customer'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 1 }}>
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Ionicons
+                            key={s}
+                            name={s <= respondingReview.rating ? 'star' : 'star-outline'}
+                            size={12}
+                            color={s <= respondingReview.rating ? C.starFilled : C.starEmpty}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                    {respondingReview.comment ? (
+                      <Text style={styles.modalCommentText}>"{respondingReview.comment}"</Text>
+                    ) : null}
+                  </View>
+
+                  <Text style={styles.modalInputLabel}>YOUR OFFICIAL STORE RESPONSE</Text>
+                  <TextInput
+                    style={styles.modalTextInput}
+                    multiline
+                    numberOfLines={4}
+                    placeholder="Address the customer's complaint or concern respectfully (e.g., apology, clarification, or resolution offer)..."
+                    placeholderTextColor={C.muted}
+                    value={responseText}
+                    onChangeText={setResponseText}
+                    textAlignVertical="top"
+                  />
+                  <Text style={styles.modalInputHint}>
+                    Only customer concerns and complaints with written comments require vendor response. Ratings without comments do not require responses.
+                  </Text>
+                </>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setRespondingReview(null)}
+                disabled={submittingResponse}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmitBtn,
+                  (submittingResponse || !responseText.trim()) && styles.modalSubmitBtnDisabled,
+                ]}
+                onPress={handleSubmitResponse}
+                disabled={submittingResponse || !responseText.trim()}
+              >
+                {submittingResponse ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={15} color="#FFFFFF" />
+                    <Text style={styles.modalSubmitBtnText}>Submit Response</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -460,17 +671,26 @@ function formatTime(dateStr?: string | null): string {
   }
 }
 
-function ReviewCard({ review, isProduct, expanded, onToggle, onPreviewImage }: {
+function ReviewCard({
+  review,
+  isProduct,
+  expanded,
+  onToggle,
+  onPreviewImage,
+  onOpenRespond,
+}: {
   review: Review | ProductReviewItem;
   isProduct: boolean;
   expanded: boolean;
   onToggle: () => void;
   onPreviewImage?: (url: string) => void;
+  onOpenRespond?: (review: Review | ProductReviewItem) => void;
 }) {
   const productReview = isProduct ? (review as ProductReviewItem) : null;
   const userName = review.user || 'Customer';
   const dateStr = formatDate(review.created_at);
   const timeStr = formatTime(review.created_at);
+  const hasComment = Boolean(review.comment && review.comment.trim());
 
   return (
     <View style={styles.reviewCard}>
@@ -501,13 +721,36 @@ function ReviewCard({ review, isProduct, expanded, onToggle, onPreviewImage }: {
             ))}
             <Text style={styles.reviewRatingText}>{review.rating}.0</Text>
           </View>
-          {review.comment ? (
+
+          {hasComment ? (
             <Text style={styles.reviewComment} numberOfLines={expanded ? undefined : 2}>
-              {review.comment}
+              "{review.comment}"
             </Text>
           ) : (
-            <Text style={styles.noCommentText}>No written comment</Text>
+            <View style={styles.noCommentPill}>
+              <Ionicons name="checkmark-circle" size={11} color="#059669" />
+              <Text style={styles.noCommentPillText}>Rating only · No response needed</Text>
+            </View>
           )}
+
+          {/* Badges for concerns vs responses */}
+          {review.vendor_response ? (
+            <View style={styles.respondedBadge}>
+              <Ionicons name="checkmark-circle" size={10} color="#059669" />
+              <Text style={styles.respondedBadgeText}>Store Responded</Text>
+            </View>
+          ) : hasComment ? (
+            <View style={[styles.needsAttentionBadge, review.rating <= 3 && styles.complaintBadge]}>
+              <Ionicons
+                name={review.rating <= 3 ? 'warning-outline' : 'chatbubble-ellipses-outline'}
+                size={10}
+                color={review.rating <= 3 ? '#DC2626' : '#D97706'}
+              />
+              <Text style={[styles.needsAttentionBadgeText, review.rating <= 3 && styles.complaintBadgeText]}>
+                {review.rating <= 3 ? 'Complaint / Issue' : 'Customer Concern'}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Photo count chip in collapsed state */}
           {review.images && review.images.length > 0 && !expanded && (
@@ -553,10 +796,72 @@ function ReviewCard({ review, isProduct, expanded, onToggle, onPreviewImage }: {
             ))}
             <Text style={styles.fullStarRating}>{review.rating} / 5</Text>
           </View>
-          {review.comment && (
+
+          {/* Item 21 Policy Notice for bare ratings without comment */}
+          {!hasComment && (
+            <View style={styles.ratingOnlyNoticeBox}>
+              <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.ratingOnlyNoticeTitle}>No Response Required</Text>
+                <Text style={styles.ratingOnlyNoticeText}>
+                  This customer submitted a rating without written comments. Under market policy, vendors are not required to respond to rating-only feedback.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {hasComment && (
             <View style={styles.commentBox}>
               <Ionicons name="chatbubble-ellipses-outline" size={14} color={C.brand} />
               <Text style={styles.commentBoxText}>"{review.comment}"</Text>
+            </View>
+          )}
+
+          {/* Existing Vendor Response Display */}
+          {review.vendor_response && (
+            <View style={styles.vendorResponseBox}>
+              <View style={styles.vendorResponseHeader}>
+                <View style={styles.vendorResponseIcon}>
+                  <Ionicons name="storefront" size={12} color="#FFFFFF" />
+                </View>
+                <Text style={styles.vendorResponseTitle}>Your Store Response</Text>
+                {review.vendor_responded_at && (
+                  <Text style={styles.vendorResponseDate}>{review.vendor_responded_at}</Text>
+                )}
+              </View>
+              <Text style={styles.vendorResponseText}>{review.vendor_response}</Text>
+            </View>
+          )}
+
+          {/* Prompt to respond if there is a written comment/complaint and no response yet */}
+          {hasComment && !review.vendor_response && (
+            <View style={styles.responsePromptBox}>
+              <View style={styles.responsePromptHeader}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={15}
+                  color={review.rating <= 3 ? C.red : C.amber}
+                />
+                <Text
+                  style={[
+                    styles.responsePromptTitle,
+                    { color: review.rating <= 3 ? C.red : C.amber },
+                  ]}
+                >
+                  {review.rating <= 3 ? 'Complaint Needs Attention' : 'Customer Concern'}
+                </Text>
+              </View>
+              <Text style={styles.responsePromptText}>
+                Address the customer's comment or complaint to resolve their concern.
+              </Text>
+              <TouchableOpacity
+                style={styles.respondActionBtn}
+                onPress={() => onOpenRespond?.(review)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="chatbubble-ellipses" size={14} color="#FFFFFF" />
+                <Text style={styles.respondActionBtnText}>Respond to Customer</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -983,4 +1288,141 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 14, fontWeight: '700', color: C.ink, marginBottom: 4 },
   emptySub: { fontSize: 12, color: C.muted, textAlign: 'center', paddingHorizontal: 20, lineHeight: 18 },
+
+  /* Response Badges & Policy Boxes (Item 21) */
+  noCommentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  noCommentPillText: { fontSize: 11, fontWeight: '600', color: '#047857' },
+  respondedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  respondedBadgeText: { fontSize: 10, fontWeight: '700', color: '#059669' },
+  needsAttentionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  needsAttentionBadgeText: { fontSize: 10, fontWeight: '700', color: '#D97706' },
+  complaintBadge: { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
+  complaintBadgeText: { color: '#DC2626' },
+
+  ratingOnlyNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 10,
+  },
+  ratingOnlyNoticeTitle: { fontSize: 12, fontWeight: '800', color: '#166534' },
+  ratingOnlyNoticeText: { fontSize: 11, color: '#15803D', lineHeight: 16, marginTop: 2 },
+
+  vendorResponseBox: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginBottom: 10,
+  },
+  vendorResponseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+  vendorResponseIcon: { width: 22, height: 22, borderRadius: 6, backgroundColor: C.brandDark, alignItems: 'center', justifyContent: 'center' },
+  vendorResponseTitle: { fontSize: 11, fontWeight: '800', color: '#065F46', flex: 1 },
+  vendorResponseDate: { fontSize: 10, color: '#047857', fontWeight: '500' },
+  vendorResponseText: { fontSize: 12, color: '#064E3B', lineHeight: 17 },
+
+  responsePromptBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 10,
+  },
+  responsePromptHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 },
+  responsePromptTitle: { fontSize: 11, fontWeight: '800' },
+  responsePromptText: { fontSize: 11, color: '#78350F', lineHeight: 16, marginBottom: 10 },
+  respondActionBtn: {
+    backgroundColor: C.brand,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  respondActionBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+
+  /* Response Modal */
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 18 },
+  modalCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 20, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  modalEyebrow: { fontSize: 10, fontWeight: '800', color: C.brandDark, letterSpacing: 0.5 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: C.ink, marginTop: 2 },
+  modalCloseBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  modalCustomerCard: { backgroundColor: '#F9FAFB', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 14 },
+  modalCustomerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  modalCustomerName: { fontSize: 13, fontWeight: '700', color: C.ink },
+  modalCommentText: { fontSize: 12, color: C.sub, fontStyle: 'italic', lineHeight: 17 },
+  modalInputLabel: { fontSize: 10, fontWeight: '800', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  modalTextInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    fontSize: 13,
+    color: C.ink,
+    minHeight: 100,
+    marginBottom: 6,
+  },
+  modalInputHint: { fontSize: 11, color: C.muted, lineHeight: 15, marginBottom: 14 },
+  modalActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end', paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  modalCancelBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, backgroundColor: '#F3F4F6' },
+  modalCancelBtnText: { fontSize: 13, fontWeight: '700', color: C.sub },
+  modalSubmitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: C.brand,
+  },
+  modalSubmitBtnDisabled: { opacity: 0.5 },
+  modalSubmitBtnText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
 });

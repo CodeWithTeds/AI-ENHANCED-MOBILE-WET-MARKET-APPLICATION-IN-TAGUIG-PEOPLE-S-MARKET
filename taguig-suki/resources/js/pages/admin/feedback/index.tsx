@@ -30,7 +30,12 @@ type Review = {
     rating: number;
     comment: string | null;
     status: string;
+    needs_response?: boolean;
+    has_comment?: boolean;
+    is_complaint?: boolean;
     admin_response: string | null;
+    vendor_response?: string | null;
+    vendor_responded_at?: string | null;
     resolved_at: string | null;
     created_at: string;
     user: ReviewUser;
@@ -242,14 +247,18 @@ export default function FeedbackIndex({ reviews, stats, filters, statuses, types
                                                     >
                                                         <Eye className="h-3 w-3" /> View
                                                     </button>
-                                                    {(review.status === 'pending' || review.status === 'in_review') && (
+                                                    {(review.status === 'pending' || review.status === 'in_review') && Boolean(review.comment && review.comment.trim()) ? (
                                                         <button
                                                             onClick={() => setRespondingTo(review)}
                                                             className="inline-flex h-7 items-center gap-1 rounded-md border border-[#488562]/20 bg-[#488562]/5 px-2 text-[10px] font-medium text-[#488562] transition hover:bg-[#488562]/10"
                                                         >
                                                             <MessageSquareReply className="h-3 w-3" /> Respond
                                                         </button>
-                                                    )}
+                                                    ) : !Boolean(review.comment && review.comment.trim()) ? (
+                                                        <span className="inline-flex items-center rounded bg-gray-50 px-1.5 py-0.5 text-[9px] font-medium text-gray-400 border border-gray-100">
+                                                            No comment · No response needed
+                                                        </span>
+                                                    ) : null}
                                                 </div>
                                             </td>
                                         </tr>
@@ -408,8 +417,12 @@ function ReviewDetailModal({ review, onClose, onRespond }: { review: Review; onC
                             </div>
                         )}
                         <div className="rounded-lg bg-gray-50 px-4 py-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Customer Comment</div>
-                            <p className="mt-1 text-xs text-gray-700">{review.comment ?? 'No comment provided.'}</p>
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Customer Comment / Feedback</div>
+                            {review.comment && review.comment.trim() ? (
+                                <p className="mt-1 text-xs text-gray-700">{review.comment}</p>
+                            ) : (
+                                <p className="mt-1 text-xs text-gray-400 italic">No written comment provided (rating only). No response is required.</p>
+                            )}
                         </div>
 
                         {/* Customer Attached Photos (Visual Evidence) */}
@@ -444,6 +457,16 @@ function ReviewDetailModal({ review, onClose, onRespond }: { review: Review; onC
                             </div>
                         )}
 
+                        {review.vendor_response && (
+                            <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-4 py-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-800">Vendor Official Response</div>
+                                <p className="mt-1 text-xs text-gray-800">{review.vendor_response}</p>
+                                {review.vendor_responded_at && (
+                                    <p className="mt-1 text-[10px] text-emerald-600">Responded {review.vendor_responded_at}</p>
+                                )}
+                            </div>
+                        )}
+
                         {review.admin_response && (
                             <div className="rounded-lg bg-[#488562]/5 px-4 py-3">
                                 <div className="text-[10px] font-semibold uppercase tracking-wide text-[#488562]">Admin Response</div>
@@ -459,7 +482,7 @@ function ReviewDetailModal({ review, onClose, onRespond }: { review: Review; onC
                         <button onClick={onClose} className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
                             Close
                         </button>
-                        {(review.status === 'pending' || review.status === 'in_review') && (
+                        {(review.status === 'pending' || review.status === 'in_review') && Boolean(review.comment && review.comment.trim()) && (
                             <button onClick={() => onRespond(review)} className="rounded-lg bg-[#488562] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#3a7052]">
                                 Respond
                             </button>
@@ -525,8 +548,12 @@ function RespondModal({ review, onClose }: { review: Review; onClose: () => void
                         <StarRating rating={review.rating} />
                         <span className="text-[11px] text-gray-500">by {review.user.name}</span>
                     </div>
-                    {review.comment && (
+                    {review.comment ? (
                         <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">&ldquo;{review.comment}&rdquo;</p>
+                    ) : (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                            Rating without comments. Responses are only required for customer complaints and concerns.
+                        </div>
                     )}
                     {review.images && review.images.length > 0 && (
                         <div className="rounded-xl border border-gray-100 bg-gray-50/75 p-3">

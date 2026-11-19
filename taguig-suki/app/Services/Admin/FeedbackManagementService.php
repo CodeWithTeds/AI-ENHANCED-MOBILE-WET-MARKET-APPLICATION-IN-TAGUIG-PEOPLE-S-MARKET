@@ -4,7 +4,9 @@ namespace App\Services\Admin;
 
 use App\Models\Review;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 
 class FeedbackManagementService
 {
@@ -42,8 +44,13 @@ class FeedbackManagementService
 
     public function respond(Review $review, string $response): Review
     {
+        if (! $review->hasComment()) {
+            throw new InvalidArgumentException('Ratings without customer comments do not require a response. Responses are only for complaints or written customer concerns.');
+        }
+
         $review->update([
             'status' => 'resolved',
+            'needs_response' => false,
             'admin_response' => $response,
             'resolved_at' => now(),
         ]);
@@ -58,6 +65,7 @@ class FeedbackManagementService
         if ($status === 'resolved') {
             $data['admin_response'] = $response ?? $review->admin_response;
             $data['resolved_at'] = now();
+            $data['needs_response'] = false;
         }
 
         $review->update($data);
@@ -72,7 +80,12 @@ class FeedbackManagementService
             'rating' => $review->rating,
             'comment' => $review->comment,
             'status' => $review->status,
+            'needs_response' => (bool) $review->needs_response,
+            'has_comment' => $review->hasComment(),
+            'is_complaint' => $review->isComplaint(),
             'admin_response' => $review->admin_response,
+            'vendor_response' => $review->vendor_response,
+            'vendor_responded_at' => $review->vendor_responded_at?->format('M d, Y g:i A'),
             'resolved_at' => $review->resolved_at,
             'created_at' => $review->created_at,
             'user' => [
@@ -156,10 +169,12 @@ class FeedbackManagementService
     {
         return [
             'total' => Review::count(),
-            'pending' => Review::where('status', 'pending')->count(),
+            'pending' => Review::where('status', 'pending')->where('needs_response', true)->count(),
             'in_review' => Review::where('status', 'in_review')->count(),
             'resolved' => Review::where('status', 'resolved')->count(),
             'dismissed' => Review::where('status', 'dismissed')->count(),
+            'ratings_only' => Review::where(fn ($q) => $q->whereNull('comment')->orWhere(DB::raw("TRIM(comment)"), ''))->count(),
+            'complaints' => Review::whereNotNull('comment')->where(DB::raw("TRIM(comment)"), '!=', '')->count(),
             'low_ratings' => Review::where('rating', '<=', 2)->count(),
             'average_rating' => round((float) Review::avg('rating'), 1),
         ];

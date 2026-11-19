@@ -18,6 +18,13 @@ export interface Review {
   id: number;
   rating: number;
   comment: string | null;
+  status?: string;
+  needs_response?: boolean;
+  has_comment?: boolean;
+  is_complaint?: boolean;
+  vendor_response?: string | null;
+  vendor_responded_at?: string | null;
+  admin_response?: string | null;
   created_at: string;
   user: string;
   images?: ReviewImage[];
@@ -255,6 +262,23 @@ export interface VendorReviewsDashboardResponse {
 export async function getVendorReviewsDashboard(token: string): Promise<VendorReviewsDashboardResponse> {
   const response = await api.request<VendorReviewsDashboardResponse>('/vendor/reviews', {
     method: 'GET',
+    token,
+  });
+  return response.data;
+}
+
+/**
+ * Vendor responds to a customer complaint or feedback with written comment.
+ * Ratings without comments do not require responses.
+ */
+export async function respondToCustomerReview(
+  reviewId: number,
+  responseText: string,
+  token: string,
+): Promise<Review> {
+  const response = await api.request<Review>(`/vendor/reviews/${reviewId}/respond`, {
+    method: 'POST',
+    body: { response: responseText },
     token,
   });
   return response.data;

@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Review;
+use App\Models\StallRentalPayment;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Notifications\NewOrderReceivedNotification;
@@ -13,6 +14,9 @@ use App\Notifications\NewReviewReceivedNotification;
 use App\Notifications\OrderStatusUpdatedNotification;
 use App\Notifications\PaymentProofSubmittedNotification;
 use App\Notifications\PaymentStatusUpdatedNotification;
+use App\Notifications\ProductDeletedNotification;
+use App\Notifications\RentalBillGeneratedNotification;
+use App\Notifications\RentalPaymentStatusUpdatedNotification;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
@@ -187,6 +191,60 @@ class NotificationService
             customerName: $customer->name,
             productId: $product?->id,
             productName: $product?->name,
+        ));
+    }
+
+    /**
+     * Notify the vendor that their product was removed by an administrator, including reason.
+     */
+    public function notifyVendorProductDeleted(Product $product, Vendor $vendor, string $reason, User $admin): void
+    {
+        $vendorUser = $vendor->user;
+
+        if (! $vendorUser) {
+            return;
+        }
+
+        $this->safeNotify($vendorUser, new ProductDeletedNotification(
+            productId: (int) $product->id,
+            productName: (string) $product->name,
+            category: (string) ($product->category ?? 'General'),
+            vendorId: (int) $vendor->id,
+            stallName: (string) ($vendor->stall_name ?? 'Vendor Stall'),
+            reason: $reason,
+            adminName: (string) ($admin->name ?? 'Market Administrator'),
+        ));
+    }
+
+    /**
+     * Notify vendor that a monthly stall rental bill has been generated.
+     */
+    public function notifyVendorRentalBillGenerated(StallRentalPayment $rental): void
+    {
+        $vendorUser = $rental->vendor?->user;
+
+        if (! $vendorUser) {
+            return;
+        }
+
+        $this->safeNotify($vendorUser, new RentalBillGeneratedNotification($rental));
+    }
+
+    /**
+     * Notify vendor that their stall rental payment status has been updated.
+     */
+    public function notifyVendorRentalPaymentStatusUpdated(StallRentalPayment $rental, string $previousStatus = 'unpaid', ?User $admin = null): void
+    {
+        $vendorUser = $rental->vendor?->user;
+
+        if (! $vendorUser) {
+            return;
+        }
+
+        $this->safeNotify($vendorUser, new RentalPaymentStatusUpdatedNotification(
+            $rental,
+            $previousStatus,
+            $admin?->name
         ));
     }
 

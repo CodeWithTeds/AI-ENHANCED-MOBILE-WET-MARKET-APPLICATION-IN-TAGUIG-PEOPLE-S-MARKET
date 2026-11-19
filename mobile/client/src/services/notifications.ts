@@ -9,6 +9,10 @@ export type NotificationCategory =
   | 'payment_submitted'
   | 'payment_received'
   | 'order_status'
+  | 'new_review'
+  | 'product_deleted'
+  | 'rental_bill_generated'
+  | 'rental_payment_updated'
   | string;
 
 export interface AppNotification {
@@ -18,6 +22,13 @@ export interface AppNotification {
   message: string;
   order_id: number | null;
   vendor_id: number | null;
+  product_id?: number | null;
+  product_name?: string | null;
+  reason?: string | null;
+  rental_id?: number | null;
+  billing_period?: string | null;
+  due_date?: string | null;
+  status?: string | null;
   amount: number | null;
   data: Record<string, unknown>;
   read_at: string | null;
