@@ -387,16 +387,36 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             <Ionicons name="close" size={20} color="#374151" />
           </TouchableOpacity>
 
-          {/* Heart Button */}
-          <TouchableOpacity style={styles.heartBtnOverlay} onPress={handleToggleFavorite} accessibilityLabel={isFav ? 'Remove from favorites' : 'Add to favorites'}>
-            <Animated.View style={{ transform: [{ scale: heartScaleAnim }] }}>
-              <Ionicons
-                name={isFav ? 'heart' : 'heart-outline'}
-                size={20}
-                color={isFav ? '#E11D48' : '#374151'}
-              />
-            </Animated.View>
-          </TouchableOpacity>
+          {/* Top Right Action Buttons (Report + Heart) */}
+          <View style={styles.topRightActions}>
+            {/* Report Stall / Product Button */}
+            <TouchableOpacity
+              style={styles.iconBtnOverlay}
+              onPress={() => setComplaintOpen(true)}
+              accessibilityLabel="Report Stall"
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="flag" size={17} color="#D97706" />
+            </TouchableOpacity>
+
+            {/* Heart Button */}
+            <TouchableOpacity
+              style={styles.iconBtnOverlay}
+              onPress={handleToggleFavorite}
+              accessibilityLabel={isFav ? 'Remove from favorites' : 'Add to favorites'}
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Animated.View style={{ transform: [{ scale: heartScaleAnim }] }}>
+                <Ionicons
+                  name={isFav ? 'heart' : 'heart-outline'}
+                  size={20}
+                  color={isFav ? '#E11D48' : '#374151'}
+                />
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
 
           {/* Availability badge */}
           <View style={[styles.availBadge, !displayProduct.is_available && styles.availBadgeUnavail]}>
@@ -445,11 +465,23 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                 </View>
               </View>
 
-              <View style={[styles.storeBadge, isStoreOpen ? styles.storeBadgeOpen : styles.storeBadgeClosed]}>
-                <View style={[styles.storeBadgeDot, isStoreOpen ? styles.storeDotOpen : styles.storeDotClosed]} />
-                <Text style={[styles.storeBadgeText, isStoreOpen ? styles.storeTextOpen : styles.storeTextClosed]}>
-                  {isStoreOpen ? 'Open' : 'Closed'}
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TouchableOpacity
+                  onPress={() => setComplaintOpen(true)}
+                  style={styles.reportBadgeBtn}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Report Stall"
+                >
+                  <Ionicons name="flag" size={11} color="#D97706" />
+                  <Text style={styles.reportBadgeText}>Report</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.storeBadge, isStoreOpen ? styles.storeBadgeOpen : styles.storeBadgeClosed]}>
+                  <View style={[styles.storeBadgeDot, isStoreOpen ? styles.storeDotOpen : styles.storeDotClosed]} />
+                  <Text style={[styles.storeBadgeText, isStoreOpen ? styles.storeTextOpen : styles.storeTextClosed]}>
+                    {isStoreOpen ? 'Open' : 'Closed'}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -643,6 +675,25 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             </View>
           )}
 
+          {/* Report Stall Action Row */}
+          <TouchableOpacity
+            style={styles.reportSectionRow}
+            onPress={() => setComplaintOpen(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Report Stall or Product Concern"
+          >
+            <View style={styles.reportIconBox}>
+              <Ionicons name="flag" size={15} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reportSectionTitle}>Report Stall or Product Concern</Text>
+              <Text style={styles.reportSectionSub}>
+                Submit an issue to Taguig People&apos;s Market Administration
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
           {/* Divider */}
           <View style={styles.divider} />
 
@@ -759,15 +810,15 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
         <AddedToCartSnackbar visible={snackVisible} />
 
         {/* Stall Complaint Modal */}
-        {displayProduct?.vendor && (
+        {displayProduct && (
           <StallComplaintModal
             visible={complaintOpen}
             onClose={() => setComplaintOpen(false)}
             targetStall={{
-              vendorId: displayProduct.vendor.id,
-              stallName: displayProduct.vendor.stall_name,
-              stallNumber: displayProduct.vendor.stall_location,
-              sectionName: displayProduct.vendor.stall_location,
+              vendorId: displayProduct.vendor?.id ?? displayProduct.vendor_id ?? 0,
+              stallName: displayProduct.vendor?.stall_name ?? 'Taguig Market Stall',
+              stallNumber: displayProduct.vendor?.stall_location ?? 'Taguig People\'s Market',
+              sectionName: displayProduct.vendor?.stall_location ?? 'Taguig People\'s Market',
             }}
           />
         )}
@@ -870,6 +921,27 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     left: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  topRightActions: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconBtnOverlay: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -1042,6 +1114,52 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#1B6B45',
+  },
+  reportBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  reportBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  reportSectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  reportIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  reportSectionSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 15,
   },
   closedNoticeBox: {
     flexDirection: 'row',
