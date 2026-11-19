@@ -91,6 +91,8 @@ const mainNavItems: SidebarNavItem[] = [
         color: 'text-[#ee600e]',
         bgColor: 'bg-[#ee600e]/10',
     },
+    // Note: AI Recommendations (/admin/dashboard/recommendations) is hidden from the sidebar
+    // per administrative workflow requirements; direct requests redirect to dashboard.
     {
         title: 'Reports & Analytics',
         href: '/admin/dashboard/reports',
