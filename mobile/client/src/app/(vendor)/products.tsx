@@ -23,13 +23,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAuth } from '@/context/AuthContext';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import {
   type CreateProductData,
   type Product,
+  type ProductDeletionRecord,
   PRODUCT_CATEGORIES,
   PRODUCT_UNITS,
   createProduct,
   deleteProduct,
+  fetchDeletedProductsHistory,
   fetchProducts,
   updateProduct,
 } from '@/services/products';
@@ -77,7 +81,10 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 52) / 2;
 
 export default function ProductsScreen() {
+  const { token } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [removedRecords, setRemovedRecords] = useState<ProductDeletionRecord[]>([]);
+  const [showRemovedModal, setShowRemovedModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -93,8 +100,12 @@ export default function ProductsScreen() {
     }
     setLoadError(null);
     try {
-      const data = await fetchProducts();
+      const [data, removals] = await Promise.all([
+        fetchProducts(),
+        fetchDeletedProductsHistory().catch(() => []),
+      ]);
       setProducts(data);
+      setRemovedRecords(removals);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Failed to load products';
       setLoadError(msg);
@@ -270,6 +281,7 @@ export default function ProductsScreen() {
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <NotificationBell token={token} role="vendor" />
           <TouchableOpacity
             style={styles.refreshButton}
             onPress={() => loadProducts(true)}
@@ -287,6 +299,28 @@ export default function ProductsScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Admin Removals Notice Banner */}
+      {removedRecords.length > 0 && (
+        <TouchableOpacity
+          style={styles.removedNoticeBanner}
+          activeOpacity={0.8}
+          onPress={() => setShowRemovedModal(true)}
+        >
+          <View style={styles.removedNoticeIconWrap}>
+            <Ionicons name="alert-circle" size={18} color="#DC2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.removedNoticeTitle}>
+              {removedRecords.length} Product{removedRecords.length > 1 ? 's' : ''} Removed by Admin
+            </Text>
+            <Text style={styles.removedNoticeSubtitle} numberOfLines={1}>
+              Reason: "{removedRecords[0].reason}" · Tap for details
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={16} color="#DC2626" />
+        </TouchableOpacity>
+      )}
 
       {/* Search + Filter Bar */}
       <View style={styles.searchFilterBar}>
@@ -477,6 +511,97 @@ export default function ProductsScreen() {
         onClose={() => setModalVisible(false)}
         onSave={handleSave}
       />
+
+      {/* Admin Removals Modal (Item 16) */}
+      <Modal
+        visible={showRemovedModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRemovedModal(false)}
+      >
+        <View style={styles.removedModalOverlay}>
+          <View style={styles.removedModalContainer}>
+            <View style={styles.removedModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.removedModalIconBox}>
+                  <Ionicons name="trash-outline" size={20} color="#DC2626" />
+                </View>
+                <View>
+                  <Text style={styles.removedModalTitle}>Removed by Admin</Text>
+                  <Text style={styles.removedModalSubtitle}>
+                    Administrative Deletion Records & Reasons
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowRemovedModal(false)}
+                style={styles.removedModalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.removedModalScroll}
+              contentContainerStyle={{ padding: 16, gap: 12 }}
+            >
+              {removedRecords.length === 0 ? (
+                <View style={styles.emptyRemovedBox}>
+                  <Ionicons name="checkmark-circle-outline" size={36} color="#10B981" />
+                  <Text style={styles.emptyRemovedTitle}>No Removed Products</Text>
+                  <Text style={styles.emptyRemovedText}>
+                    All your products are currently active or non-restricted.
+                  </Text>
+                </View>
+              ) : (
+                removedRecords.map((rec) => (
+                  <View key={rec.id} style={styles.removedRecordCard}>
+                    <View style={styles.removedRecordHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.removedRecordName}>{rec.product_name}</Text>
+                        {Boolean(rec.category) && (
+                          <Text style={styles.removedRecordCategory}>
+                            Category: {rec.category}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.removedRecordDate}>
+                        {rec.created_at
+                          ? new Date(rec.created_at).toLocaleDateString('en-PH', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : '—'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.removedReasonCard}>
+                      <Text style={styles.removedReasonHeading}>ADMIN DELETION REASON:</Text>
+                      <Text style={styles.removedReasonText}>{rec.reason}</Text>
+                    </View>
+
+                    <View style={styles.removedRecordFooter}>
+                      <Text style={styles.removedRecordAdmin}>
+                        Action by: {rec.deleted_by || 'Market Administration'}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.removedModalFooter}>
+              <TouchableOpacity
+                style={styles.removedModalDoneBtn}
+                onPress={() => setShowRemovedModal(false)}
+              >
+                <Text style={styles.removedModalDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1567,6 +1692,186 @@ const styles = StyleSheet.create({
   },
   filterApplyText: {
     fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Removed notice banner
+  removedNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  removedNoticeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removedNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+  removedNoticeSubtitle: {
+    fontSize: 11,
+    color: '#B91C1C',
+    marginTop: 1,
+  },
+
+  // Removed Modal
+  removedModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  removedModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingBottom: 24,
+  },
+  removedModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  removedModalIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removedModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0E1F17',
+  },
+  removedModalSubtitle: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  removedModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removedModalScroll: {
+    flexGrow: 0,
+  },
+  removedRecordCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  removedRecordHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  removedRecordName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  removedRecordCategory: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  removedRecordDate: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  removedReasonCard: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 4,
+  },
+  removedReasonHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#991B1B',
+    letterSpacing: 0.5,
+  },
+  removedReasonText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: '#7F1D1D',
+  },
+  removedRecordFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  removedRecordAdmin: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  emptyRemovedBox: {
+    paddingVertical: 36,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyRemovedTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0E1F17',
+  },
+  emptyRemovedText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  removedModalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  removedModalDoneBtn: {
+    backgroundColor: '#1B6B45',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removedModalDoneBtnText: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },

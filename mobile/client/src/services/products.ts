@@ -178,3 +178,31 @@ export const PRODUCT_CATEGORIES = [
   'Meat', 'Fish', 'Vegetables', 'Fruits', 'Spices',
   'Poultry', 'Seafood', 'Dairy', 'Grains & Rice', 'Condiments',
 ] as const;
+
+export interface ProductDeletionRecord {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  category: string | null;
+  unit: string | null;
+  price: string | number | null;
+  image: string | null;
+  reason: string;
+  created_at: string | null;
+  deleted_by: string;
+}
+
+/**
+ * Fetch audit records of products removed by admin with deletion reasons.
+ */
+export async function fetchDeletedProductsHistory(): Promise<ProductDeletionRecord[]> {
+  const token = await getToken();
+  if (!token) throw new ApiError('Not authenticated', 401);
+
+  const response = await api.request<ProductDeletionRecord[]>('/vendor/products/deleted-history', {
+    method: 'GET',
+    token,
+  });
+
+  return response.data;
+}
