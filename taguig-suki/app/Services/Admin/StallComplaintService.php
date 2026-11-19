@@ -48,7 +48,7 @@ class StallComplaintService
             'resolved' => StallComplaint::where('status', 'resolved')->count(),
         ];
 
-        $stalls = Stall::orderBy('stall_number')->get(['id', 'stall_number', 'store_name', 'section']);
+        $stalls = Stall::where('status', 'occupied')->orderBy('stall_number')->get(['id', 'stall_number', 'store_name', 'section']);
 
         return [
             'complaints' => $complaints,

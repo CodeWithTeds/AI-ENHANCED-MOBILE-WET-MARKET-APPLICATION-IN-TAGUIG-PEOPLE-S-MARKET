@@ -169,6 +169,8 @@ class ReportsAnalyticsService
         return OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('vendors', 'order_items.vendor_id', '=', 'vendors.id')
+            ->join('stalls', 'vendors.user_id', '=', 'stalls.vendor_id')
+            ->where('stalls.status', 'occupied')
             ->where('orders.status', '!=', 'cancelled')
             ->when($from, fn ($q) => $q->where('order_items.created_at', '>=', $from))
             ->where('order_items.created_at', '<=', $to)
@@ -196,6 +198,8 @@ class ReportsAnalyticsService
         return OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('vendors', 'order_items.vendor_id', '=', 'vendors.id')
+            ->join('stalls', 'vendors.user_id', '=', 'stalls.vendor_id')
+            ->where('stalls.status', 'occupied')
             ->where('orders.status', '!=', 'cancelled')
             ->when($from, fn ($q) => $q->where('order_items.created_at', '>=', $from))
             ->where('order_items.created_at', '<=', $to)
@@ -288,8 +292,10 @@ class ReportsAnalyticsService
             'new_vendors' => $vendors->count(),
             'status_breakdown' => $statusBreakdown,
             'locations' => Vendor::query()
-                ->select('stall_location', DB::raw('COUNT(*) as count'))
-                ->groupBy('stall_location')
+                ->join('stalls', 'vendors.user_id', '=', 'stalls.vendor_id')
+                ->where('stalls.status', 'occupied')
+                ->select('vendors.stall_location', DB::raw('COUNT(*) as count'))
+                ->groupBy('vendors.stall_location')
                 ->orderByDesc('count')
                 ->limit(6)
                 ->get()
@@ -350,6 +356,7 @@ class ReportsAnalyticsService
 
         $lowStock = Inventory::query()
             ->lowStock()
+            ->whereHas('vendor.stall', fn ($q) => $q->where('status', 'occupied'))
             ->with(['product:id,name,unit', 'vendor:id,stall_name'])
             ->orderBy('stock_quantity')
             ->limit(6)
@@ -492,23 +499,30 @@ class ReportsAnalyticsService
 
     /**
      * Daily Sales and Revenue Report that can be generated as PDF or printed.
+     * Excludes sales from unoccupied/vacant stalls.
      */
     public function getDailySalesReport(?string $date = null): array
     {
         $day = $date ? Carbon::parse($date)->startOfDay() : now()->startOfDay();
         $endDay = $day->copy()->endOfDay();
 
+        // Only include orders and items from active occupied stalls
         $orders = Order::whereBetween('created_at', [$day, $endDay])
-            ->with(['items.product', 'items.vendor'])
+            ->whereHas('items.vendor.stall', fn ($q) => $q->where('status', 'occupied'))
+            ->with([
+                'items' => fn ($q) => $q->whereHas('vendor.stall', fn ($sq) => $sq->where('status', 'occupied')),
+                'items.product',
+                'items.vendor.stall',
+            ])
             ->get();
 
         $completed = $orders->where('status', 'completed');
-        $totalSales = (float) $completed->sum('total_amount');
+        $totalSales = (float) $completed->sum(fn ($o) => $o->items->sum('subtotal'));
 
         $paymentBreakdown = [
-            'cash' => (float) $completed->where('payment_method', 'cash')->sum('total_amount'),
-            'gcash' => (float) $completed->where('payment_method', 'gcash')->sum('total_amount'),
-            'maya' => (float) $completed->where('payment_method', 'maya')->sum('total_amount'),
+            'cash' => (float) $completed->where('payment_method', 'cash')->sum(fn ($o) => $o->items->sum('subtotal')),
+            'gcash' => (float) $completed->where('payment_method', 'gcash')->sum(fn ($o) => $o->items->sum('subtotal')),
+            'maya' => (float) $completed->where('payment_method', 'maya')->sum(fn ($o) => $o->items->sum('subtotal')),
         ];
 
         return [
@@ -520,23 +534,29 @@ class ReportsAnalyticsService
             'total_revenue' => $totalSales,
             'average_order_value' => $completed->count() > 0 ? round($totalSales / $completed->count(), 2) : 0,
             'payment_breakdown' => $paymentBreakdown,
+            'occupancy_filtered' => true,
             'transactions' => $orders->map(fn ($o) => [
                 'order_number' => $o->order_number,
                 'time' => $o->created_at->format('g:i A'),
-                'amount' => (float) $o->total_amount,
+                'amount' => (float) $o->items->sum('subtotal'),
                 'status' => $o->status,
                 'payment_method' => $o->payment_method,
                 'items_count' => $o->items->count(),
+                'stalls' => $o->items->map(fn ($it) => $it->vendor?->stall?->stall_number ?? $it->vendor?->stall_name)->filter()->unique()->values()->all(),
             ])->values()->all(),
         ];
     }
 
     /**
      * Product Report clarifying purpose, pricing oversight, and stock supply monitoring.
+     * Excludes products from unoccupied/vacant stalls.
      */
     public function getProductReportData(): array
     {
-        $products = Product::with(['inventory', 'vendor'])->get();
+        // Only include products from active occupied stalls
+        $products = Product::whereHas('vendor.stall', fn ($q) => $q->where('status', 'occupied'))
+            ->with(['inventory', 'vendor.stall'])
+            ->get();
 
         $grouped = $products->groupBy(fn ($p) => strtolower(trim($p->name)));
 
@@ -546,7 +566,7 @@ class ReportsAnalyticsService
             $minPrice = $prices->min();
             $maxPrice = $prices->max();
             $avgPrice = round($prices->avg(), 2);
-            $stallsCount = $group->pluck('vendor_id')->unique()->count();
+            $stallsCount = $group->map(fn ($p) => $p->vendor?->stall?->id ?? $p->vendor_id)->unique()->count();
             $totalStock = $group->sum(fn ($p) => $p->inventory?->stock_quantity ?? 0);
             $category = $first->category;
 
@@ -567,7 +587,8 @@ class ReportsAnalyticsService
         })->values();
 
         return [
-            'purpose' => 'Clarify the purpose of Product Report: The Product Report enables Taguig Market Administrators to monitor price stability against Suggested Retail Price (SRP) standards, track multi-stall inventory supply, prevent artificial shortages, and ensure fair consumer pricing across all market sections.',
+            'purpose' => 'Clarify the purpose of Product Report: The Product Report enables Taguig Market Administrators to monitor price stability against Suggested Retail Price (SRP) standards, track multi-stall inventory supply, prevent artificial shortages, and ensure fair consumer pricing across active occupied market stalls.',
+            'occupancy_filtered' => true,
             'total_monitored_products' => $rows->count(),
             'healthy_count' => $rows->where('status', 'Healthy Supply')->count(),
             'low_stock_count' => $rows->where('status', 'Low Stock Alert')->count(),

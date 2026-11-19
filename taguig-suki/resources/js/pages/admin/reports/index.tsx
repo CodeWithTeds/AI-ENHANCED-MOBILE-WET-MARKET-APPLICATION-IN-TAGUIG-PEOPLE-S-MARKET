@@ -187,7 +187,6 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
     const ordersTrend = sales.orders_trend ?? [];
     const statusBreakdown = sales.status_breakdown ?? [];
     const paymentBreakdown = sales.payment_breakdown ?? [];
-    const topProducts = sales.top_products ?? [];
     const topVendors = sales.top_vendors ?? [];
     const newUsersTrend = users.new_users_trend ?? [];
     const roleRows = users.roles ?? [];
@@ -286,7 +285,12 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                                     <h2 className="text-base font-bold text-gray-900">
                                         Daily Sales Report for {daily_sales.formatted_date}
                                     </h2>
-                                    <p className="text-xs text-gray-500">Official daily market revenue and completed transactions summary</p>
+                                    <div className="mt-0.5 flex items-center gap-2">
+                                        <p className="text-xs text-gray-500">Official daily market revenue and completed transactions summary</p>
+                                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                            Occupied Stalls Only
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -500,7 +504,7 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                             <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between">
                                 <div>
                                     <h3 className="text-sm font-bold text-gray-900">Price Variance & Multi-Stall Stock Monitoring</h3>
-                                    <p className="text-xs text-gray-400">Comparing prices across stalls selling the same commodity to detect unfair price gouging</p>
+                                    <p className="text-xs text-gray-400">Comparing prices across active occupied stalls selling the same commodity (unoccupied stalls excluded)</p>
                                 </div>
                                 <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
                                     {filteredProducts.length} Monitored Items
@@ -616,7 +620,7 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                             </div>
                         </div>
 
-                        <div className="grid gap-5 lg:grid-cols-3">
+                        <div className="grid gap-5 lg:grid-cols-2">
                             {/* Order status breakdown */}
                             <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                                 <CardHeader title="Order Status" sub="orders in selected range" />
@@ -637,38 +641,6 @@ export default function ReportsIndex({ filters, range_options, overview, sales, 
                                             </div>
                                         );
                                     })}
-                                </div>
-                            </div>
-
-                            {/* Top products */}
-                            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-                                <CardHeader title="Top Products" sub="by units sold in selected range" />
-                                <div className="space-y-3">
-                                    {topProducts.length === 0 ? (
-                                        <EmptyState text="No sales data yet" />
-                                    ) : (
-                                        topProducts.map((p, i) => {
-                                            const max = topProducts[0]?.units_sold || 1;
-
-                                            return (
-                                                <div key={i}>
-                                                    <div className="mb-1 flex items-center justify-between gap-3">
-                                                        <div className="flex min-w-0 items-center gap-3">
-                                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#488562]/10 text-xs font-bold text-[#488562]">{i + 1}</div>
-                                                            <div className="min-w-0">
-                                                                <div className="truncate text-xs font-semibold text-gray-900">{p.name}</div>
-                                                                <div className="text-[10px] text-gray-400">{p.category} · {p.vendor}</div>
-                                                            </div>
-                                                        </div>
-                                                        <span className="shrink-0 text-xs font-bold text-gray-900">{p.units_sold.toLocaleString()} sold</span>
-                                                    </div>
-                                                    <div className="ml-11 h-1 w-auto overflow-hidden rounded-full bg-gray-100">
-                                                        <div className="h-full rounded-full bg-gradient-to-r from-[#488562] to-[#89baa3]" style={{ width: `${(p.units_sold / max) * 100}%` }} />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
                                 </div>
                             </div>
 
