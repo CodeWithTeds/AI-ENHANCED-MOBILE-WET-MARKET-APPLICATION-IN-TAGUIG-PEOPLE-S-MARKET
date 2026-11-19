@@ -82,12 +82,86 @@ class VendorProfileController extends Controller
         }
 
         $validated = $request->validate([
+            'duration_months' => 'nullable|integer|in:1,3,6,12',
             'notes' => 'nullable|string|max:500',
         ]);
 
-        $updated = $this->contractService->requestRenewal($vendor, $validated['notes'] ?? null);
+        $contractReq = $this->contractService->submitContractRequest(
+            $vendor,
+            'renewal',
+            $validated['duration_months'] ?? 12,
+            $validated['notes'] ?? null
+        );
 
-        return $this->successResponse($updated, 'Contract renewal request submitted successfully to market admin.');
+        return $this->successResponse($contractReq, 'Contract renewal request submitted successfully for administrative review.');
+    }
+
+    public function submitContractRequest(Request $request): JsonResponse
+    {
+        $vendor = $request->user()->vendor;
+        if (!$vendor) {
+            return $this->errorResponse('Vendor profile not found.', 404);
+        }
+
+        $validated = $request->validate([
+            'type' => 'required|in:renewal,cancellation',
+            'duration_months' => 'required_if:type,renewal|nullable|integer|in:1,3,6,12',
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        $contractReq = $this->contractService->submitContractRequest(
+            $vendor,
+            $validated['type'],
+            $validated['duration_months'] ?? null,
+            $validated['reason'] ?? null
+        );
+
+        $typeLabel = $validated['type'] === 'renewal' ? 'Contract renewal' : 'Contract cancellation';
+
+        return $this->successResponse(
+            $contractReq->fresh(['vendor']),
+            "{$typeLabel} request submitted successfully. It will undergo administrative review before taking effect."
+        );
+    }
+
+    public function getContractDetails(Request $request): JsonResponse
+    {
+        $vendor = $request->user()->vendor;
+        if (!$vendor) {
+            return $this->errorResponse('Vendor profile not found.', 404);
+        }
+
+        $latestRequest = $vendor->latestContractRequest;
+        $today = now()->startOfDay();
+        $daysUntilExpiration = null;
+
+        if ($vendor->contract_end_date) {
+            $endDate = \Carbon\Carbon::parse($vendor->contract_end_date)->startOfDay();
+            $daysUntilExpiration = $today->diffInDays($endDate, false); // negative if expired
+        }
+
+        return $this->successResponse([
+            'vendor_id' => $vendor->id,
+            'stall_name' => $vendor->stall_name,
+            'stall_location' => $vendor->stall_location,
+            'contract_start_date' => $vendor->contract_start_date,
+            'contract_end_date' => $vendor->contract_end_date,
+            'contract_duration_months' => $vendor->contract_duration_months,
+            'contract_status' => $vendor->contract_status,
+            'days_until_expiration' => $daysUntilExpiration,
+            'is_expiring_soon' => $daysUntilExpiration !== null && $daysUntilExpiration <= 30 && $daysUntilExpiration >= 0,
+            'is_expired' => $daysUntilExpiration !== null && $daysUntilExpiration < 0,
+            'latest_request' => $latestRequest ? [
+                'id' => $latestRequest->id,
+                'type' => $latestRequest->type,
+                'requested_duration_months' => $latestRequest->requested_duration_months,
+                'status' => $latestRequest->status,
+                'reason' => $latestRequest->reason,
+                'admin_notes' => $latestRequest->admin_notes,
+                'created_at' => $latestRequest->created_at->toIso8601String(),
+                'reviewed_at' => $latestRequest->reviewed_at?->toIso8601String(),
+            ] : null,
+        ], 'Contract details retrieved successfully.');
     }
 
     public function getRentalDues(Request $request): JsonResponse

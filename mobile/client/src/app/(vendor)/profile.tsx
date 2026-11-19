@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -37,18 +38,29 @@ import {
   type VendorPaymentSettings,
 } from '@/services/vendor-payment';
 import { PRODUCT_CATEGORIES } from '@/types/vendor';
+import {
+  getVendorContractDetails,
+  submitVendorContractRequest,
+  type VendorContractDetails,
+} from '@/services/vendor-contract';
 
 export default function ProfileScreen() {
   const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<VendorBusinessProfile | null>(null);
+  const [contract, setContract] = useState<VendorContractDetails | null>(null);
+  const [contractModalVisible, setContractModalVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<'main' | 'editBusiness' | 'changePassword' | 'notifications' | 'paymentSettings' | 'categories'>('main');
 
   const fetchProfile = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await getBusinessProfile(token);
+      const [data, contractData] = await Promise.all([
+        getBusinessProfile(token),
+        getVendorContractDetails(token).catch(() => null),
+      ]);
       setProfile(data);
+      if (contractData) setContract(contractData);
     } catch (err) {
       console.error('[Profile] fetch failed:', err);
     } finally {
@@ -59,9 +71,15 @@ export default function ProfileScreen() {
   useEffect(() => {
     let active = true;
     if (token) {
-      getBusinessProfile(token)
-        .then((data) => {
-          if (active) setProfile(data);
+      Promise.all([
+        getBusinessProfile(token),
+        getVendorContractDetails(token).catch(() => null),
+      ])
+        .then(([data, contractData]) => {
+          if (active) {
+            setProfile(data);
+            if (contractData) setContract(contractData);
+          }
         })
         .catch((err) => {
           console.error('[Profile] fetch failed:', err);
@@ -191,6 +209,15 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Stall Lease & Contract Section (Item 20) */}
+        <View style={styles.menuSection}>
+          <Text style={styles.menuSectionTitle}>Stall Lease & Contract</Text>
+          <ContractSummaryCard
+            contract={contract}
+            onManage={() => setContractModalVisible(true)}
+          />
+        </View>
+
         {/* Account Section */}
         <View style={styles.menuSection}>
           <Text style={styles.menuSectionTitle}>Account</Text>
@@ -207,6 +234,18 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Contract Renewal & Cancellation Modal (Item 20) */}
+      <ContractModal
+        visible={contractModalVisible}
+        contract={contract}
+        token={token!}
+        onClose={() => setContractModalVisible(false)}
+        onSuccess={() => {
+          fetchProfile();
+          setContractModalVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -846,6 +885,367 @@ function NotifToggle({ label, subtitle, value, onToggle }: {
   );
 }
 
+/* ─── Contract Summary Card (Item 20) ─── */
+
+function ContractSummaryCard({
+  contract,
+  onManage,
+}: {
+  contract: VendorContractDetails | null;
+  onManage: () => void;
+}) {
+  if (!contract) {
+    return (
+      <View style={styles.contractCard}>
+        <View style={styles.contractHeader}>
+          <Ionicons name="calendar-outline" size={18} color={Colors.textSecondary} />
+          <Text style={styles.contractStallName}>Stall Lease Contract</Text>
+        </View>
+        <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 4 }}>Loading lease details…</Text>
+      </View>
+    );
+  }
+
+  const isRenewalReq = contract.contract_status === 'renewal_requested';
+  const isCancellationReq = contract.contract_status === 'cancellation_requested';
+  const isExpiring = contract.is_expiring_soon;
+  const isExpired = contract.is_expired;
+
+  let badgeColor = '#059669';
+  let badgeBg = '#E7F7EF';
+  let badgeText = 'Active Lease';
+
+  if (isRenewalReq) {
+    badgeColor = '#7E22CE';
+    badgeBg = '#F3E8FF';
+    badgeText = 'Renewal Requested';
+  } else if (isCancellationReq) {
+    badgeColor = '#DC2626';
+    badgeBg = '#FEE2E2';
+    badgeText = 'Cancellation Requested';
+  } else if (isExpired) {
+    badgeColor = '#DC2626';
+    badgeBg = '#FEE2E2';
+    badgeText = 'Contract Expired';
+  } else if (isExpiring) {
+    badgeColor = '#D97706';
+    badgeBg = '#FEF3C7';
+    badgeText = `Expiring in ${contract.days_until_expiration}d`;
+  }
+
+  const startDateFormatted = contract.contract_start_date
+    ? new Date(contract.contract_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '—';
+  const endDateFormatted = contract.contract_end_date
+    ? new Date(contract.contract_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '—';
+
+  return (
+    <View style={styles.contractCard}>
+      <View style={styles.contractHeader}>
+        <View style={styles.contractHeaderLeft}>
+          <View style={[styles.contractIconBox, { backgroundColor: badgeBg }]}>
+            <Ionicons name="calendar-outline" size={18} color={badgeColor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.contractStallName} numberOfLines={1}>
+              {contract.stall_name}
+            </Text>
+            <Text style={styles.contractStallLocation} numberOfLines={1}>
+              {contract.stall_location || 'Taguig People\'s Market'}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.contractBadge, { backgroundColor: badgeBg }]}>
+          <Text style={[styles.contractBadgeText, { color: badgeColor }]}>{badgeText}</Text>
+        </View>
+      </View>
+
+      <View style={styles.contractDatesRow}>
+        <View style={styles.contractDateCol}>
+          <Text style={styles.contractDateLabel}>LEASE START</Text>
+          <Text style={styles.contractDateValue}>{startDateFormatted}</Text>
+        </View>
+        <View style={styles.contractDateCol}>
+          <Text style={styles.contractDateLabel}>EXPIRATION</Text>
+          <Text style={[styles.contractDateValue, (isExpiring || isExpired) && { color: '#DC2626', fontWeight: '700' }]}>
+            {endDateFormatted}
+          </Text>
+        </View>
+        <View style={styles.contractDateCol}>
+          <Text style={styles.contractDateLabel}>TERM</Text>
+          <Text style={styles.contractDateValue}>{contract.contract_duration_months} Mos</Text>
+        </View>
+      </View>
+
+      {Boolean(contract.latest_request && contract.latest_request.status === 'pending') && (
+        <View style={styles.contractPendingBox}>
+          <Ionicons name="time-outline" size={14} color="#7E22CE" />
+          <Text style={styles.contractPendingText}>
+            {contract.latest_request?.type === 'renewal'
+              ? `Renewal request (${contract.latest_request.requested_duration_months} Mos) is awaiting Market Admin review.`
+              : 'Cancellation request is awaiting Market Admin review.'}
+          </Text>
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.contractActionBtn} onPress={onManage} activeOpacity={0.7}>
+        <Text style={styles.contractActionBtnText}>
+          {isRenewalReq || isCancellationReq ? 'Manage Contract Request' : 'Renew or Cancel Contract'}
+        </Text>
+        <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+/* ─── Contract Renewal & Cancellation Modal (Item 20) ─── */
+
+function ContractModal({
+  visible,
+  contract,
+  token,
+  onClose,
+  onSuccess,
+}: {
+  visible: boolean;
+  contract: VendorContractDetails | null;
+  token: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [requestType, setRequestType] = useState<'renewal' | 'cancellation'>('renewal');
+  const [durationMonths, setDurationMonths] = useState<1 | 3 | 6 | 12>(12);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const pendingRequest = contract?.latest_request?.status === 'pending' ? contract.latest_request : null;
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    try {
+      await submitVendorContractRequest(token, {
+        type: requestType,
+        duration_months: requestType === 'renewal' ? durationMonths : undefined,
+        reason: reason.trim() || undefined,
+      });
+
+      const typeLabel = requestType === 'renewal' ? 'Contract Renewal' : 'Contract Cancellation';
+      Alert.alert(
+        'Request Submitted',
+        `${typeLabel} request submitted successfully. It will undergo market administration review and approval before taking effect. You will receive an in-app notification once processed.`,
+        [{ text: 'OK', onPress: onSuccess }]
+      );
+    } catch (err: any) {
+      Alert.alert('Submission Error', err?.message || 'Could not submit contract request.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeaderRow}>
+            <View>
+              <Text style={styles.modalTitle}>Stall Lease Contract</Text>
+              <Text style={styles.modalSubtitle}>Renewal &amp; Cancellation Requests</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseBtn}>
+              <Ionicons name="close" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
+            <View style={styles.modalLeaseSummary}>
+              <View style={styles.modalLeaseRow}>
+                <Text style={styles.modalLeaseLabel}>Stall Name:</Text>
+                <Text style={styles.modalLeaseValue}>{contract?.stall_name || 'Vendor Stall'}</Text>
+              </View>
+              <View style={styles.modalLeaseRow}>
+                <Text style={styles.modalLeaseLabel}>Current Expiration:</Text>
+                <Text style={[styles.modalLeaseValue, { color: contract?.is_expiring_soon ? '#D97706' : Colors.text }]}>
+                  {contract?.contract_end_date ? new Date(contract.contract_end_date).toLocaleDateString() : '—'}
+                </Text>
+              </View>
+              <View style={styles.modalLeaseRow}>
+                <Text style={styles.modalLeaseLabel}>Current Status:</Text>
+                <Text style={[styles.modalLeaseValue, { textTransform: 'capitalize' }]}>
+                  {contract?.contract_status?.replace('_', ' ') || 'Active'}
+                </Text>
+              </View>
+            </View>
+
+            {Boolean(pendingRequest) && (
+              <View style={styles.modalPendingNotice}>
+                <Ionicons name="information-circle" size={16} color="#7E22CE" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalPendingTitle}>Request Pending Review</Text>
+                  <Text style={styles.modalPendingText}>
+                    You have a pending {pendingRequest?.type === 'renewal' ? `Renewal (${pendingRequest.requested_duration_months} Mos)` : 'Cancellation'} request. Submitting below will update your request.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.modalSectionLabel}>CHOOSE ACTION</Text>
+            <View style={styles.modalTypeRow}>
+              <TouchableOpacity
+                style={[
+                  styles.modalTypeBtn,
+                  requestType === 'renewal' && styles.modalTypeBtnActiveRenewal,
+                ]}
+                onPress={() => setRequestType('renewal')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="refresh-circle-outline"
+                  size={20}
+                  color={requestType === 'renewal' ? '#059669' : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.modalTypeBtnText,
+                    requestType === 'renewal' && styles.modalTypeBtnTextActiveRenewal,
+                  ]}
+                >
+                  Contract Renewal
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalTypeBtn,
+                  requestType === 'cancellation' && styles.modalTypeBtnActiveCancel,
+                ]}
+                onPress={() => setRequestType('cancellation')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={20}
+                  color={requestType === 'cancellation' ? '#DC2626' : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.modalTypeBtnText,
+                    requestType === 'cancellation' && styles.modalTypeBtnTextActiveCancel,
+                  ]}
+                >
+                  Contract Cancellation
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {requestType === 'renewal' ? (
+              <View style={styles.modalDurationSection}>
+                <Text style={styles.modalSectionLabel}>SELECT RENEWAL DURATION</Text>
+                <View style={styles.modalDurationGrid}>
+                  {([1, 3, 6, 12] as const).map((m) => {
+                    const isSelected = durationMonths === m;
+                    const label = m === 12 ? '1 Year (12 Mos)' : `${m} Month${m > 1 ? 's' : ''}`;
+                    return (
+                      <TouchableOpacity
+                        key={m}
+                        style={[
+                          styles.modalDurationCard,
+                          isSelected && styles.modalDurationCardSelected,
+                        ]}
+                        onPress={() => setDurationMonths(m)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.modalDurationText,
+                            isSelected && styles.modalDurationTextSelected,
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                        {isSelected && (
+                          <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={[styles.modalSectionLabel, { marginTop: 12 }]}>OPTIONAL REMARKS / NOTES</Text>
+                <TextInput
+                  style={styles.modalTextArea}
+                  value={reason}
+                  onChangeText={setReason}
+                  placeholder="Add remarks or notes for market admin..."
+                  multiline
+                  numberOfLines={3}
+                  placeholderTextColor={Colors.textSecondary}
+                />
+              </View>
+            ) : (
+              <View style={styles.modalCancellationSection}>
+                <View style={styles.cancellationWarningBox}>
+                  <Ionicons name="warning-outline" size={16} color="#DC2626" />
+                  <Text style={styles.cancellationWarningText}>
+                    Submitting a cancellation request signifies your intent to terminate your stall lease. Market administrators will review your request before final clearance.
+                  </Text>
+                </View>
+
+                <Text style={[styles.modalSectionLabel, { marginTop: 12 }]}>REASON FOR CANCELLATION</Text>
+                <TextInput
+                  style={styles.modalTextArea}
+                  value={reason}
+                  onChangeText={setReason}
+                  placeholder="State your reason for vacating or terminating the lease..."
+                  multiline
+                  numberOfLines={3}
+                  placeholderTextColor={Colors.textSecondary}
+                />
+              </View>
+            )}
+
+            <View style={styles.policyNoticeBox}>
+              <Ionicons name="shield-checkmark-outline" size={15} color="#475569" />
+              <Text style={styles.policyNoticeText}>
+                Contracts must not be automatically renewed or cancelled upon submission. All requests must first undergo market administration review and approval. You will receive an in-app notification once processed.
+              </Text>
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={onClose}
+                disabled={submitting}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmitBtn,
+                  requestType === 'cancellation' && { backgroundColor: '#DC2626' },
+                  submitting && { opacity: 0.6 },
+                ]}
+                onPress={handleSubmit}
+                disabled={submitting}
+                activeOpacity={0.7}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.modalSubmitBtnText}>
+                    {requestType === 'renewal' ? 'Submit Renewal Request' : 'Submit Cancellation'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 /* ─── Styles ─── */
 
 const styles = StyleSheet.create({
@@ -1128,5 +1528,339 @@ const styles = StyleSheet.create({
   categoryCheckCircleSelected: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+  },
+
+  // Contract styles (Item 20)
+  contractCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 8,
+  },
+  contractHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  contractHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  contractIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contractStallName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  contractStallLocation: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  contractBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  contractBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  contractDatesRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 10,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  contractDateCol: {
+    alignItems: 'center',
+  },
+  contractDateLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  contractDateValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.text,
+    marginTop: 2,
+  },
+  contractPendingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3E8FF',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 10,
+  },
+  contractPendingText: {
+    fontSize: 11,
+    color: '#7E22CE',
+    fontWeight: '600',
+    flex: 1,
+  },
+  contractActionBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  contractActionBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+
+  // Contract Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    maxHeight: '85%',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  modalLeaseSummary: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+    gap: 4,
+  },
+  modalLeaseRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalLeaseLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  modalLeaseValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  modalPendingNotice: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#FAF5FF',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    marginBottom: 14,
+  },
+  modalPendingTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7E22CE',
+  },
+  modalPendingText: {
+    fontSize: 11,
+    color: '#6B21A8',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  modalSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  modalTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  modalTypeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  modalTypeBtnActiveRenewal: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  modalTypeBtnActiveCancel: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+  },
+  modalTypeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalTypeBtnTextActiveRenewal: {
+    color: '#059669',
+  },
+  modalTypeBtnTextActiveCancel: {
+    color: '#DC2626',
+  },
+  modalDurationSection: {
+    marginBottom: 14,
+  },
+  modalDurationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modalDurationCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  modalDurationCardSelected: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  modalDurationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  modalDurationTextSelected: {
+    fontWeight: '800',
+    color: '#059669',
+  },
+  modalTextArea: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    fontSize: 13,
+    color: Colors.text,
+    textAlignVertical: 'top',
+    minHeight: 65,
+  },
+  modalCancellationSection: {
+    marginBottom: 14,
+  },
+  cancellationWarningBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  cancellationWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#991B1B',
+    lineHeight: 16,
+  },
+  policyNoticeBox: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  policyNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 15,
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  modalSubmitBtn: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFF',
   },
 });
