@@ -1224,3 +1224,24 @@ test('item 2: featured products automatically reflect actual customer review rat
         ->and((float) $foundUpdated->rating)->toBe(4.0)
         ->and((int) $foundUpdated->reviews_count)->toBe(3);
 });
+
+test('item 22: customer can submit stall complaint for vendor from product detail modal', function () {
+    $fx = makeSuggestionsRevisionFixture();
+
+    $response = $this->actingAs($fx['customer'])->postJson("/api/v1/vendors/{$fx['vendor']->id}/complaints", [
+        'complaint_type' => 'cleanliness',
+        'description' => 'Noticeable cleanliness issues around the cutting board and meat display table.',
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonPath('status', 'success');
+
+    $complaintService = app(StallComplaintService::class);
+    $data = $complaintService->getIndexData([]);
+    $complaints = collect($data['complaints']->items());
+    $found = $complaints->firstWhere('stall_id', $fx['stall']->id);
+
+    expect($found)->not->toBeNull()
+        ->and($found->complaint_type)->toBe('cleanliness')
+        ->and($found->status)->toBe('pending');
+});
