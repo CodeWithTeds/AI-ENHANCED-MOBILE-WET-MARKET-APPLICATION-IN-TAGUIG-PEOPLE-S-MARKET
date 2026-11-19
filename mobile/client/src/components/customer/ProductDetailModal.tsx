@@ -486,23 +486,13 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             </View>
 
             <View style={styles.vendorHoursRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
                 <Ionicons name="time-outline" size={12} color="#6B7280" />
                 <Text style={styles.vendorHoursText}>Hours: {vendorHours}</Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => setComplaintOpen(true)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
-                >
-                  <Ionicons name="flag-outline" size={12} color="#D97706" />
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#D97706' }}>Report Stall</Text>
-                </TouchableOpacity>
-                {onOpenVendorStore && displayProduct.vendor?.id ? (
-                  <Text style={styles.viewStoreLink}>View Store →</Text>
-                ) : null}
-              </View>
+              {onOpenVendorStore && displayProduct.vendor?.id ? (
+                <Text style={styles.viewStoreLink}>View Store →</Text>
+              ) : null}
             </View>
           </TouchableOpacity>
 
