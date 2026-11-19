@@ -31,6 +31,7 @@ class Vendor extends Model
         'contract_end_date',
         'contract_status',
         'renewal_requested_at',
+        'cancellation_requested_at',
         'renewal_notes',
     ];
 
@@ -53,6 +54,7 @@ class Vendor extends Model
             'contract_start_date' => 'date',
             'contract_end_date' => 'date',
             'renewal_requested_at' => 'datetime',
+            'cancellation_requested_at' => 'datetime',
         ];
     }
 
@@ -84,6 +86,21 @@ class Vendor extends Model
     public function rentalPayments(): HasMany
     {
         return $this->hasMany(StallRentalPayment::class);
+    }
+
+    public function contractRequests(): HasMany
+    {
+        return $this->hasMany(VendorContractRequest::class);
+    }
+
+    public function latestContractRequest(): HasOne
+    {
+        return $this->hasOne(VendorContractRequest::class)->latestOfMany();
+    }
+
+    public function productDeletionLogs(): HasMany
+    {
+        return $this->hasMany(ProductDeletionLog::class);
     }
 
     public function stall(): HasOne
@@ -122,7 +139,7 @@ class Vendor extends Model
      */
     public function hasEwalletConfigured(): bool
     {
-        return !empty($this->gcash_number) || !empty($this->gcash_qr_path) || !empty($this->maya_number) || !empty($this->maya_qr_path);
+        return ! empty($this->gcash_number) || ! empty($this->gcash_qr_path) || ! empty($this->maya_number) || ! empty($this->maya_qr_path);
     }
 
     /**
