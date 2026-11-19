@@ -11,7 +11,6 @@ import {
     MessageSquare,
     Package,
     Settings,
-    Sparkles,
     Store,
     Users,
 } from 'lucide-react';
@@ -89,13 +88,6 @@ const mainNavItems: SidebarNavItem[] = [
         title: 'Payment and Order Management',
         href: '/admin/dashboard/orders',
         icon: ClipboardList,
-        color: 'text-[#ee600e]',
-        bgColor: 'bg-[#ee600e]/10',
-    },
-    {
-        title: 'AI Recommendations',
-        href: '/admin/dashboard/recommendations',
-        icon: Sparkles,
         color: 'text-[#ee600e]',
         bgColor: 'bg-[#ee600e]/10',
     },

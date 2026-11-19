@@ -13,11 +13,10 @@ use Inertia\Response;
 class AiRecommendationManagementController extends Controller
 {
     public function __construct(private readonly AiRecommendationManagementService $recommendationService) {}
-    public function index(Request $request): Response
+
+    public function index(Request $request): RedirectResponse
     {
-        return Inertia::render('admin/recommendations/index', $this->recommendationService->getIndexData(
-            $request->only(['search', 'status'])
-        ));
+        return redirect()->route('dashboard');
     }
 
     public function destroy(RecipeRecommendation $recommendation): RedirectResponse

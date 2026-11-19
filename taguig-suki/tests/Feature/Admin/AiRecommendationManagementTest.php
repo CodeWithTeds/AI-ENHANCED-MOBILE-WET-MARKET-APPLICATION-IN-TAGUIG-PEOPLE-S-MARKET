@@ -4,7 +4,7 @@ use App\Models\RecipeRecommendation;
 use App\Models\Review;
 use App\Models\User;
 
-test('admin can view the AI recommendations page', function () {
+test('ai recommendations page is hidden and redirects to dashboard for administrators', function () {
     $admin = User::factory()->create(['is_admin' => true]);
     $this->actingAs($admin);
 
@@ -15,20 +15,10 @@ test('admin can view the AI recommendations page', function () {
         'payload' => ['recipe_name' => 'Chicken Adobo', 'servings' => '4 pax'],
         'matching_products' => [],
     ]);
-    RecipeRecommendation::create([
-        'query' => 'pizza',
-        'status' => 'not_found',
-        'error_message' => 'Not a valid Filipino dish.',
-    ]);
 
     $response = $this->get(route('recommendations.index'));
 
-    $response->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->component('admin/recommendations/index')
-            ->has('recommendations.data', 2)
-            ->has('stats')
-            ->has('top_recipes'));
+    $response->assertRedirect(route('dashboard'));
 });
 
 test('admin can delete a single AI recommendation', function () {
@@ -59,10 +49,8 @@ test('admin can clear all AI recommendations', function () {
     $this->assertSame(0, RecipeRecommendation::count());
 });
 
-test('recommendation page shows related recipe reviews', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+test('recommendation service aggregates related recipe reviews', function () {
     $customer = User::factory()->create();
-    $this->actingAs($admin);
 
     $rec = RecipeRecommendation::create([
         'query' => 'adobo',
@@ -79,9 +67,7 @@ test('recommendation page shows related recipe reviews', function () {
         'comment' => 'Sarap!',
     ]);
 
-    $this->get(route('recommendations.index'))
-        ->assertInertia(fn ($page) => $page
-            ->has('recommendations.data.0.reviews', 1)
-            ->where('recommendations.data.0.review_average', 5)
-            ->where('stats.recipe_reviews', 1));
+    $data = app(\App\Services\Admin\AiRecommendationManagementService::class)->getIndexData([]);
+    expect($data['stats']['recipe_reviews'])->toBe(1)
+        ->and($data['recommendations']->items()[0]['review_average'])->toBe(5.0);
 });
