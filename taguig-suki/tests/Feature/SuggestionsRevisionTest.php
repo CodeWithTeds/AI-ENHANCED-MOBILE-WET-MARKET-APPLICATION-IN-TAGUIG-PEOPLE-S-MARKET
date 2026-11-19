@@ -1138,3 +1138,89 @@ test('Item 21: ratings without comments do not require response while complaints
     expect($statsAfter['pending'])->toBe(0)
         ->and($statsAfter['resolved'])->toBe(2);
 });
+
+test('item 2: featured products automatically reflect actual customer review ratings instead of hardcoded 4.5', function () {
+    $fx = makeSuggestionsRevisionFixture();
+
+    $product = Product::create([
+        'vendor_id' => $fx['vendor']->id,
+        'name' => 'Sibuyas/Onions',
+        'description' => 'Fresh red onions',
+        'category' => 'Vegetables',
+        'price' => 180.00,
+        'unit' => 'kg',
+        'is_available' => true,
+    ]);
+
+    $marketplaceService = app(MarketplaceService::class);
+
+    // Initial state: No customer reviews yet -> rating defaults cleanly to 5.0, reviews_count = 0
+    $initialFeatured = $marketplaceService->getFeaturedProducts();
+    $foundInitial = $initialFeatured->firstWhere('id', $product->id);
+    expect($foundInitial)->not->toBeNull()
+        ->and((float) $foundInitial->rating)->toBe(5.0)
+        ->and($foundInitial->reviews_count)->toBe(0);
+
+    // Customer submits 2 customer reviews with 5.0 stars each
+    $reviewer1 = User::factory()->create(['name' => 'Elizabeth Larioza']);
+    $reviewer2 = User::factory()->create(['name' => 'Juan Luna']);
+
+    Review::create([
+        'user_id' => $reviewer1->id,
+        'reviewable_type' => Product::class,
+        'reviewable_id' => $product->id,
+        'rating' => 5,
+        'comment' => 'Very fresh onions!',
+        'status' => 'pending',
+        'needs_response' => true,
+    ]);
+
+    Review::create([
+        'user_id' => $reviewer2->id,
+        'reviewable_type' => Product::class,
+        'reviewable_id' => $product->id,
+        'rating' => 5,
+        'comment' => 'Quality is excellent.',
+        'status' => 'pending',
+        'needs_response' => true,
+    ]);
+
+    // Verify MarketplaceService::getFeaturedProducts() returns actual 5.0 rating and 2 reviews_count
+    $featured = $marketplaceService->getFeaturedProducts();
+    $found = $featured->firstWhere('id', $product->id);
+
+    expect($found)->not->toBeNull()
+        ->and((float) $found->rating)->toBe(5.0)
+        ->and((float) $found->product_rating)->toBe(5.0)
+        ->and($found->reviews_count)->toBe(2);
+
+    // Verify through the public API endpoint /api/v1/marketplace/featured
+    $apiResp = $this->getJson('/api/v1/marketplace/featured');
+    $apiResp->assertStatus(200)
+        ->assertJsonPath('status', 'success');
+
+    $apiProducts = collect($apiResp->json('data'));
+    $apiProduct = $apiProducts->firstWhere('id', $product->id);
+
+    expect($apiProduct)->not->toBeNull()
+        ->and((float) $apiProduct['rating'])->toBe(5.0)
+        ->and((int) $apiProduct['reviews_count'])->toBe(2);
+
+    // If a 3rd review with 2.0 stars is submitted, average updates to (5+5+2)/3 = 4.0
+    $reviewer3 = User::factory()->create(['name' => 'Maria Makiling']);
+    Review::create([
+        'user_id' => $reviewer3->id,
+        'reviewable_type' => Product::class,
+        'reviewable_id' => $product->id,
+        'rating' => 2,
+        'comment' => 'A bit soft.',
+        'status' => 'pending',
+        'needs_response' => true,
+    ]);
+
+    $featuredUpdated = $marketplaceService->getFeaturedProducts();
+    $foundUpdated = $featuredUpdated->firstWhere('id', $product->id);
+    expect($foundUpdated)->not->toBeNull()
+        ->and((float) $foundUpdated->rating)->toBe(4.0)
+        ->and((int) $foundUpdated->reviews_count)->toBe(3);
+});

@@ -36,8 +36,12 @@ export interface MarketProduct {
   image: string | null;
   is_available: boolean;
   created_at: string;
+  rating?: number;
+  product_rating?: number | null;
+  reviews_count?: number;
   vendor_rating?: number;
   vendor_review_count?: number;
+  stock_quantity?: number;
   is_ai_recommended?: boolean;
   comparison_vendors?: VendorComparisonItem[];
   vendor?: {

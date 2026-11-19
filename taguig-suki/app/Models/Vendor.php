@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Vendor extends Model
 {
@@ -101,6 +102,11 @@ class Vendor extends Model
     public function productDeletionLogs(): HasMany
     {
         return $this->hasMany(ProductDeletionLog::class);
+    }
+
+    public function reviews(): MorphMany
+    {
+        return $this->morphMany(Review::class, 'reviewable');
     }
 
     public function stall(): HasOne

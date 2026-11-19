@@ -457,6 +457,17 @@ function StoreProductRow({
           {product.name}
         </Text>
         <Text style={styles.productCategory}>{product.category}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2, marginBottom: 2 }}>
+          <Ionicons name="star" size={11} color="#F59E0B" />
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#374151' }}>
+            {((product.rating ?? product.product_rating ?? product.vendor_rating ?? 5.0)).toFixed(1)}
+          </Text>
+          {Boolean(product.reviews_count && product.reviews_count > 0) && (
+            <Text style={{ fontSize: 10, color: '#6B7280', fontWeight: '500' }}>
+              ({product.reviews_count})
+            </Text>
+          )}
+        </View>
         <Text style={styles.productPrice}>
           ₱{Number(product.price).toFixed(2)} <Text style={styles.productUnit}>/ {product.unit}</Text>
         </Text>

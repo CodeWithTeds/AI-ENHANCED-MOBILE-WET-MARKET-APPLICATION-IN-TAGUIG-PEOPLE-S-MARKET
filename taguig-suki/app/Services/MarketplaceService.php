@@ -11,15 +11,82 @@ use Illuminate\Database\Eloquent\Collection;
 class MarketplaceService
 {
     /**
+     * Enrich a collection or array of products with actual customer review ratings.
+     * Checks both product-level reviews and vendor-level reviews, prioritizing product-level.
+     */
+    public function enrichProductsWithRatings(iterable $products): iterable
+    {
+        $collection = $products instanceof Collection ? $products : collect($products);
+        if ($collection->isEmpty()) {
+            return $products;
+        }
+
+        $productIds = $collection->pluck('id')->filter()->unique()->values();
+        $vendorIds = $collection->pluck('vendor_id')->filter()->unique()->values();
+
+        $productRatings = Review::where('reviewable_type', Product::class)
+            ->whereIn('reviewable_id', $productIds)
+            ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
+            ->groupBy('reviewable_id')
+            ->get()
+            ->keyBy('reviewable_id');
+
+        $vendorRatings = Review::where('reviewable_type', Vendor::class)
+            ->whereIn('reviewable_id', $vendorIds)
+            ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
+            ->groupBy('reviewable_id')
+            ->get()
+            ->keyBy('reviewable_id');
+
+        foreach ($collection as $product) {
+            $pr = $productRatings->get($product->id);
+            $vr = $vendorRatings->get($product->vendor_id);
+
+            $vendorAvg = $vr ? round((float) $vr->avg_rating, 1) : 5.0;
+            $vendorCount = $vr ? (int) $vr->review_count : 0;
+
+            if ($pr && (int) $pr->review_count > 0) {
+                $productAvg = round((float) $pr->avg_rating, 1);
+                $productCount = (int) $pr->review_count;
+
+                $product->rating = $productAvg;
+                $product->product_rating = $productAvg;
+                $product->reviews_count = $productCount;
+            } elseif ($vr && (int) $vr->review_count > 0) {
+                $product->product_rating = null;
+                $product->reviews_count = $vendorCount;
+                $product->rating = $vendorAvg;
+            } else {
+                $product->product_rating = null;
+                $product->reviews_count = 0;
+                $product->rating = 5.0;
+            }
+
+            $product->vendor_rating = $vendorAvg;
+            $product->vendor_review_count = $vendorCount;
+
+            if (isset($product->inventory)) {
+                $product->stock_quantity = $product->inventory->stock_quantity ?? 0;
+            }
+        }
+
+        return $products;
+    }
+
+    /**
      * Get featured/available products for the customer marketplace.
      */
     public function getFeaturedProducts(int $limit = 10): Collection
     {
-        return Product::where('is_available', true)
-            ->with('vendor:id,stall_name,stall_location,opening_time,closing_time')
+        $products = Product::where('is_available', true)
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
+
+        $this->enrichProductsWithRatings($products);
+
+        return $products;
     }
 
     /**
@@ -28,13 +95,17 @@ class MarketplaceService
     public function browse(?string $category = null, int $perPage = 20): LengthAwarePaginator
     {
         $query = Product::where('is_available', true)
-            ->with('vendor:id,stall_name,stall_location,opening_time,closing_time');
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity']);
 
         if ($category && $category !== 'all') {
             $query->where('category', $category);
         }
 
-        return $query->orderByDesc('created_at')->paginate($perPage);
+        $paginator = $query->orderByDesc('created_at')->paginate($perPage);
+
+        $this->enrichProductsWithRatings($paginator->items());
+
+        return $paginator;
     }
 
     /**
@@ -52,34 +123,27 @@ class MarketplaceService
             ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
             ->get();
 
-        // Enrich with vendor ratings and AI recommendations
-        $vendorIds = $allMatching->pluck('vendor_id')->unique()->filter()->values();
-        $vendorRatings = Review::where('reviewable_type', Vendor::class)
-            ->whereIn('reviewable_id', $vendorIds)
-            ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
-            ->groupBy('reviewable_id')
-            ->get()
-            ->keyBy('reviewable_id');
-
-        $highestRating = $vendorRatings->max('avg_rating') ?: 5.0;
+        $this->enrichProductsWithRatings($allMatching);
 
         foreach ($allMatching as $item) {
-            $r = $vendorRatings->get($item->vendor_id);
-            $avg = $r ? round((float) $r->avg_rating, 1) : 4.5;
-            $count = $r ? (int) $r->review_count : 0;
-            $item->vendor_rating = $avg;
-            $item->vendor_review_count = $count;
-            $item->stock_quantity = $item->inventory?->stock_quantity ?? 0;
             $item->is_ai_recommended = false;
         }
 
-        // AI Product Recommendation sorts highest-rated vendor first, keeping others visible
+        // AI Product Recommendation sorts highest-rated first, prioritizing vendors/products with actual reviews
         $sorted = $allMatching->sort(function ($a, $b) {
-            if ($b->vendor_rating != $a->vendor_rating) {
-                return $b->vendor_rating <=> $a->vendor_rating;
+            $hasReviewsA = (($a->reviews_count ?? 0) > 0 || ($a->vendor_review_count ?? 0) > 0);
+            $hasReviewsB = (($b->reviews_count ?? 0) > 0 || ($b->vendor_review_count ?? 0) > 0);
+            if ($hasReviewsA !== $hasReviewsB) {
+                return $hasReviewsB <=> $hasReviewsA;
             }
-            if ($b->vendor_review_count != $a->vendor_review_count) {
-                return $b->vendor_review_count <=> $a->vendor_review_count;
+
+            $ratingA = $a->rating ?? $a->vendor_rating ?? 5.0;
+            $ratingB = $b->rating ?? $b->vendor_rating ?? 5.0;
+            if ($ratingB != $ratingA) {
+                return $ratingB <=> $ratingA;
+            }
+            if (($b->reviews_count ?? 0) != ($a->reviews_count ?? 0)) {
+                return ($b->reviews_count ?? 0) <=> ($a->reviews_count ?? 0);
             }
             return $a->price <=> $b->price;
         })->values();
@@ -119,6 +183,8 @@ class MarketplaceService
             ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
             ->findOrFail($productId);
 
+        $this->enrichProductsWithRatings(collect([$product]));
+
         $data = $product->toArray();
         $data['comparison_vendors'] = $this->getProductVendorsComparison($product);
 
@@ -127,7 +193,7 @@ class MarketplaceService
 
     /**
      * Find all stalls and vendors selling the same or similar product,
-     * sorted by highest vendor rating down to others with AI recommendation.
+     * sorted by highest rating down to others with AI recommendation.
      */
     public function getProductVendorsComparison(Product $product): array
     {
@@ -152,7 +218,16 @@ class MarketplaceService
 
         $allMatching = $query->get();
 
+        $productIds = $allMatching->pluck('id')->filter()->unique()->values();
         $vendorIds = $allMatching->pluck('vendor_id')->unique()->filter()->values();
+
+        $productRatings = Review::where('reviewable_type', Product::class)
+            ->whereIn('reviewable_id', $productIds)
+            ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
+            ->groupBy('reviewable_id')
+            ->get()
+            ->keyBy('reviewable_id');
+
         $vendorRatings = Review::where('reviewable_type', Vendor::class)
             ->whereIn('reviewable_id', $vendorIds)
             ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
@@ -160,11 +235,22 @@ class MarketplaceService
             ->get()
             ->keyBy('reviewable_id');
 
-        $list = $allMatching->map(function ($item) use ($vendorRatings, $product) {
+        $list = $allMatching->map(function ($item) use ($productRatings, $vendorRatings, $product) {
             $vId = $item->vendor_id;
-            $ratingData = $vendorRatings->get($vId);
-            $avgRating = $ratingData ? round((float) $ratingData->avg_rating, 1) : 4.5;
-            $reviewCount = $ratingData ? (int) $ratingData->review_count : 0;
+            $vr = $vendorRatings->get($vId);
+            $pr = $productRatings->get($item->id);
+
+            if ($pr && (int) $pr->review_count > 0) {
+                $avgRating = round((float) $pr->avg_rating, 1);
+                $reviewCount = (int) $pr->review_count;
+            } elseif ($vr && (int) $vr->review_count > 0) {
+                $avgRating = round((float) $vr->avg_rating, 1);
+                $reviewCount = (int) $vr->review_count;
+            } else {
+                $avgRating = 5.0;
+                $reviewCount = 0;
+            }
+
             $stock = $item->inventory?->stock_quantity ?? 20;
 
             return [
@@ -185,10 +271,19 @@ class MarketplaceService
             ];
         });
 
-        // Sort automatically from highest-rated vendor down to others, then price
+        // Sort automatically from highest-rated vendor down to others, prioritizing actual customer reviews
         $sorted = $list->sort(function ($a, $b) {
+            $hasReviewsA = ($a['reviews_count'] > 0);
+            $hasReviewsB = ($b['reviews_count'] > 0);
+            if ($hasReviewsA !== $hasReviewsB) {
+                return $hasReviewsB <=> $hasReviewsA;
+            }
+
             if ($b['rating'] != $a['rating']) {
                 return $b['rating'] <=> $a['rating'];
+            }
+            if ($b['reviews_count'] != $a['reviews_count']) {
+                return $b['reviews_count'] <=> $a['reviews_count'];
             }
             return $a['price'] <=> $b['price'];
         })->values();
@@ -205,13 +300,16 @@ class MarketplaceService
      */
     public function getVendorStore(int $vendorId): array
     {
-        $vendor = \App\Models\Vendor::where('status', \App\Enums\VendorStatus::Approved->value)
+        $vendor = Vendor::where('status', \App\Enums\VendorStatus::Approved->value)
             ->findOrFail($vendorId);
 
         $products = Product::where('vendor_id', $vendorId)
             ->where('is_available', true)
+            ->with(['inventory:id,product_id,stock_quantity'])
             ->orderBy('name')
             ->get();
+
+        $this->enrichProductsWithRatings($products);
 
         return [
             'vendor' => $vendor,

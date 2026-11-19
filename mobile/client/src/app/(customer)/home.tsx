@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   getCategories,
@@ -90,6 +90,12 @@ export default function CustomerHomeScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
   async function handleCategoryPress(category: string) {
     setSelectedCategory(category);
@@ -247,7 +253,7 @@ export default function CustomerHomeScreen() {
                     <Text style={{ fontWeight: '800', color: '#92400E' }}>
                       {searchResults[0].vendor?.stall_name ?? 'Top Rated Vendor'}
                     </Text>{' '}
-                    with the highest rating (★ {(searchResults[0].vendor_rating ?? 5.0).toFixed(1)}). All {searchResults.length} {searchResults.length === 1 ? 'stall' : 'stalls'} selling &ldquo;{searchQuery}&rdquo; are visible below.
+                    with the highest rating (★ {((searchResults[0].rating ?? searchResults[0].product_rating ?? searchResults[0].vendor_rating ?? 5.0)).toFixed(1)}). All {searchResults.length} {searchResults.length === 1 ? 'stall' : 'stalls'} selling &ldquo;{searchQuery}&rdquo; are visible below.
                   </Text>
                 </View>
               </View>
@@ -478,13 +484,18 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
           )}
         </View>
 
-        {/* Vendor Rating & Availability */}
+        {/* Rating & Availability */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
             <Ionicons name="star" size={11} color="#F59E0B" />
             <Text style={{ fontSize: 11, fontWeight: '700', color: '#374151' }}>
-              {(product.vendor_rating ?? 4.5).toFixed(1)}
+              {((product.rating ?? product.product_rating ?? product.vendor_rating ?? 5.0)).toFixed(1)}
             </Text>
+            {Boolean(product.reviews_count && product.reviews_count > 0) && (
+              <Text style={{ fontSize: 10, color: '#6B7280', fontWeight: '500' }}>
+                ({product.reviews_count})
+              </Text>
+            )}
           </View>
           <Text style={{ fontSize: 10, fontWeight: '600', color: product.is_available ? '#059669' : '#DC2626' }}>
             {product.is_available ? 'In Stock' : 'Out of stock'}
