@@ -72,7 +72,7 @@ Public reviews: `GET /reviews/vendor/{vendor}`, `GET /reviews/product/{product}`
 - **Inventory Monitoring:** `GET /admin/dashboard/inventory` → `InventoryMonitoringController@index` (`admin/inventory/index`) — read-only cross-vendor view with filters (stock_status, category, vendor, search)
 - **Order Management:** `GET /admin/dashboard/orders` + `PATCH /orders/{order}/status` → `OrderManagementController` (`admin/orders/index`)
 - **Reports & Analytics:** `GET /admin/dashboard/reports` → `ReportsAnalyticsController@index` (`admin/reports/index`) — range param `7d|30d|90d|12m|all`
-- **AI Recommendations:** `GET /admin/dashboard/recommendations` + `DELETE /{rec}` + `DELETE /` (clear all) → `AiRecommendationManagementController` (`admin/recommendations/index`)
+- **AI Recommendations (Admin):** Removed from admin sidebar navigation; requests to `/admin/dashboard/recommendations` redirect to `/admin/dashboard`. Customer-side Gemini AI recipe search remains fully operational via `RecipeService`.
 - **Feedback & Complaints:** `GET /admin/dashboard/feedback` + `POST /{review}/respond` + `PATCH /{review}/status` → `FeedbackController` (`admin/feedback/index`)
 
 ## Admin Dashboards — Details
