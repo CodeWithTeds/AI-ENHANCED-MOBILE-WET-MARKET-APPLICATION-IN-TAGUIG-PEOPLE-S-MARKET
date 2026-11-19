@@ -985,6 +985,10 @@ function SystemCard({ icon: Icon, color, bg, label, value, sub, danger }: { icon
     );
 }
 
+function EmptyState({ text }: { text: string }) {
+    return <div className="py-8 text-center text-xs text-gray-400">{text}</div>;
+}
+
 /* ─── Charts ─── */
 
 function BarChart({ data = [], from, to }: { data?: TrendPoint[]; from?: string; to?: string }) {
