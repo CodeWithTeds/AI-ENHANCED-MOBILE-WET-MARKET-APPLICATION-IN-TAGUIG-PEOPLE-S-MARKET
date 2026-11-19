@@ -144,20 +144,47 @@ class VendorContractService
         if ($decision === 'approved') {
             if ($request->type === 'renewal') {
                 $additionalMonths = $customMonths ?: ($request->requested_duration_months ?: 12);
-                $currentEnd = $vendor->contract_end_date ? Carbon::parse($vendor->contract_end_date) : now();
-                $base = $currentEnd->isPast() ? now() : $currentEnd;
-                $newEnd = $base->copy()->addMonths($additionalMonths);
+
+                // Check whether this renewal follows a cancellation, expiration, or is a brand new contract.
+                // If a previous contract was cancelled (or expired), remaining months must NEVER carry over!
+                $lastApprovedRequest = $vendor->contractRequests()
+                    ->where('id', '!=', $request->id)
+                    ->where('status', 'approved')
+                    ->latest()
+                    ->first();
+
+                $isCancelledOrFresh = $vendor->contract_status === 'cancelled'
+                    || ($lastApprovedRequest && $lastApprovedRequest->type === 'cancellation')
+                    || empty($vendor->contract_end_date)
+                    || Carbon::parse($vendor->contract_end_date)->isPast()
+                    || Carbon::parse($vendor->contract_end_date)->isSameDay(now());
+
+                if ($isCancelledOrFresh) {
+                    // New contract starts fresh from today; exclude any months from previously cancelled contract
+                    $newStart = now()->toDateString();
+                    $newEnd = now()->copy()->addMonths($additionalMonths)->toDateString();
+                    $newDuration = $additionalMonths;
+                } else {
+                    // Ongoing active contract being extended
+                    $newStart = $vendor->contract_start_date ? Carbon::parse($vendor->contract_start_date)->toDateString() : now()->toDateString();
+                    $currentEnd = Carbon::parse($vendor->contract_end_date);
+                    $newEnd = $currentEnd->copy()->addMonths($additionalMonths)->toDateString();
+                    $newDuration = (int) $vendor->contract_duration_months + $additionalMonths;
+                }
 
                 $vendor->update([
-                    'contract_duration_months' => (int) $vendor->contract_duration_months + $additionalMonths,
-                    'contract_end_date' => $newEnd->toDateString(),
+                    'contract_start_date' => $newStart,
+                    'contract_duration_months' => $newDuration,
+                    'contract_end_date' => $newEnd,
                     'contract_status' => 'active',
                     'renewal_notes' => null,
                 ]);
             } else {
-                // Cancellation approved: contract is officially cancelled
+                // Cancellation approved: contract is officially cancelled immediately
                 $vendor->update([
                     'contract_status' => 'cancelled',
+                    'contract_end_date' => now()->toDateString(), // Cancelled immediately; zero future remaining months
+                    'contract_duration_months' => 0,
                     'renewal_notes' => null,
                 ]);
 
@@ -227,13 +254,32 @@ class VendorContractService
             $this->reviewContractRequest($pending, 'approved', $notes, $reviewer, $additionalMonths);
         } else {
             // Direct admin renewal extension without prior request
-            $currentEnd = $vendor->contract_end_date ? Carbon::parse($vendor->contract_end_date) : now();
-            $base = $currentEnd->isPast() ? now() : $currentEnd;
-            $newEnd = $base->copy()->addMonths($additionalMonths);
+            $lastApprovedRequest = $vendor->contractRequests()
+                ->where('status', 'approved')
+                ->latest()
+                ->first();
+
+            $isCancelledOrFresh = $vendor->contract_status === 'cancelled'
+                || ($lastApprovedRequest && $lastApprovedRequest->type === 'cancellation')
+                || empty($vendor->contract_end_date)
+                || Carbon::parse($vendor->contract_end_date)->isPast()
+                || Carbon::parse($vendor->contract_end_date)->isSameDay(now());
+
+            if ($isCancelledOrFresh) {
+                $newStart = now()->toDateString();
+                $newEnd = now()->copy()->addMonths($additionalMonths)->toDateString();
+                $newDuration = $additionalMonths;
+            } else {
+                $newStart = $vendor->contract_start_date ? Carbon::parse($vendor->contract_start_date)->toDateString() : now()->toDateString();
+                $currentEnd = Carbon::parse($vendor->contract_end_date);
+                $newEnd = $currentEnd->copy()->addMonths($additionalMonths)->toDateString();
+                $newDuration = (int) $vendor->contract_duration_months + $additionalMonths;
+            }
 
             $vendor->update([
-                'contract_duration_months' => (int) $vendor->contract_duration_months + $additionalMonths,
-                'contract_end_date' => $newEnd->toDateString(),
+                'contract_start_date' => $newStart,
+                'contract_duration_months' => $newDuration,
+                'contract_end_date' => $newEnd,
                 'contract_status' => 'active',
                 'renewal_notes' => null,
             ]);

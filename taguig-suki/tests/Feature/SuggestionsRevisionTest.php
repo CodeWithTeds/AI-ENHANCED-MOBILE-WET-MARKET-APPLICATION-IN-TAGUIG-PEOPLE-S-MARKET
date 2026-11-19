@@ -970,6 +970,31 @@ test('Item 20: Vendor Rental Reports – Contract Renewal and Cancellation Reque
     $stall = $fx['stall']->fresh();
     expect($stall->status)->toBe(StallStatus::Vacant)
         ->and($stall->vendor_id)->toBeNull();
+
+    // 10. Vendor submits a new 1-month contract request after cancellation
+    // Remaining months of previously cancelled contract must NOT be carried over!
+    $newContractResp = $this->actingAs($fx['vendorUser'])->postJson('/api/v1/vendor/contract/request', [
+        'type' => 'renewal',
+        'duration_months' => 1,
+        'reason' => 'Requesting new 1-month stall lease.',
+    ]);
+    $newContractResp->assertStatus(200);
+
+    $newRequest = VendorContractRequest::where('vendor_id', $fx['vendor']->id)
+        ->where('status', 'pending')
+        ->first();
+
+    $this->actingAs($fx['admin'])
+        ->post("/admin/dashboard/vendors/rentals/contract-requests/{$newRequest->id}/review", [
+            'decision' => 'approved',
+            'additional_months' => 1,
+            'admin_notes' => 'Approved new 1-month contract.',
+        ]);
+
+    $fx['vendor']->refresh();
+    expect($fx['vendor']->contract_status)->toBe('active')
+        ->and($fx['vendor']->contract_start_date->toDateString())->toBe(now()->toDateString())
+        ->and($fx['vendor']->contract_end_date->toDateString())->toBe(now()->copy()->addMonth()->toDateString());
 });
 
 test('Item 21: ratings without comments do not require response while complaints require and accept vendor responses', function () {

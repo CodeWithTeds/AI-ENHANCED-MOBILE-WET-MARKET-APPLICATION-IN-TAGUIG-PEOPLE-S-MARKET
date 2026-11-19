@@ -140,11 +140,18 @@ class VendorProfileController extends Controller
             $daysUntilExpiration = $today->diffInDays($endDate, false); // negative if expired
         }
 
+        $startDate = $vendor->contract_start_date
+            ?? ($vendor->approved_at?->toDateString() ?? $vendor->created_at?->toDateString() ?? now()->toDateString());
+
+        if (!$vendor->contract_start_date && $startDate) {
+            $vendor->update(['contract_start_date' => $startDate]);
+        }
+
         return $this->successResponse([
             'vendor_id' => $vendor->id,
             'stall_name' => $vendor->stall_name,
-            'stall_location' => $vendor->stall_location,
-            'contract_start_date' => $vendor->contract_start_date,
+            'stall_location' => preg_replace('/^stall\s+stall\s+/i', 'Stall ', $vendor->stall_location ?? ''),
+            'contract_start_date' => $startDate,
             'contract_end_date' => $vendor->contract_end_date,
             'contract_duration_months' => $vendor->contract_duration_months,
             'contract_status' => $vendor->contract_status,

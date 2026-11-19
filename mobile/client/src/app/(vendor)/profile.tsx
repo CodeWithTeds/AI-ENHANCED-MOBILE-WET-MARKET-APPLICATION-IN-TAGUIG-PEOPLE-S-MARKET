@@ -952,7 +952,7 @@ function ContractSummaryCard({
               {contract.stall_name}
             </Text>
             <Text style={styles.contractStallLocation} numberOfLines={1}>
-              {contract.stall_location || 'Taguig People\'s Market'}
+              {(contract.stall_location || 'Taguig People\'s Market').replace(/^Stall\s+Stall\s+/i, 'Stall ')}
             </Text>
           </View>
         </View>
@@ -967,14 +967,10 @@ function ContractSummaryCard({
           <Text style={styles.contractDateValue}>{startDateFormatted}</Text>
         </View>
         <View style={styles.contractDateCol}>
-          <Text style={styles.contractDateLabel}>EXPIRATION</Text>
+          <Text style={styles.contractDateLabel}>EXPIRATION DATE</Text>
           <Text style={[styles.contractDateValue, (isExpiring || isExpired) && { color: '#DC2626', fontWeight: '700' }]}>
             {endDateFormatted}
           </Text>
-        </View>
-        <View style={styles.contractDateCol}>
-          <Text style={styles.contractDateLabel}>TERM</Text>
-          <Text style={styles.contractDateValue}>{contract.contract_duration_months} Mos</Text>
         </View>
       </View>
 
@@ -1064,9 +1060,15 @@ function ContractModal({
                 <Text style={styles.modalLeaseValue}>{contract?.stall_name || 'Vendor Stall'}</Text>
               </View>
               <View style={styles.modalLeaseRow}>
-                <Text style={styles.modalLeaseLabel}>Current Expiration:</Text>
+                <Text style={styles.modalLeaseLabel}>Lease Start Date:</Text>
+                <Text style={styles.modalLeaseValue}>
+                  {contract?.contract_start_date ? new Date(contract.contract_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                </Text>
+              </View>
+              <View style={styles.modalLeaseRow}>
+                <Text style={styles.modalLeaseLabel}>Expiration Date:</Text>
                 <Text style={[styles.modalLeaseValue, { color: contract?.is_expiring_soon ? '#D97706' : Colors.text }]}>
-                  {contract?.contract_end_date ? new Date(contract.contract_end_date).toLocaleDateString() : '—'}
+                  {contract?.contract_end_date ? new Date(contract.contract_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                 </Text>
               </View>
               <View style={styles.modalLeaseRow}>
