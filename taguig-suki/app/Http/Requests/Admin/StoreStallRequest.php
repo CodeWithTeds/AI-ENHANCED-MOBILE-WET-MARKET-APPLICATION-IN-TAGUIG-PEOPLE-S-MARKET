@@ -23,6 +23,13 @@ class StoreStallRequest extends FormRequest
         if ($this->has('is_active')) {
             $this->merge(['is_active' => filter_var($this->is_active, FILTER_VALIDATE_BOOLEAN)]);
         }
+
+        if ($this->has('size')) {
+            $size = StallSize::tryFrom((string) $this->input('size'));
+            if ($size !== null) {
+                $this->merge(['monthly_rent' => $size->monthlyRent()]);
+            }
+        }
     }
 
     public function rules(): array

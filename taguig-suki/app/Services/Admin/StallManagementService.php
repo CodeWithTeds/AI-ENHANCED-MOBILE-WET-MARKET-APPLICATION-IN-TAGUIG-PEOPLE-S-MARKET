@@ -4,9 +4,12 @@ namespace App\Services\Admin;
 
 use App\Enums\StallSize;
 use App\Enums\StallStatus;
+use App\Enums\VendorStatus;
 use App\Models\Section;
 use App\Models\Stall;
+use App\Models\Vendor;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class StallManagementService
@@ -18,8 +21,8 @@ class StallManagementService
         $this->applyFilters($query, $filters);
         $this->applySort($query, $filters['sort'] ?? 'section_id', $filters['direction'] ?? 'asc');
 
-        $activeVendors = \App\Models\Vendor::with('user:id,name,email')
-            ->where('status', \App\Enums\VendorStatus::Approved->value)
+        $activeVendors = Vendor::with('user:id,name,email')
+            ->where('status', VendorStatus::Approved->value)
             ->get()
             ->map(fn ($v) => [
                 'id' => $v->user_id,
@@ -47,7 +50,11 @@ class StallManagementService
             'filters' => $filters,
             'sections' => $this->getSectionOptions(),
             'statuses' => collect(StallStatus::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
-            'sizes' => collect(StallSize::cases())->map(fn ($s) => ['value' => $s->value, 'label' => $s->label()]),
+            'sizes' => collect(StallSize::cases())->map(fn ($s) => [
+                'value' => $s->value,
+                'label' => $s->label(),
+                'monthly_rent' => $s->monthlyRent(),
+            ]),
             'vendors' => $activeVendors,
             'available_stall_numbers' => $standardStallNumbers,
             'occupied_slots' => $occupiedSlots,
@@ -99,6 +106,11 @@ class StallManagementService
 
         $this->validateUniqueStall($data['section'], $data['stall_number'], $section->name);
 
+        $computedRent = $this->resolveMonthlyRent($data['size'] ?? null);
+        if ($computedRent !== null) {
+            $data['monthly_rent'] = $computedRent;
+        }
+
         if ($image) {
             $data['image'] = $image->store('stalls', 'public');
         }
@@ -123,6 +135,11 @@ class StallManagementService
 
         $this->validateUniqueStall($data['section'], $data['stall_number'], $section->name, $stall->id);
 
+        $computedRent = $this->resolveMonthlyRent($data['size'] ?? null);
+        if ($computedRent !== null) {
+            $data['monthly_rent'] = $computedRent;
+        }
+
         if ($image) {
             $data['image'] = $image->store('stalls', 'public');
         }
@@ -132,6 +149,19 @@ class StallManagementService
         return $stall;
     }
 
+    private function resolveMonthlyRent(mixed $size): ?float
+    {
+        if ($size instanceof StallSize) {
+            return $size->monthlyRent();
+        }
+
+        if (is_string($size) && $size !== '') {
+            return StallSize::tryFrom($size)?->monthlyRent();
+        }
+
+        return null;
+    }
+
     public function delete(Stall $stall): void
     {
         $stall->delete();
@@ -139,15 +169,15 @@ class StallManagementService
 
     private function applyFilters($query, array $filters): void
     {
-        if (!empty($filters['section'])) {
+        if (! empty($filters['section'])) {
             $query->where('section_id', $filters['section']);
         }
 
-        if (!empty($filters['status'])) {
+        if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
 
-        if (!empty($filters['size'])) {
+        if (! empty($filters['size'])) {
             $query->where('size', $filters['size']);
         }
 
@@ -155,7 +185,7 @@ class StallManagementService
             $query->where('is_active', filter_var($filters['is_active'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        if (!empty($filters['search'])) {
+        if (! empty($filters['search'])) {
             $search = $filters['search'];
             $query->where(fn ($q) => $q->where('store_name', 'like', "%{$search}%")->orWhere('stall_number', 'like', "%{$search}%"));
         }
@@ -180,7 +210,7 @@ class StallManagementService
         ];
     }
 
-    private function getSectionOptions(): \Illuminate\Support\Collection
+    private function getSectionOptions(): Collection
     {
         return Section::where('is_active', true)->orderBy('name')->get()
             ->map(fn ($s) => ['value' => (string) $s->id, 'label' => $s->name, 'slug' => $s->slug, 'color' => $s->color]);
