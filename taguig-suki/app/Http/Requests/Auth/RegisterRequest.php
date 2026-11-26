@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\RejectedEmail;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -30,15 +31,15 @@ class RegisterRequest extends FormRequest
                 'ends_with:@gmail.com,@yahoo.com',
                 'unique:users,email',
                 function (string $attribute, mixed $value, \Closure $fail) {
-                    if (\App\Models\RejectedEmail::isBlocked($value)) {
-                        $fail(\App\Models\RejectedEmail::blockedMessage($value));
+                    if (RejectedEmail::isBlocked($value)) {
+                        $fail(RejectedEmail::blockedMessage($value));
                     }
                 },
             ],
             'password' => ['required', 'min:8', 'confirmed'],
-            // ID verification required at registration — admin must approve first
+            // ID verification required at registration (supports image or PDF document)
             'id_type' => ['required', 'string', 'in:national_id,drivers_license,passport,umid,philhealth,sss,voters_id,postal_id,student_id,other'],
-            'id_image' => ['required', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
+            'id_image' => ['required', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:5120'],
         ];
     }
 

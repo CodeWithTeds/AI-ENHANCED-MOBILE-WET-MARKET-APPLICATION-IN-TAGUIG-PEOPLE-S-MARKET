@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\RejectedEmail;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Password;
 
@@ -24,8 +25,8 @@ class VendorRegisterRequest extends FormRequest
                 'max:255',
                 'unique:users,email',
                 function (string $attribute, mixed $value, \Closure $fail) {
-                    if (\App\Models\RejectedEmail::isBlocked($value)) {
-                        $fail(\App\Models\RejectedEmail::blockedMessage($value));
+                    if (RejectedEmail::isBlocked($value)) {
+                        $fail(RejectedEmail::blockedMessage($value));
                     }
                 },
             ],
@@ -38,12 +39,12 @@ class VendorRegisterRequest extends FormRequest
             'product_categories' => ['required', 'array', 'min:1'],
             'product_categories.*' => ['string'],
 
-            // Documents — Required: Valid ID, Business Permit, Sanitary Permit, DTI Registration
-            'valid_id' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'business_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'sanitary_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'dti_registration' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'stall_lease' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            // Documents — Required: Valid ID, Business Permit, Sanitary Permit, DTI Registration (Image or PDF)
+            'valid_id' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'business_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'sanitary_permit' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'dti_registration' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'stall_lease' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
         ];
     }
 
