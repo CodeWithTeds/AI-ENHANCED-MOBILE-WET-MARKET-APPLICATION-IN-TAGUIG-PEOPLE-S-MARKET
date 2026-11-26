@@ -1,11 +1,12 @@
 /**
  * DocumentUploader — file picker component for document uploads.
- * Uses expo-image-picker for picking images/documents.
+ * Supports picking images (camera/gallery) or PDF documents.
  */
 
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { isPdfAsset } from '@/utils/document-picker';
 import type { DocumentUpload } from '@/types/vendor';
 
 interface DocumentUploaderProps {
@@ -35,10 +36,29 @@ export function DocumentUploader({
       {document ? (
         <View style={styles.fileCard}>
           <View style={styles.fileInfo}>
-            <Feather name="file-text" size={20} color={Colors.primary} />
+            <Feather
+              name={isPdfAsset(document) ? 'file-text' : 'image'}
+              size={20}
+              color={isPdfAsset(document) ? '#DC2626' : Colors.primary}
+            />
             <Text style={styles.fileName} numberOfLines={1}>
               {document.name}
             </Text>
+            <View
+              style={[
+                styles.formatBadge,
+                isPdfAsset(document) ? styles.pdfBadge : styles.imageBadge,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.formatBadgeText,
+                  isPdfAsset(document) ? styles.pdfBadgeText : styles.imageBadgeText,
+                ]}
+              >
+                {isPdfAsset(document) ? 'PDF' : 'IMG'}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             onPress={onRemove}
@@ -58,7 +78,7 @@ export function DocumentUploader({
         >
           <Feather name="upload-cloud" size={28} color={Colors.primary} />
           <Text style={styles.uploadText}>Tap to upload</Text>
-          <Text style={styles.uploadHint}>JPG, PNG, or PDF (max 5MB)</Text>
+          <Text style={styles.uploadHint}>JPG, PNG, WEBP, or PDF (max 5MB)</Text>
         </TouchableOpacity>
       )}
       {error && <Text style={styles.errorText}>{error}</Text>}
@@ -129,6 +149,27 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: Colors.text,
     flex: 1,
+  },
+  formatBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  pdfBadge: {
+    backgroundColor: '#FEE2E2',
+  },
+  imageBadge: {
+    backgroundColor: Colors.primary + '20',
+  },
+  formatBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  pdfBadgeText: {
+    color: '#DC2626',
+  },
+  imageBadgeText: {
+    color: Colors.primary,
   },
   removeButton: {
     width: 28,

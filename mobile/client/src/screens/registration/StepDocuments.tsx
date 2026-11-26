@@ -3,12 +3,12 @@
  */
 
 import { useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { DocumentUploader } from '@/components/registration/DocumentUploader';
 import { PrimaryButton } from '@/components/registration/PrimaryButton';
 import { Colors } from '@/constants/colors';
+import { showDocumentSourcePicker } from '@/utils/document-picker';
 import type { DocumentsInfo, DocumentUpload } from '@/types/vendor';
 
 interface StepDocumentsProps {
@@ -21,39 +21,25 @@ export function StepDocuments({ data, onNext, onBack }: StepDocumentsProps) {
   const [form, setForm] = useState<DocumentsInfo>(data);
   const [errors, setErrors] = useState<Partial<Record<keyof DocumentsInfo, string>>>({});
 
-  async function pickDocument(field: keyof DocumentsInfo) {
-    const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  function pickDocument(field: keyof DocumentsInfo) {
+    showDocumentSourcePicker(
+      (picked) => {
+        const doc: DocumentUpload = {
+          uri: picked.uri,
+          name: picked.name,
+          type: picked.type,
+        };
 
-    if (!permResult.granted) {
-      Alert.alert(
-        'Permission Required',
-        'Please grant photo library access to upload documents.'
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const fileName = asset.fileName || `${field}_${Date.now()}.jpg`;
-      const mimeType = asset.mimeType || 'image/jpeg';
-
-      const doc: DocumentUpload = {
-        uri: asset.uri,
-        name: fileName,
-        type: mimeType,
-      };
-
-      setForm((prev) => ({ ...prev, [field]: doc }));
-      if (errors[field]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }));
+        setForm((prev) => ({ ...prev, [field]: doc }));
+        if (errors[field]) {
+          setErrors((prev) => ({ ...prev, [field]: undefined }));
+        }
+      },
+      {
+        title: 'Upload Supporting Document',
+        fallbackPrefix: String(field),
       }
-    }
+    );
   }
 
   function removeDocument(field: keyof DocumentsInfo) {
