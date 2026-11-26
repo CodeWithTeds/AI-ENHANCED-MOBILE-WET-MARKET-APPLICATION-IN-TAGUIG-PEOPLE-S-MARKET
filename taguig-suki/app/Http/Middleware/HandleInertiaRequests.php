@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\AdminNotificationService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -41,6 +42,9 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'adminNotifications' => fn () => $request->user()?->is_admin
+                ? app(AdminNotificationService::class)->getForAdmin($request->user())
+                : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'flash' => [
                 'success' => $request->session()->get('success'),

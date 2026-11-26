@@ -29,6 +29,7 @@ type DashboardProps = {
     activities?: Activity[];
     bottom?: { ordersToday: number; activeThisWeek: number };
     pendingVerifications?: number;
+    pendingVendors?: number;
 };
 
 const iconMap: Record<string, any> = {
@@ -53,11 +54,27 @@ export default function Dashboard(props: DashboardProps) {
     const activities: Activity[] = props.activities ?? staticActivities;
     const bottom = props.bottom ?? { ordersToday: 245, activeThisWeek: 1892 };
     const pendingVerifications = props.pendingVerifications ?? 0;
+    const pendingVendors = props.pendingVendors ?? 0;
 
     return (
         <>
             <Head title="Dashboard" />
             <div className="flex h-full flex-1 flex-col gap-5 overflow-x-auto p-5">
+                {/* Pending vendor approval alert */}
+                {pendingVendors > 0 && (
+                    <Link
+                        href="/admin/dashboard/vendors/pending"
+                        className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-orange-950 hover:bg-orange-100 transition"
+                    >
+                        <Store className="h-5 w-5 text-[#ee600e]" />
+                        <div className="flex-1">
+                            <div className="text-sm font-bold">{pendingVendors} vendor registration{pendingVendors > 1 ? 's' : ''} pending approval</div>
+                            <div className="text-xs text-orange-800">A vendor requested account approval. Click to review documents and approve.</div>
+                        </div>
+                        <span className="text-xs font-bold text-[#ee600e]">Review →</span>
+                    </Link>
+                )}
+
                 {/* Pending verification alert */}
                 {pendingVerifications > 0 && (
                     <Link

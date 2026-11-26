@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\AiRecommendationManagementController;
 use App\Http\Controllers\Admin\CustomerVerificationController;
 use App\Http\Controllers\Admin\DashboardController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Admin\StallRentalController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\VendorApprovalController;
 use App\Http\Controllers\Admin\VendorManagementController;
+use App\Models\Product;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -108,6 +110,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::get('dashboard/verifications', [CustomerVerificationController::class, 'index'])->name('verifications.index');
     Route::post('dashboard/verifications/{customerVerification}/approve', [CustomerVerificationController::class, 'approve'])->name('verifications.approve');
     Route::post('dashboard/verifications/{customerVerification}/reject', [CustomerVerificationController::class, 'reject'])->name('verifications.reject');
+
+    // Admin Notifications
+    Route::get('dashboard/notifications', [AdminNotificationController::class, 'index'])->name('admin.notifications.index');
+    Route::patch('dashboard/notifications/{notification}/read', [AdminNotificationController::class, 'markRead'])->name('admin.notifications.read');
+    Route::post('dashboard/notifications/read-all', [AdminNotificationController::class, 'markAllRead'])->name('admin.notifications.read-all');
 });
 
 Route::get('storage/{path}', function (string $path) {
@@ -119,7 +126,7 @@ Route::get('storage/{path}', function (string $path) {
     // Fallback: If uploaded product image was lost on ephemeral server container,
     // serve matching photographic image based on product name or category
     if (str_starts_with($path, 'products/')) {
-        $product = \App\Models\Product::where('image', $path)
+        $product = Product::where('image', $path)
             ->orWhere('image', 'like', "%{$path}%")
             ->first();
 

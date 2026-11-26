@@ -49,9 +49,10 @@ class DashboardController extends Controller
                     'cancelled' => ['label' => 'Cancelled', 'color' => 'bg-red-50 text-red-600', 'bg' => 'bg-red-50', 'iconColor' => 'text-red-500'],
                 ];
                 $meta = $map[$status] ?? $map['pending'];
+
                 return [
-                    'name' => $order->order_number ?? 'Order #' . $order->id,
-                    'detail' => ($order->user->name ?? 'Customer') . ' • ' . $order->items()->count() . ' items',
+                    'name' => $order->order_number ?? 'Order #'.$order->id,
+                    'detail' => ($order->user->name ?? 'Customer').' • '.$order->items()->count().' items',
                     'status' => $meta['label'],
                     'statusColor' => $meta['color'],
                     'bgColor' => $meta['bg'],
@@ -82,7 +83,8 @@ class DashboardController extends Controller
             ->map(function ($row) {
                 $name = $row->stall_name;
                 $parts = explode(' ', trim($name));
-                $initials = strtoupper(substr($parts[0] ?? 'M', 0, 1) . substr($parts[1] ?? 'V', 0, 1));
+                $initials = strtoupper(substr($parts[0] ?? 'M', 0, 1).substr($parts[1] ?? 'V', 0, 1));
+
                 return [
                     'name' => $name,
                     'initials' => $initials,
@@ -95,7 +97,8 @@ class DashboardController extends Controller
             // Fallback to vendors with most products if no sales yet
             $topVendors = Vendor::withCount('products')->orderByDesc('products_count')->limit(4)->get()->map(function (Vendor $v) {
                 $parts = explode(' ', trim($v->stall_name ?? 'Vendor'));
-                $initials = strtoupper(substr($parts[0] ?? 'V', 0, 1) . substr($parts[1] ?? 'A', 0, 1));
+                $initials = strtoupper(substr($parts[0] ?? 'V', 0, 1).substr($parts[1] ?? 'A', 0, 1));
+
                 return ['name' => $v->stall_name ?? 'Vendor', 'initials' => $initials, 'sales' => (string) $v->products_count];
             })->all();
         }
@@ -111,7 +114,7 @@ class DashboardController extends Controller
         $latestVendor = Vendor::latest()->first();
         if ($latestVendor) {
             $activities->push([
-                'text' => 'New vendor "' . $latestVendor->stall_name . '" registered',
+                'text' => 'New vendor "'.$latestVendor->stall_name.'" registered',
                 'time' => $latestVendor->created_at?->diffForHumans() ?? 'just now',
                 'icon' => 'Store',
                 'iconColor' => 'text-[#488562]',
@@ -122,7 +125,7 @@ class DashboardController extends Controller
         $latestVerification = CustomerVerification::with('user')->where('status', 'pending')->latest('submitted_at')->first();
         if ($latestVerification && $latestVerification->user) {
             $activities->push([
-                'text' => 'ID verification pending for ' . $latestVerification->user->name,
+                'text' => 'ID verification pending for '.$latestVerification->user->name,
                 'time' => $latestVerification->submitted_at?->diffForHumans() ?? 'recently',
                 'icon' => 'Shield',
                 'iconColor' => 'text-[#d97706]',
@@ -181,10 +184,10 @@ class DashboardController extends Controller
 
         return Inertia::render('dashboard', [
             'stats' => [
-                ['label' => 'Total Vendors', 'value' => (string) $totalVendors, 'change' => '+' . $totalVendors . ' total', 'icon' => 'Store', 'color' => '#488562'],
-                ['label' => 'Total Orders', 'value' => number_format($totalOrders), 'change' => '+' . $ordersThisMonth . ' this month', 'icon' => 'ShoppingCart', 'color' => '#0867ff'],
-                ['label' => 'Products', 'value' => number_format($totalProducts), 'change' => $totalProducts . ' listed', 'icon' => 'Package', 'color' => '#ee600e'],
-                ['label' => 'Active Users', 'value' => number_format($activeUsers), 'change' => '+' . $activeThisWeek . ' this week', 'icon' => 'Users', 'color' => '#488562'],
+                ['label' => 'Total Vendors', 'value' => (string) $totalVendors, 'change' => '+'.$totalVendors.' total', 'icon' => 'Store', 'color' => '#488562'],
+                ['label' => 'Total Orders', 'value' => number_format($totalOrders), 'change' => '+'.$ordersThisMonth.' this month', 'icon' => 'ShoppingCart', 'color' => '#0867ff'],
+                ['label' => 'Products', 'value' => number_format($totalProducts), 'change' => $totalProducts.' listed', 'icon' => 'Package', 'color' => '#ee600e'],
+                ['label' => 'Active Users', 'value' => number_format($activeUsers), 'change' => '+'.$activeThisWeek.' this week', 'icon' => 'Users', 'color' => '#488562'],
             ],
             'monthly' => [
                 'done' => $ordersThisMonth,
@@ -201,6 +204,7 @@ class DashboardController extends Controller
                 'activeThisWeek' => $activeThisWeek,
             ],
             'pendingVerifications' => CustomerVerification::where('status', 'pending')->count(),
+            'pendingVendors' => Vendor::where('status', 'pending')->count(),
         ]);
     }
 }
