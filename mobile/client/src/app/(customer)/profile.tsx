@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -19,9 +20,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { showDocumentSourcePicker, isPdfAsset, type PickedDocument } from '@/utils/document-picker';
 import { StallComplaintModal } from '@/components/customer/StallComplaintModal';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import {
@@ -371,7 +372,7 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedType, setSelectedType] = useState<IdType>('national_id');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [pickedDoc, setPickedDoc] = useState<PickedDocument | null>(null);
   const [showTypePicker, setShowTypePicker] = useState(false);
 
   const fetchVerification = useCallback(async () => {
@@ -391,60 +392,36 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
     fetchVerification();
   }, [fetchVerification]);
 
-  async function pickImage() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Please allow photo access to upload ID.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-    }
-  }
-
-  async function takePhoto() {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Please allow camera access to take ID photo.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-    }
-  }
-
   function showPickerOptions() {
-    Alert.alert('Select ID Photo', 'Choose source', [
-      { text: 'Camera', onPress: takePhoto },
-      { text: 'Gallery', onPress: pickImage },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    showDocumentSourcePicker(
+      (doc) => setPickedDoc(doc),
+      {
+        title: 'Select ID Document',
+        fallbackPrefix: 'customer_id',
+        allowsEditing: true,
+        aspect: [4, 3],
+      }
+    );
   }
 
   async function handleUpload() {
-    if (!imageUri) {
-      Alert.alert('Missing Photo', 'Please select an ID image first.');
+    if (!pickedDoc) {
+      Alert.alert('Missing Document', 'Please select an ID image or PDF first.');
       return;
     }
     setUploading(true);
     try {
       const updated = await uploadCustomerVerification(token, {
         id_type: selectedType,
-        id_image_uri: imageUri,
+        id_image_uri: pickedDoc.uri,
+        id_file: {
+          uri: pickedDoc.uri,
+          name: pickedDoc.name,
+          type: pickedDoc.type,
+        },
       });
       setVerification(updated);
-      setImageUri(null);
+      setPickedDoc(null);
       Alert.alert('Success', 'ID submitted for verification. Status: Pending Review.');
     } catch (err: any) {
       Alert.alert('Upload failed', err.message || 'Could not upload ID.');
@@ -463,7 +440,7 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
           try {
             const updated = await deleteCustomerVerification(token);
             setVerification(updated);
-            setImageUri(null);
+            setPickedDoc(null);
             Alert.alert('Removed', 'ID verification removed.');
           } catch (e: any) {
             Alert.alert('Error', e.message || 'Failed to remove.');
@@ -515,22 +492,40 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
           <Text style={styles.verificationStatusHint}>
             {status === 'verified' && 'Your identity has been verified. You can now enjoy full app features.'}
             {status === 'pending' && 'Under review by admin. This usually takes 1-2 business days.'}
-            {status === 'rejected' && (verification?.rejection_reason || 'Your ID was rejected. Please upload a clearer photo and ensure all details are visible.')}
-            {status === 'unverified' && 'Please upload a clear photo of your valid government ID to verify your account.'}
+            {status === 'rejected' && (verification?.rejection_reason || 'Your ID was rejected. Please upload a clearer image or PDF and ensure all details are visible.')}
+            {status === 'unverified' && 'Please upload a clear image or PDF of your valid government ID to verify your account.'}
           </Text>
           {verification?.submitted_at ? <Text style={styles.verificationMeta}>Submitted: {new Date(verification.submitted_at).toLocaleString()}</Text> : null}
           {verification?.verified_at ? <Text style={styles.verificationMeta}>Verified: {new Date(verification.verified_at).toLocaleString()}</Text> : null}
         </View>
 
-        {/* Current ID Image */}
-        {verification?.id_image_url && !imageUri ? (
+        {/* Current ID Document */}
+        {verification?.id_image_url && !pickedDoc ? (
           <View style={styles.idImageWrap}>
-            <Text style={styles.inputLabel}>Current ID Image</Text>
-            <Image source={{ uri: verification.id_image_url }} style={styles.idImage} resizeMode="cover" />
+            <Text style={styles.inputLabel}>Current ID Document</Text>
+            {isPdfAsset({ uri: verification.id_image_url, name: verification.id_image_path }) ? (
+              <TouchableOpacity
+                style={styles.pdfPreviewCard}
+                onPress={() => verification.id_image_url && Linking.openURL(verification.id_image_url)}
+              >
+                <View style={styles.pdfIconWrap}>
+                  <Ionicons name="document-text" size={24} color="#DC2626" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pdfFileName} numberOfLines={1}>
+                    {verification.id_image_path?.split('/').pop() || 'ID Document.pdf'}
+                  </Text>
+                  <Text style={styles.pdfBadgeLabel}>Tap to open PDF document</Text>
+                </View>
+                <Ionicons name="open-outline" size={18} color={Colors.primary} />
+              </TouchableOpacity>
+            ) : (
+              <Image source={{ uri: verification.id_image_url }} style={styles.idImage} resizeMode="cover" />
+            )}
             <View style={styles.idImageActions}>
               <TouchableOpacity style={styles.secondaryButton} onPress={showPickerOptions}>
                 <Ionicons name="camera-outline" size={16} color={Colors.text} />
-                <Text style={styles.secondaryButtonText}>Replace Photo</Text>
+                <Text style={styles.secondaryButtonText}>Replace File / Photo</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.dangerGhostButton} onPress={handleRemove}>
                 <Ionicons name="trash-outline" size={16} color={Colors.destructive} />
@@ -566,12 +561,24 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
           </View>
         ) : null}
 
-        <Text style={styles.inputLabel}>ID Photo</Text>
-        {imageUri ? (
+        <Text style={styles.inputLabel}>ID Document (Image or PDF)</Text>
+        {pickedDoc ? (
           <View style={styles.selectedImageWrap}>
-            <Image source={{ uri: imageUri }} style={styles.idImage} resizeMode="cover" />
+            {pickedDoc.isPdf ? (
+              <View style={styles.pdfPreviewCard}>
+                <View style={styles.pdfIconWrap}>
+                  <Ionicons name="document-text" size={24} color="#DC2626" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pdfFileName} numberOfLines={1}>{pickedDoc.name}</Text>
+                  <Text style={styles.pdfBadgeLabel}>PDF Document Selected</Text>
+                </View>
+              </View>
+            ) : (
+              <Image source={{ uri: pickedDoc.uri }} style={styles.idImage} resizeMode="cover" />
+            )}
             <TouchableOpacity style={styles.changePhotoLink} onPress={showPickerOptions}>
-              <Text style={styles.changePhotoText}>Change photo</Text>
+              <Text style={styles.changePhotoText}>Change file / photo</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -579,16 +586,16 @@ function IdVerificationSection({ token, onBack }: { token: string; onBack: () =>
             <View style={styles.uploadIconWrap}>
               <Ionicons name="cloud-upload-outline" size={28} color={Colors.primary} />
             </View>
-            <Text style={styles.uploadTitle}>Tap to upload ID picture</Text>
-            <Text style={styles.uploadSubtitle}>Camera or Gallery • JPG/PNG/WEBP • max 5MB</Text>
+            <Text style={styles.uploadTitle}>Tap to upload ID (Image or PDF)</Text>
+            <Text style={styles.uploadSubtitle}>Camera, Gallery, or Files • JPG/PNG/WEBP/PDF • max 5MB</Text>
             <Text style={styles.uploadHint}>Make sure all corners are visible and text is readable</Text>
           </TouchableOpacity>
         )}
 
         <TouchableOpacity
-          style={[styles.saveButton, (!imageUri || uploading) && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!pickedDoc || uploading) && styles.saveButtonDisabled]}
           onPress={handleUpload}
-          disabled={!imageUri || uploading}
+          disabled={!pickedDoc || uploading}
         >
           {uploading ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.saveButtonText}>{verification?.id_image_url ? 'Update Verification' : 'Submit for Verification'}</Text>}
         </TouchableOpacity>
@@ -871,6 +878,27 @@ const styles = StyleSheet.create({
   pickerOptionText: { fontSize: 14, color: Colors.text },
   pickerOptionTextSelected: { fontWeight: '700', color: Colors.primary },
   selectedImageWrap: { marginTop: 4 },
+  pdfPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    marginTop: 4,
+  },
+  pdfIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfFileName: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  pdfBadgeLabel: { fontSize: 11, color: '#DC2626', fontWeight: '600', marginTop: 2 },
   changePhotoLink: { alignItems: 'center', paddingVertical: 8 },
   changePhotoText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
   uploadBox: {

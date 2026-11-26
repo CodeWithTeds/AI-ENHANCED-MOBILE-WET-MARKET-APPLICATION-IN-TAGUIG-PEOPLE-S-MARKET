@@ -18,12 +18,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { CustomerAuthProvider, useCustomerAuth } from '@/context/CustomerAuthContext';
 import { ApiError } from '@/services/api';
 import { ID_TYPES, type IdType } from '@/services/customer-verification';
+import { showDocumentSourcePicker, type PickedDocument } from '@/utils/document-picker';
 
 type Tab = 'sign-in' | 'create-account';
 
@@ -173,47 +173,22 @@ function RegisterForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [idType, setIdType] = useState<IdType>('national_id');
-  const [idImageUri, setIdImageUri] = useState<string | null>(null);
+  const [idDocument, setIdDocument] = useState<PickedDocument | null>(null);
   const [showIdPicker, setShowIdPicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const selectedIdLabel = ID_TYPES.find((t) => t.value === idType)?.label ?? idType;
 
-  async function pickImage() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to upload ID.');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    if (!res.canceled && res.assets[0]) setIdImageUri(res.assets[0].uri);
-  }
-
-  async function takePhoto() {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow camera access to take ID photo.');
-      return;
-    }
-    const res = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    if (!res.canceled && res.assets[0]) setIdImageUri(res.assets[0].uri);
-  }
-
   function showPickerOptions() {
-    Alert.alert('Select ID Photo', 'Choose source', [
-      { text: 'Camera', onPress: takePhoto },
-      { text: 'Gallery', onPress: pickImage },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    showDocumentSourcePicker(
+      (doc) => setIdDocument(doc),
+      {
+        title: 'Select ID Document',
+        fallbackPrefix: 'customer_id',
+        allowsEditing: true,
+        aspect: [4, 3],
+      }
+    );
   }
 
   async function handleRegister() {
@@ -243,8 +218,8 @@ function RegisterForm() {
       return;
     }
     // ID is required — admin must approve first
-    if (!idImageUri) {
-      Alert.alert('ID Required', 'Please upload a valid ID photo. Admin must approve verification before you can login.');
+    if (!idDocument) {
+      Alert.alert('ID Required', 'Please upload a valid ID image or PDF. Admin must approve verification before you can login.');
       return;
     }
     if (!idType) {
@@ -260,7 +235,12 @@ function RegisterForm() {
         password,
         password_confirmation: confirmPassword,
         id_type: idType,
-        id_image_uri: idImageUri,
+        id_image_uri: idDocument.uri,
+        id_file: {
+          uri: idDocument.uri,
+          name: idDocument.name,
+          type: idDocument.type,
+        },
       });
       // Should not reach here for pending users (register throws pending ApiError)
       router.replace('/(customer)/home');
@@ -277,7 +257,7 @@ function RegisterForm() {
               setEmail('');
               setPassword('');
               setConfirmPassword('');
-              setIdImageUri(null);
+              setIdDocument(null);
               // Switch to sign-in tab if possible — parent holds activeTab, so we go back
               router.replace('/customer-login');
             },
@@ -325,7 +305,7 @@ function RegisterForm() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.idSectionTitle}>ID Verification * Required</Text>
-            <Text style={styles.idSectionSubtitle}>Admin must approve before you can login. Upload a clear photo of your valid ID.</Text>
+            <Text style={styles.idSectionSubtitle}>Admin must approve before you can login. Upload a clear image or PDF of your valid ID.</Text>
           </View>
         </View>
 
@@ -354,12 +334,24 @@ function RegisterForm() {
           </View>
         ) : null}
 
-        <Text style={styles.fieldLabel}>ID Photo</Text>
-        {idImageUri ? (
+        <Text style={styles.fieldLabel}>ID Document (Image or PDF)</Text>
+        {idDocument ? (
           <View>
-            <Image source={{ uri: idImageUri }} style={styles.idImage} resizeMode="cover" />
+            {idDocument.isPdf ? (
+              <View style={styles.pdfPreviewCard}>
+                <View style={styles.pdfIconWrap}>
+                  <Ionicons name="document-text" size={24} color="#DC2626" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pdfFileName} numberOfLines={1}>{idDocument.name}</Text>
+                  <Text style={styles.pdfBadgeLabel}>PDF Document Selected</Text>
+                </View>
+              </View>
+            ) : (
+              <Image source={{ uri: idDocument.uri }} style={styles.idImage} resizeMode="cover" />
+            )}
             <TouchableOpacity style={styles.changePhotoBtn} onPress={showPickerOptions}>
-              <Text style={styles.changePhotoText}>Change photo</Text>
+              <Text style={styles.changePhotoText}>Change file / photo</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -367,8 +359,8 @@ function RegisterForm() {
             <View style={styles.uploadIconWrap}>
               <Ionicons name="cloud-upload-outline" size={22} color={Colors.primary} />
             </View>
-            <Text style={styles.uploadTitle}>Tap to upload ID picture</Text>
-            <Text style={styles.uploadSubtitle}>Camera or Gallery • JPG/PNG/WEBP • max 5MB</Text>
+            <Text style={styles.uploadTitle}>Tap to upload ID (Image or PDF)</Text>
+            <Text style={styles.uploadSubtitle}>Camera, Gallery, or Files • JPG/PNG/WEBP/PDF • max 5MB</Text>
           </TouchableOpacity>
         )}
         <Text style={styles.idHint}>You cannot login until admin verifies your ID (check status in Profile after approval).</Text>
@@ -441,6 +433,10 @@ const styles = StyleSheet.create({
   pickerOptionText: { fontSize: 14, color: Colors.text },
   pickerOptionTextSelected: { fontWeight: '700', color: '#1B6B45' },
   idImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#E5E7EB', marginTop: 4 },
+  pdfPreviewCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, marginTop: 4 },
+  pdfIconWrap: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' },
+  pdfFileName: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  pdfBadgeLabel: { fontSize: 11, color: '#DC2626', fontWeight: '600', marginTop: 2 },
   changePhotoBtn: { alignItems: 'center', paddingVertical: 8 },
   changePhotoText: { fontSize: 13, fontWeight: '600', color: '#1B6B45' },
   uploadBox: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
