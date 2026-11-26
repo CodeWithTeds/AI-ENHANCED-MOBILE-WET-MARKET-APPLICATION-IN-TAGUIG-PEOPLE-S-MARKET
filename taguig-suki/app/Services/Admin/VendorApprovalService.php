@@ -3,10 +3,19 @@
 namespace App\Services\Admin;
 
 use App\Enums\VendorStatus;
+use App\Models\RejectedEmail;
 use App\Models\Vendor;
+use App\Notifications\AccountApprovedNotification;
+use App\Notifications\RegistrationRejectedNotification;
+use App\Services\AdminNotificationService;
+use Illuminate\Support\Facades\Log;
 
 class VendorApprovalService
 {
+    public function __construct(
+        private readonly AdminNotificationService $adminNotificationService,
+    ) {}
+
     public function getPendingData(): array
     {
         return [
@@ -38,6 +47,22 @@ class VendorApprovalService
             'rejection_reason' => null,
         ]);
 
+        $user = $vendor->user;
+        if ($user) {
+            $this->adminNotificationService->markApprovalRequestsReadForApplicant($user->id, 'vendor');
+
+            try {
+                $user->notify(new AccountApprovedNotification('vendor', $vendor->stall_name));
+            } catch (\Throwable $e) {
+                Log::warning('[VendorApprovalService] Failed to send vendor approval email', [
+                    'vendor_id' => $vendor->id,
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         return $vendor;
     }
 
@@ -51,15 +76,17 @@ class VendorApprovalService
         // Block the vendor's email from future registration and notify them
         $user = $vendor->user;
         if ($user) {
+            $this->adminNotificationService->markApprovalRequestsReadForApplicant($user->id, 'vendor');
+
             // Send rejection notification
             try {
-                $user->notify(new \App\Notifications\RegistrationRejectedNotification($reason, 'vendor'));
+                $user->notify(new RegistrationRejectedNotification($reason, 'vendor'));
             } catch (\Throwable) {
                 // If mail fails, still proceed with rejection
             }
 
             // Block the email from future registration
-            \App\Models\RejectedEmail::updateOrCreate(
+            RejectedEmail::updateOrCreate(
                 ['email' => strtolower($user->email)],
                 [
                     'reason' => $reason,

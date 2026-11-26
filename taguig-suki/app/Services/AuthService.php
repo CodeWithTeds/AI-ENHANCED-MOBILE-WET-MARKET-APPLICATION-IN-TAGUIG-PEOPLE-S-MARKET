@@ -10,6 +10,7 @@ use App\Models\Vendor;
 use App\Repositories\VendorRepositoryInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +18,7 @@ class AuthService
 {
     public function __construct(
         private readonly VendorRepositoryInterface $vendorRepository,
+        private readonly AdminNotificationService $adminNotificationService,
     ) {}
 
     public function register(array $data): array
@@ -34,7 +36,7 @@ class AuthService
         // If ID provided at registration, store as pending
         if ($idType && $idImage instanceof UploadedFile) {
             try {
-                $path = $idImage->store('customer_ids/' . $user->id, 'public');
+                $path = $idImage->store('customer_ids/'.$user->id, 'public');
                 if ($path) {
                     $verification = CustomerVerification::create([
                         'user_id' => $user->id,
@@ -45,7 +47,7 @@ class AuthService
                     ]);
                 }
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('[AuthService] ID upload at registration failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+                Log::warning('[AuthService] ID upload at registration failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
                 // Don't fail registration if ID storage fails — user can re-upload in profile
             }
         } else {
@@ -56,6 +58,7 @@ class AuthService
         // Admin users don't need verification — auto-approve if is_admin
         if ($user->is_admin) {
             $token = $user->createToken('auth_token')->plainTextToken;
+
             return [
                 'access_token' => $token,
                 'token_type' => 'Bearer',
@@ -72,6 +75,7 @@ class AuthService
 
         if ($status === CustomerVerification::STATUS_VERIFIED) {
             $token = $user->createToken('auth_token')->plainTextToken;
+
             return [
                 'access_token' => $token,
                 'token_type' => 'Bearer',
@@ -81,6 +85,10 @@ class AuthService
         }
 
         // Pending / unverified / rejected — no token, must wait for admin
+        if ($status === CustomerVerification::STATUS_PENDING) {
+            $this->adminNotificationService->notifyAccountApprovalRequested($user, 'customer');
+        }
+
         return [
             'access_token' => null,
             'token_type' => 'Bearer',
@@ -103,7 +111,7 @@ class AuthService
      */
     public function login(array $credentials): array
     {
-        if (!Auth::attempt($credentials)) {
+        if (! Auth::attempt($credentials)) {
             // Rejected registrations have their account deleted and email blocked —
             // surface the admin's reason instead of a generic credentials error.
             $email = $credentials['email'] ?? '';
@@ -174,7 +182,7 @@ class AuthService
 
         $message = match ($status) {
             CustomerVerification::STATUS_PENDING => 'Your account is pending admin approval. Your ID is under review — please wait 1-2 days and try logging in again.',
-            CustomerVerification::STATUS_REJECTED => 'Your ID verification was rejected' . ($verification?->rejection_reason ? ': ' . $verification->rejection_reason : '.') . ' Please contact support or re-upload a clearer ID in your profile (if you can access it) or register with correct details.',
+            CustomerVerification::STATUS_REJECTED => 'Your ID verification was rejected'.($verification?->rejection_reason ? ': '.$verification->rejection_reason : '.').' Please contact support or re-upload a clearer ID in your profile (if you can access it) or register with correct details.',
             default => 'Your account is not yet verified. Please upload a valid ID and wait for admin approval before logging in. (Register with ID or contact admin)',
         };
 
@@ -199,7 +207,7 @@ class AuthService
      */
     private function validateVendorAccess(?Vendor $vendor): void
     {
-        if (!$vendor) {
+        if (! $vendor) {
             return;
         }
 

@@ -11,11 +11,13 @@ use App\Repositories\VendorRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class VendorRegistrationService
 {
     public function __construct(
         private readonly VendorRepositoryInterface $vendorRepository,
+        private readonly AdminNotificationService $adminNotificationService,
     ) {}
 
     /**
@@ -31,7 +33,7 @@ class VendorRegistrationService
             ]);
         }
 
-        return DB::transaction(function () use ($data, $files, $stall) {
+        $result = DB::transaction(function () use ($data, $files, $stall) {
             $user = $this->createUser($data);
             $vendor = $this->createVendor($user, $data, $stall);
             $this->reserveStall($stall, $user, $data['stall_name']);
@@ -45,14 +47,22 @@ class VendorRegistrationService
                 'token' => $token,
             ];
         });
+
+        $this->adminNotificationService->notifyAccountApprovalRequested(
+            $result['user'],
+            'vendor',
+            $result['vendor']->stall_name
+        );
+
+        return $result;
     }
 
     public function getStatus(User $user): Vendor
     {
         $vendor = $this->vendorRepository->findByUserWithDocuments($user);
 
-        if (!$vendor) {
-            throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException('No vendor profile found');
+        if (! $vendor) {
+            throw new NotFoundHttpException('No vendor profile found');
         }
 
         return $vendor;
@@ -95,7 +105,7 @@ class VendorRegistrationService
         $documentTypes = ['valid_id', 'business_permit', 'sanitary_permit', 'dti_registration', 'stall_lease'];
 
         foreach ($documentTypes as $type) {
-            if (!isset($files[$type])) {
+            if (! isset($files[$type])) {
                 continue;
             }
 

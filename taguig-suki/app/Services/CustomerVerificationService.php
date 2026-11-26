@@ -4,11 +4,18 @@ namespace App\Services;
 
 use App\Models\CustomerVerification;
 use App\Models\User;
+use App\Notifications\AccountApprovedNotification;
+use App\Notifications\RegistrationRejectedNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerVerificationService
 {
+    public function __construct(
+        private readonly AdminNotificationService $adminNotificationService,
+    ) {}
+
     public const ALLOWED_ID_TYPES = [
         'national_id',
         'drivers_license',
@@ -36,13 +43,13 @@ class CustomerVerificationService
     }
 
     /**
-     * Upload / update ID verification image.
+     * Upload / update ID verification document (image or PDF).
      */
     public function upload(Request $request, User $user): array
     {
         $validated = $request->validate([
-            'id_type' => ['required', 'string', 'in:' . implode(',', self::ALLOWED_ID_TYPES)],
-            'id_image' => ['required', 'image', 'mimes:jpeg,png,jpg,webp', 'max:5120'],
+            'id_type' => ['required', 'string', 'in:'.implode(',', self::ALLOWED_ID_TYPES)],
+            'id_image' => ['required', 'file', 'mimes:jpeg,png,jpg,webp,pdf', 'max:5120'],
         ]);
 
         $verification = CustomerVerification::firstOrCreate(
@@ -55,9 +62,9 @@ class CustomerVerificationService
             Storage::disk('public')->delete($verification->id_image_path);
         }
 
-        $path = $request->file('id_image')->store('customer_ids/' . $user->id, 'public');
+        $path = $request->file('id_image')->store('customer_ids/'.$user->id, 'public');
 
-        if (!$path) {
+        if (! $path) {
             throw new \RuntimeException('Failed to store ID image. Check storage permissions.');
         }
 
@@ -71,6 +78,8 @@ class CustomerVerificationService
             'submitted_at' => now(),
         ]);
 
+        $this->adminNotificationService->notifyAccountApprovalRequested($user, 'customer');
+
         return $this->format($verification->fresh());
     }
 
@@ -81,7 +90,7 @@ class CustomerVerificationService
     {
         $verification = CustomerVerification::where('user_id', $user->id)->first();
 
-        if (!$verification || !$verification->id_image_path) {
+        if (! $verification || ! $verification->id_image_path) {
             throw new \RuntimeException('No ID verification to remove.');
         }
 
@@ -115,7 +124,7 @@ class CustomerVerificationService
                 if ($request && (str_contains($raw, '://localhost') || str_contains($raw, '://127.0.0.1'))) {
                     $host = rtrim($request->getSchemeAndHttpHost(), '/');
                     $idx = strpos($raw, '/storage/');
-                    $imageUrl = $idx !== false ? $host . substr($raw, $idx) : $raw;
+                    $imageUrl = $idx !== false ? $host.substr($raw, $idx) : $raw;
                 } else {
                     $imageUrl = $raw;
                 }
@@ -124,12 +133,12 @@ class CustomerVerificationService
                 if ($request) {
                     try {
                         $host = rtrim($request->getSchemeAndHttpHost(), '/');
-                        $imageUrl = $host . '/storage/' . $clean;
+                        $imageUrl = $host.'/storage/'.$clean;
                     } catch (\Throwable) {
-                        $imageUrl = '/storage/' . $clean;
+                        $imageUrl = '/storage/'.$clean;
                     }
                 } else {
-                    $imageUrl = '/storage/' . $clean;
+                    $imageUrl = '/storage/'.$clean;
                 }
             }
         }
@@ -174,6 +183,21 @@ class CustomerVerificationService
             'verified_at' => now(),
         ]);
 
+        $this->adminNotificationService->markApprovalRequestsReadForApplicant($verification->user_id, 'customer');
+
+        $user = $verification->user;
+        if ($user) {
+            try {
+                $user->notify(new AccountApprovedNotification('customer'));
+            } catch (\Throwable $e) {
+                Log::warning('[CustomerVerificationService] Failed to send customer approval email', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         return $this->format($verification->fresh());
     }
 
@@ -188,11 +212,13 @@ class CustomerVerificationService
             'verified_at' => now(),
         ]);
 
+        $this->adminNotificationService->markApprovalRequestsReadForApplicant($verification->user_id, 'customer');
+
         // Notify the user about the rejection reason
         $user = $verification->user;
         if ($user) {
             try {
-                $user->notify(new \App\Notifications\RegistrationRejectedNotification(
+                $user->notify(new RegistrationRejectedNotification(
                     $rejectionReason,
                     'user'
                 ));
