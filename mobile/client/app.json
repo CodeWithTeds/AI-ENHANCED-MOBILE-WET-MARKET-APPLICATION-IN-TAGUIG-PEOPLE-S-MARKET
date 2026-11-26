@@ -52,7 +52,8 @@
           "photosPermission": "Allow TaguigSuki to upload your ID photo for verification.",
           "cameraPermission": "Allow TaguigSuki to take a photo of your ID for verification."
         }
-      ]
+      ],
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": true,
