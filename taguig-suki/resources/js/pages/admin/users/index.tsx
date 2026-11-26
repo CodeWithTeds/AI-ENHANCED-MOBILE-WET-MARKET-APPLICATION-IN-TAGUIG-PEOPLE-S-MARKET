@@ -7,6 +7,7 @@ import {
     Clock,
     ExternalLink,
     Eye,
+    FileText,
     Pencil,
     Search,
     Shield,
@@ -50,6 +51,11 @@ type AppUser = {
     vendor: VendorInfo;
     verification: VerificationInfo;
 };
+
+function isPdfDocument(url?: string | null, path?: string | null): boolean {
+    const target = (path || url || '').toLowerCase().split('?')[0].trim();
+    return target.endsWith('.pdf');
+}
 
 function resolveIdImageUrl(url?: string | null, path?: string | null): string | null {
     const raw = url || (path ? `/storage/${path.replace(/^\/?(storage\/)?/, '')}` : null);
@@ -466,6 +472,7 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                             {/* Verification in view modal */}
                             {viewUser.verification && (() => {
                                 const vImgUrl = resolveIdImageUrl(viewUser.verification.id_image_url, viewUser.verification.id_image_path);
+                                const vIsPdf = isPdfDocument(vImgUrl, viewUser.verification.id_image_path);
                                 return (
                                     <div className="rounded-xl border border-gray-200 bg-white p-3">
                                         <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">ID Verification</div>
@@ -474,22 +481,31 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                                 <div
                                                     className="relative h-20 w-28 shrink-0 rounded-lg border overflow-hidden bg-gray-100 cursor-pointer group"
                                                     onClick={() => setPreviewVerif(viewUser)}
-                                                    title="Click to zoom ID"
+                                                    title={vIsPdf ? 'Click to preview PDF' : 'Click to zoom ID'}
                                                 >
-                                                    <img
-                                                        src={vImgUrl}
-                                                        alt="ID"
-                                                        className="h-full w-full object-cover group-hover:opacity-90"
-                                                        onError={(e) => {
-                                                            const target = e.currentTarget as HTMLImageElement;
-                                                            target.style.display = 'none';
-                                                            const fallback = target.nextElementSibling as HTMLElement;
-                                                            if (fallback) fallback.style.display = 'flex';
-                                                        }}
-                                                    />
-                                                    <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[11px] text-gray-400 font-medium">
-                                                        No preview
-                                                    </div>
+                                                    {vIsPdf ? (
+                                                        <div className="flex h-full w-full flex-col items-center justify-center bg-red-50/70 text-red-600 p-1">
+                                                            <FileText className="h-7 w-7" />
+                                                            <span className="mt-1 text-[10px] font-bold uppercase">PDF</span>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <img
+                                                                src={vImgUrl}
+                                                                alt="ID"
+                                                                className="h-full w-full object-cover group-hover:opacity-90"
+                                                                onError={(e) => {
+                                                                    const target = e.currentTarget as HTMLImageElement;
+                                                                    target.style.display = 'none';
+                                                                    const fallback = target.nextElementSibling as HTMLElement;
+                                                                    if (fallback) fallback.style.display = 'flex';
+                                                                }}
+                                                            />
+                                                            <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[11px] text-gray-400 font-medium">
+                                                                No preview
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             ) : viewUser.is_admin ? (
                                                 <div className="h-20 w-28 shrink-0 rounded-lg bg-purple-50 border border-purple-100 flex flex-col items-center justify-center text-purple-700 text-xs text-center p-1">
@@ -602,6 +618,7 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
             {/* ID Preview */}
             {previewVerif && (() => {
                 const previewImgUrl = resolveIdImageUrl(previewVerif.verification?.id_image_url, previewVerif.verification?.id_image_path);
+                const previewIsPdf = isPdfDocument(previewImgUrl, previewVerif.verification?.id_image_path);
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreviewVerif(null)}>
                         <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -614,9 +631,9 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                                            title="Open full image in new tab"
+                                            title={previewIsPdf ? 'Open PDF in new tab' : 'Open full image in new tab'}
                                         >
-                                            <span>Full Size</span>
+                                            <span>{previewIsPdf ? 'Open PDF' : 'Full Size'}</span>
                                             <ExternalLink className="h-3 w-3" />
                                         </a>
                                     )}
@@ -625,32 +642,40 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                             </div>
                             <div className="p-4 bg-gray-50 flex items-center justify-center min-h-[220px]">
                                 {previewImgUrl ? (
-                                    <div className="flex flex-col items-center justify-center w-full">
-                                        <img
+                                    previewIsPdf ? (
+                                        <iframe
                                             src={previewImgUrl}
-                                            alt={`ID of ${previewVerif.name}`}
-                                            className="max-h-[70vh] max-w-full w-auto rounded-lg shadow object-contain"
-                                            onError={(e) => {
-                                                const target = e.currentTarget as HTMLImageElement;
-                                                target.style.display = 'none';
-                                                const fallback = target.nextElementSibling as HTMLElement;
-                                                if (fallback) fallback.style.display = 'flex';
-                                            }}
+                                            title={`ID PDF of ${previewVerif.name}`}
+                                            className="h-[70vh] w-full rounded-lg border border-gray-200 bg-white"
                                         />
-                                        <div style={{ display: 'none' }} className="flex-col items-center justify-center py-10 text-center text-gray-400">
-                                            <AlertTriangle className="h-10 w-10 mb-2 text-amber-500" />
-                                            <p className="text-sm font-medium text-gray-700">Image could not be loaded</p>
-                                            <p className="text-xs text-gray-500 mt-1 max-w-sm">The uploaded image file cannot be found in storage or could not be accessed.</p>
-                                            <a
-                                                href={previewImgUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="mt-3 inline-flex items-center gap-1 text-xs text-[#488562] font-semibold underline hover:text-[#3a6e50]"
-                                            >
-                                                Try opening direct link
-                                            </a>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center w-full">
+                                            <img
+                                                src={previewImgUrl}
+                                                alt={`ID of ${previewVerif.name}`}
+                                                className="max-h-[70vh] max-w-full w-auto rounded-lg shadow object-contain"
+                                                onError={(e) => {
+                                                    const target = e.currentTarget as HTMLImageElement;
+                                                    target.style.display = 'none';
+                                                    const fallback = target.nextElementSibling as HTMLElement;
+                                                    if (fallback) fallback.style.display = 'flex';
+                                                }}
+                                            />
+                                            <div style={{ display: 'none' }} className="flex-col items-center justify-center py-10 text-center text-gray-400">
+                                                <AlertTriangle className="h-10 w-10 mb-2 text-amber-500" />
+                                                <p className="text-sm font-medium text-gray-700">Image could not be loaded</p>
+                                                <p className="text-xs text-gray-500 mt-1 max-w-sm">The uploaded image file cannot be found in storage or could not be accessed.</p>
+                                                <a
+                                                    href={previewImgUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="mt-3 inline-flex items-center gap-1 text-xs text-[#488562] font-semibold underline hover:text-[#3a6e50]"
+                                                >
+                                                    Try opening direct link
+                                                </a>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )
                                 ) : (
                                     <div className="flex flex-col items-center justify-center py-10 text-center text-gray-400">
                                         <Shield className="h-10 w-10 mb-2 text-gray-300" />
@@ -893,6 +918,7 @@ function VerificationBadge({ status }: { status?: 'unverified' | 'pending' | 've
 function VerificationCell({ user, onPreview, onApprove, onReject }: { user: AppUser; onPreview: () => void; onApprove: () => void; onReject: () => void }) {
     const v = user.verification;
     const imgUrl = resolveIdImageUrl(v?.id_image_url, v?.id_image_path);
+    const isPdf = isPdfDocument(imgUrl, v?.id_image_path);
 
     if (imgUrl) {
         return (
@@ -900,22 +926,31 @@ function VerificationCell({ user, onPreview, onApprove, onReject }: { user: AppU
                 <div
                     className="relative h-9 w-14 shrink-0 rounded-md border overflow-hidden bg-gray-100 cursor-pointer group"
                     onClick={onPreview}
-                    title="Click to view ID"
+                    title={isPdf ? 'Click to view PDF' : 'Click to view ID'}
                 >
-                    <img
-                        src={imgUrl}
-                        alt="ID"
-                        className="h-full w-full object-cover group-hover:opacity-90"
-                        onError={(e) => {
-                            const target = e.currentTarget as HTMLImageElement;
-                            target.style.display = 'none';
-                            const fallback = target.nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'flex';
-                        }}
-                    />
-                    <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[10px] text-gray-400 font-medium">
-                        ID
-                    </div>
+                    {isPdf ? (
+                        <div className="flex h-full w-full items-center justify-center gap-0.5 bg-red-50 text-red-600">
+                            <FileText className="h-3.5 w-3.5" />
+                            <span className="text-[9px] font-bold">PDF</span>
+                        </div>
+                    ) : (
+                        <>
+                            <img
+                                src={imgUrl}
+                                alt="ID"
+                                className="h-full w-full object-cover group-hover:opacity-90"
+                                onError={(e) => {
+                                    const target = e.currentTarget as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const fallback = target.nextElementSibling as HTMLElement;
+                                    if (fallback) fallback.style.display = 'flex';
+                                }}
+                            />
+                            <div style={{ display: 'none' }} className="h-full w-full items-center justify-center text-[10px] text-gray-400 font-medium">
+                                ID
+                            </div>
+                        </>
+                    )}
                 </div>
                 <div className="min-w-0">
                     <VerificationBadge status={v?.status ?? 'unverified'} />
