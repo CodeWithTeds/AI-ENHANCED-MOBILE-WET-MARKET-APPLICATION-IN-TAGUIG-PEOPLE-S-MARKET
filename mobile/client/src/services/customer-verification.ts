@@ -65,7 +65,12 @@ export async function getCustomerVerification(token: string): Promise<CustomerVe
 
 export interface UploadVerificationParams {
   id_type: IdType;
-  id_image_uri: string; // local uri from expo-image-picker
+  id_image_uri: string;
+  id_file?: {
+    uri: string;
+    name: string;
+    type: string;
+  } | null;
 }
 
 export async function uploadCustomerVerification(
@@ -75,16 +80,31 @@ export async function uploadCustomerVerification(
   const formData = new FormData();
   formData.append('id_type', params.id_type);
 
-  const filename = params.id_image_uri.split('/').pop() ?? 'id_image.jpg';
-  const match = /\.(\w+)$/.exec(filename);
-  const ext = match ? match[1].toLowerCase() : 'jpg';
-  const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  if (params.id_file) {
+    formData.append('id_image', {
+      uri: params.id_file.uri,
+      name: params.id_file.name,
+      type: params.id_file.type,
+    } as unknown as Blob);
+  } else {
+    const filename = params.id_image_uri.split('/').pop() ?? 'id_image.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const ext = match ? match[1].toLowerCase() : 'jpg';
+    const type =
+      ext === 'pdf'
+        ? 'application/pdf'
+        : ext === 'png'
+          ? 'image/png'
+          : ext === 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
 
-  formData.append('id_image', {
-    uri: params.id_image_uri,
-    name: filename,
-    type,
-  } as unknown as Blob);
+    formData.append('id_image', {
+      uri: params.id_image_uri,
+      name: filename,
+      type,
+    } as unknown as Blob);
+  }
 
   return new Promise<CustomerVerification>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

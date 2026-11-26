@@ -31,9 +31,14 @@ export interface CustomerRegisterData {
   email: string;
   password: string;
   password_confirmation: string;
-  /** Optional ID verification at registration */
+  /** ID verification document at registration (image or PDF) */
   id_type?: string;
   id_image_uri?: string | null;
+  id_file?: {
+    uri: string;
+    name: string;
+    type: string;
+  } | null;
 }
 
 interface CustomerAuthResponse {
@@ -47,14 +52,14 @@ interface CustomerAuthResponse {
 
 /**
  * Register a new customer account.
- * Supports optional ID verification upload via multipart (image).
+ * Supports ID verification upload via multipart (image or PDF).
  */
 export async function registerCustomer(data: CustomerRegisterData): Promise<CustomerAuthResponse> {
-  const hasIdImage = !!data.id_image_uri;
+  const hasIdFile = !!(data.id_file || data.id_image_uri);
 
   let response: { data: CustomerAuthResponse };
 
-  if (hasIdImage) {
+  if (hasIdFile) {
     // Use XHR for multipart (reliable on Android)
     const formData = new FormData();
     formData.append('name', data.name);
@@ -63,12 +68,27 @@ export async function registerCustomer(data: CustomerRegisterData): Promise<Cust
     formData.append('password_confirmation', data.password_confirmation);
     if (data.id_type) formData.append('id_type', data.id_type);
 
-    const uri = data.id_image_uri as string;
-    const filename = uri.split('/').pop() ?? 'id_image.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    const ext = match ? match[1].toLowerCase() : 'jpg';
-    const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-    formData.append('id_image', { uri, name: filename, type } as unknown as Blob);
+    if (data.id_file) {
+      formData.append('id_image', {
+        uri: data.id_file.uri,
+        name: data.id_file.name,
+        type: data.id_file.type,
+      } as unknown as Blob);
+    } else {
+      const uri = data.id_image_uri as string;
+      const filename = uri.split('/').pop() ?? 'id_image.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : 'jpg';
+      const type =
+        ext === 'pdf'
+          ? 'application/pdf'
+          : ext === 'png'
+            ? 'image/png'
+            : ext === 'webp'
+              ? 'image/webp'
+              : 'image/jpeg';
+      formData.append('id_image', { uri, name: filename, type } as unknown as Blob);
+    }
 
     response = await new Promise<{ data: CustomerAuthResponse }>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
