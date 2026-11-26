@@ -51,7 +51,13 @@ type Stall = {
     updated_at: string;
 };
 
-type FilterOption = { value: string; label: string; slug?: string; color?: string | null };
+type FilterOption = { value: string; label: string; slug?: string; color?: string | null; monthly_rent?: number };
+
+const DEFAULT_RENT_BY_SIZE: Record<string, number> = {
+    small: 1500,
+    medium: 2000,
+    large: 3000,
+};
 
 type OccupiedSlot = {
     id: number;
@@ -143,6 +149,12 @@ export default function StallsIndex({
     const [editingStall, setEditingStall] = useState<Stall | null>(null);
     const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
 
+    const getRentForSize = (sizeValue: string): string => {
+        const option = sizes.find((s) => s.value === sizeValue);
+        const amount = option?.monthly_rent ?? DEFAULT_RENT_BY_SIZE[sizeValue] ?? DEFAULT_RENT_BY_SIZE.medium;
+        return amount.toFixed(2);
+    };
+
     const baseStallNumbers = useMemo(() => {
         return available_stall_numbers.length > 0
             ? available_stall_numbers
@@ -167,7 +179,7 @@ export default function StallsIndex({
         vendor_id: '',
         status: 'vacant',
         size: 'medium',
-        monthly_rent: '0',
+        monthly_rent: getRentForSize('medium'),
         description: '',
         is_active: true,
         image: null,
@@ -191,7 +203,7 @@ export default function StallsIndex({
         vendor_id: '',
         status: 'vacant',
         size: 'medium',
-        monthly_rent: '0',
+        monthly_rent: getRentForSize('medium'),
         description: '',
         is_active: true,
         image: null,
@@ -253,6 +265,7 @@ export default function StallsIndex({
 
     function handleOpenCreate() {
         createForm.reset();
+        createForm.setData('monthly_rent', getRentForSize('medium'));
         createForm.clearErrors();
         setImagePreview(null);
         setCreateOpen(true);
@@ -287,7 +300,7 @@ export default function StallsIndex({
             vendor_id: stall.vendor_id ? String(stall.vendor_id) : '',
             status: stall.status,
             size: stall.size,
-            monthly_rent: String(stall.monthly_rent ?? '0'),
+            monthly_rent: getRentForSize(stall.size),
             description: stall.description ?? '',
             is_active: stall.is_active,
             image: null,
@@ -634,7 +647,14 @@ export default function StallsIndex({
                                     <select
                                         id="c-size"
                                         value={createForm.data.size}
-                                        onChange={(e) => createForm.setData('size', e.target.value)}
+                                        onChange={(e) => {
+                                            const nextSize = e.target.value;
+                                            createForm.setData((prev) => ({
+                                                ...prev,
+                                                size: nextSize,
+                                                monthly_rent: getRentForSize(nextSize),
+                                            }));
+                                        }}
                                         className={`mt-1 h-9 w-full rounded-lg border bg-white px-3 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] ${
                                             createForm.errors.size
                                                 ? 'border-red-400 bg-red-50/30'
@@ -654,16 +674,19 @@ export default function StallsIndex({
 
                                 <div>
                                     <Label htmlFor="c-rent" className="text-xs font-semibold text-gray-700">
-                                        Rent / Month (₱) <span className="text-red-500">*</span>
+                                        Rent / Month (₱) <span className="text-[10px] font-medium text-[#488562]">(Auto)</span>
                                     </Label>
                                     <Input
                                         id="c-rent"
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        value={createForm.data.monthly_rent}
-                                        onChange={(e) => createForm.setData('monthly_rent', e.target.value)}
-                                        className={`mt-1 h-9 ${createForm.errors.monthly_rent ? 'border-red-400 bg-red-50/30' : ''}`}
+                                        type="text"
+                                        readOnly
+                                        tabIndex={-1}
+                                        aria-readonly="true"
+                                        value={Number(createForm.data.monthly_rent || 0).toLocaleString('en-PH', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                        })}
+                                        className={`mt-1 h-9 cursor-not-allowed bg-gray-100 font-semibold text-gray-700 select-none focus-visible:ring-0 ${createForm.errors.monthly_rent ? 'border-red-400 bg-red-50/30' : ''}`}
                                     />
                                     {createForm.errors.monthly_rent && (
                                         <p className="mt-1 text-xs text-red-600">
@@ -1020,7 +1043,14 @@ export default function StallsIndex({
                                     <select
                                         id="e-size"
                                         value={editForm.data.size}
-                                        onChange={(e) => editForm.setData('size', e.target.value)}
+                                        onChange={(e) => {
+                                            const nextSize = e.target.value;
+                                            editForm.setData((prev) => ({
+                                                ...prev,
+                                                size: nextSize,
+                                                monthly_rent: getRentForSize(nextSize),
+                                            }));
+                                        }}
                                         className={`mt-1 h-9 w-full rounded-lg border bg-white px-3 text-sm focus:border-[#488562] focus:ring-1 focus:ring-[#488562] ${
                                             editForm.errors.size
                                                 ? 'border-red-400 bg-red-50/30'
@@ -1040,16 +1070,19 @@ export default function StallsIndex({
 
                                 <div>
                                     <Label htmlFor="e-rent" className="text-xs font-semibold text-gray-700">
-                                        Rent / Month (₱) <span className="text-red-500">*</span>
+                                        Rent / Month (₱) <span className="text-[10px] font-medium text-[#488562]">(Auto)</span>
                                     </Label>
                                     <Input
                                         id="e-rent"
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        value={editForm.data.monthly_rent}
-                                        onChange={(e) => editForm.setData('monthly_rent', e.target.value)}
-                                        className={`mt-1 h-9 ${editForm.errors.monthly_rent ? 'border-red-400 bg-red-50/30' : ''}`}
+                                        type="text"
+                                        readOnly
+                                        tabIndex={-1}
+                                        aria-readonly="true"
+                                        value={Number(editForm.data.monthly_rent || 0).toLocaleString('en-PH', {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                        })}
+                                        className={`mt-1 h-9 cursor-not-allowed bg-gray-100 font-semibold text-gray-700 select-none focus-visible:ring-0 ${editForm.errors.monthly_rent ? 'border-red-400 bg-red-50/30' : ''}`}
                                     />
                                     {editForm.errors.monthly_rent && (
                                         <p className="mt-1 text-xs text-red-600">{editForm.errors.monthly_rent}</p>
