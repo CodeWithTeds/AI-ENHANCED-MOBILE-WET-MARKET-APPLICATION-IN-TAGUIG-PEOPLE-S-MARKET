@@ -38,13 +38,19 @@ import {
 import { dashboard } from '@/routes';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 
+type SidebarChildNavItem = {
+    title: string;
+    href: string;
+    activeMatches?: string[];
+};
+
 type SidebarNavItem = {
     title: string;
     href: string;
     icon: React.ComponentType<{ className?: string }>;
     color: string;
     bgColor: string;
-    children?: { title: string; href: string }[];
+    children?: SidebarChildNavItem[];
 };
 
 const mainNavItems: SidebarNavItem[] = [
@@ -70,9 +76,15 @@ const mainNavItems: SidebarNavItem[] = [
         bgColor: 'bg-[#ee600e]/10',
         children: [
             { title: 'All Vendors', href: '/admin/dashboard/vendors' },
-            { title: 'Stall Management', href: '/admin/dashboard/vendors/stalls' },
-            { title: 'Stall Monitoring & Complaints', href: '/admin/dashboard/vendors/stalls/monitoring' },
-            { title: 'Stall Rentals & Billing', href: '/admin/dashboard/vendors/rentals' },
+            {
+                title: 'Stall Management',
+                href: '/admin/dashboard/vendors/stalls',
+                activeMatches: [
+                    '/admin/dashboard/vendors/stalls',
+                    '/admin/dashboard/vendors/stalls/monitoring',
+                    '/admin/dashboard/vendors/rentals',
+                ],
+            },
             { title: 'Pending Approval', href: '/admin/dashboard/vendors/pending' },
             { title: 'Documents', href: '/admin/dashboard/vendors/documents' },
         ],
@@ -156,8 +168,11 @@ export function AppSidebar() {
                     <SidebarMenu>
                         {mainNavItems.map((item) => {
                             const active = isCurrentUrl(item.href);
+                            const isChildNavActive = (child: SidebarChildNavItem) =>
+                                isCurrentUrl(child.href) ||
+                                (child.activeMatches?.some((match) => isCurrentUrl(match, undefined, true)) ?? false);
                             const hasChildren = item.children && item.children.length > 0;
-                            const isChildActive = hasChildren && item.children!.some(child => isCurrentUrl(child.href));
+                            const isChildActive = hasChildren && item.children!.some(isChildNavActive);
 
                             if (hasChildren) {
                                 return (
@@ -182,7 +197,7 @@ export function AppSidebar() {
                                             <CollapsibleContent>
                                                 <SidebarMenuSub className="border-white/10">
                                                     {item.children!.map((child) => {
-                                                        const childActive = isCurrentUrl(child.href);
+                                                        const childActive = isChildNavActive(child);
                                                         return (
                                                             <SidebarMenuSubItem key={child.title}>
                                                                 <SidebarMenuSubButton

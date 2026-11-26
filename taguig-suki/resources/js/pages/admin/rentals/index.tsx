@@ -892,7 +892,7 @@ export default function RentalMonitoringIndex({
 RentalMonitoringIndex.layout = {
     breadcrumbs: [
         { title: 'Dashboard', href: dashboard() },
-        { title: 'Vendor Management', href: '/admin/dashboard/vendors' },
-        { title: 'Stall Rental Payments', href: '/admin/dashboard/vendors/rentals' },
+        { title: 'Stall Management', href: '/admin/dashboard/vendors/stalls' },
+        { title: 'Monthly Stall Rentals & Billing', href: '/admin/dashboard/vendors/rentals' },
     ],
 };
