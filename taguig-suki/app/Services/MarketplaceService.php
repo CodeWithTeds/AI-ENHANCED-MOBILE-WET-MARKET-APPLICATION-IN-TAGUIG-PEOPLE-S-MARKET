@@ -2,11 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\VendorStatus;
 use App\Models\Product;
 use App\Models\Review;
 use App\Models\Vendor;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class MarketplaceService
 {
@@ -65,8 +66,22 @@ class MarketplaceService
             $product->vendor_rating = $vendorAvg;
             $product->vendor_review_count = $vendorCount;
 
-            if (isset($product->inventory)) {
-                $product->stock_quantity = $product->inventory->stock_quantity ?? 0;
+            if ($product->relationLoaded('inventory')) {
+                $stockQty = $product->inventory
+                    ? (float) $product->inventory->stock_quantity
+                    : 0.0;
+                $reorderLevel = $product->inventory
+                    ? (float) $product->inventory->reorder_level
+                    : null;
+                $outOfStock = ! $product->is_available
+                    || ($product->inventory !== null && $stockQty <= 0);
+
+                $product->setAttribute('stock_quantity', $stockQty);
+                $product->setAttribute('reorder_level', $reorderLevel);
+                $product->setAttribute('is_out_of_stock', $outOfStock);
+                if ($outOfStock) {
+                    $product->setAttribute('is_available', false);
+                }
             }
         }
 
@@ -79,7 +94,7 @@ class MarketplaceService
     public function getFeaturedProducts(int $limit = 10): Collection
     {
         $products = Product::where('is_available', true)
-            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity,reorder_level'])
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
@@ -95,7 +110,7 @@ class MarketplaceService
     public function browse(?string $category = null, int $perPage = 20): LengthAwarePaginator
     {
         $query = Product::where('is_available', true)
-            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity']);
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity,reorder_level']);
 
         if ($category && $category !== 'all') {
             $query->where('category', $category);
@@ -117,10 +132,10 @@ class MarketplaceService
         $allMatching = Product::where('is_available', true)
             ->where(function ($q) use ($term) {
                 $q->where('name', 'like', "%{$term}%")
-                  ->orWhere('description', 'like', "%{$term}%")
-                  ->orWhere('category', 'like', "%{$term}%");
+                    ->orWhere('description', 'like', "%{$term}%")
+                    ->orWhere('category', 'like', "%{$term}%");
             })
-            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity,reorder_level'])
             ->get();
 
         $this->enrichProductsWithRatings($allMatching);
@@ -145,6 +160,7 @@ class MarketplaceService
             if (($b->reviews_count ?? 0) != ($a->reviews_count ?? 0)) {
                 return ($b->reviews_count ?? 0) <=> ($a->reviews_count ?? 0);
             }
+
             return $a->price <=> $b->price;
         })->values();
 
@@ -180,7 +196,7 @@ class MarketplaceService
     public function getProduct(int $productId): array
     {
         $product = Product::where('is_available', true)
-            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity'])
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity,reorder_level'])
             ->findOrFail($productId);
 
         $this->enrichProductsWithRatings(collect([$product]));
@@ -199,11 +215,11 @@ class MarketplaceService
     {
         $keywords = collect(explode(' ', strtolower($product->name)))
             ->map(fn ($w) => trim($w, " \t\n\r\0\x0B,.-/"))
-            ->filter(fn ($w) => strlen($w) >= 3 && !in_array($w, ['fresh', 'with', 'and', 'the', 'for'], true))
+            ->filter(fn ($w) => strlen($w) >= 3 && ! in_array($w, ['fresh', 'with', 'and', 'the', 'for'], true))
             ->values();
 
         $query = Product::where('is_available', true)
-            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity']);
+            ->with(['vendor:id,stall_name,stall_location,opening_time,closing_time', 'inventory:id,product_id,stock_quantity,reorder_level']);
 
         $query->where(function ($q) use ($keywords, $product) {
             $q->where('id', $product->id);
@@ -251,7 +267,9 @@ class MarketplaceService
                 $reviewCount = 0;
             }
 
-            $stock = $item->inventory?->stock_quantity ?? 20;
+            $stock = $item->inventory ? (float) $item->inventory->stock_quantity : 0.0;
+            $reorderLevel = $item->inventory ? (float) $item->inventory->reorder_level : null;
+            $outOfStock = ! $item->is_available || ($item->inventory !== null && $stock <= 0);
 
             return [
                 'product_id' => $item->id,
@@ -260,8 +278,10 @@ class MarketplaceService
                 'price' => (float) $item->price,
                 'unit' => $item->unit,
                 'image' => $item->image,
-                'is_available' => (bool) $item->is_available,
+                'is_available' => (bool) ($item->is_available && ! $outOfStock),
+                'is_out_of_stock' => $outOfStock,
                 'stock_quantity' => $stock,
+                'reorder_level' => $reorderLevel,
                 'vendor_id' => $item->vendor?->id ?? $item->vendor_id,
                 'stall_name' => $item->vendor?->stall_name ?? 'Market Stall',
                 'stall_location' => $item->vendor?->stall_location ?? 'Taguig People\'s Market',
@@ -285,12 +305,14 @@ class MarketplaceService
             if ($b['reviews_count'] != $a['reviews_count']) {
                 return $b['reviews_count'] <=> $a['reviews_count'];
             }
+
             return $a['price'] <=> $b['price'];
         })->values();
 
         // Top-rated vendor is highlighted with AI recommendation
         return $sorted->map(function ($entry, $idx) {
             $entry['is_ai_recommended'] = ($idx === 0);
+
             return $entry;
         })->all();
     }
@@ -300,12 +322,12 @@ class MarketplaceService
      */
     public function getVendorStore(int $vendorId): array
     {
-        $vendor = Vendor::where('status', \App\Enums\VendorStatus::Approved->value)
+        $vendor = Vendor::where('status', VendorStatus::Approved->value)
             ->findOrFail($vendorId);
 
         $products = Product::where('vendor_id', $vendorId)
             ->where('is_available', true)
-            ->with(['inventory:id,product_id,stock_quantity'])
+            ->with(['inventory:id,product_id,stock_quantity,reorder_level'])
             ->orderBy('name')
             ->get();
 

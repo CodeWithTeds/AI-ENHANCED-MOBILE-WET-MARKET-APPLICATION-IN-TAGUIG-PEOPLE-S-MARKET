@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\CancelOrderRequest;
 use App\Services\OrderService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class OrderController extends Controller
@@ -103,13 +105,13 @@ class OrderController extends Controller
         $productIds = [];
         $quantities = [];
 
-        if (!empty($validated['items'])) {
+        if (! empty($validated['items'])) {
             foreach ($validated['items'] as $it) {
                 $pid = (int) $it['product_id'];
                 $productIds[] = $pid;
                 $quantities[$pid] = ($quantities[$pid] ?? 0) + (float) $it['quantity'];
             }
-        } elseif (!empty($validated['product_ids'])) {
+        } elseif (! empty($validated['product_ids'])) {
             $productIds = $validated['product_ids'];
         } else {
             return response()->json([
@@ -222,12 +224,24 @@ class OrderController extends Controller
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], 422);
-        } catch (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e) {
+        } catch (AccessDeniedHttpException $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], 403);
         }
+    }
+
+    /**
+     * Customer cancels a pending order before the vendor confirms it.
+     *
+     * POST /orders/{id}/cancel
+     */
+    public function cancel(CancelOrderRequest $request, int $id): JsonResponse
+    {
+        $order = $this->orderService->cancelByCustomer($request->user(), $id, $request->validated('reason'));
+
+        return $this->successResponse($order, 'Order cancelled successfully. Stock has been restored.');
     }
 
     /**
@@ -239,11 +253,29 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'status' => 'required|string|in:confirmed,ready,completed,cancelled',
+            'reason' => 'nullable|string|max:500',
         ]);
 
-        $order = $this->orderService->updateOrderStatus($request->user(), $id, $validated['status']);
+        $order = $this->orderService->updateOrderStatus(
+            $request->user(),
+            $id,
+            $validated['status'],
+            $validated['reason'] ?? null,
+        );
 
         return $this->successResponse($order, 'Order status updated');
+    }
+
+    /**
+     * Vendor cancels an unclaimed Ready-for-Pickup order after 1 hour.
+     *
+     * POST /vendor/orders/{id}/cancel
+     */
+    public function vendorCancel(CancelOrderRequest $request, int $id): JsonResponse
+    {
+        $order = $this->orderService->cancelByVendor($request->user(), $id, $request->validated('reason'));
+
+        return $this->successResponse($order, 'Order cancelled and stock restored.');
     }
 
     /**

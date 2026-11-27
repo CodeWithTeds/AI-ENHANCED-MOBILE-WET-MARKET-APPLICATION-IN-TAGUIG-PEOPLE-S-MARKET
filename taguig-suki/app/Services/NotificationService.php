@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Vendor;
 use App\Notifications\NewOrderReceivedNotification;
 use App\Notifications\NewReviewReceivedNotification;
+use App\Notifications\OrderCancelledNotification;
 use App\Notifications\OrderStatusUpdatedNotification;
 use App\Notifications\PaymentProofSubmittedNotification;
 use App\Notifications\PaymentStatusUpdatedNotification;
@@ -130,7 +131,7 @@ class NotificationService
      *
      * @param  Collection<int, OrderItem>  $items
      */
-    public function notifyCustomerOrderStatus(Order $order, Vendor $vendor, Collection $items, string $status): void
+    public function notifyCustomerOrderStatus(Order $order, Vendor $vendor, Collection $items, string $status, ?string $reason = null): void
     {
         $customer = $order->user;
 
@@ -142,14 +143,97 @@ class NotificationService
             return;
         }
 
-        $this->safeNotify($customer, new OrderStatusUpdatedNotification(
-            orderId: $order->id,
-            orderNumber: $order->order_number,
-            vendorId: $vendor->id,
-            stallName: $vendor->stall_name,
-            amount: $this->itemsTotal($items),
-            status: $status,
-        ));
+        $notification = $status === 'cancelled'
+            ? new OrderCancelledNotification(
+                orderId: $order->id,
+                orderNumber: $order->order_number,
+                vendorId: $vendor->id,
+                stallName: $vendor->stall_name,
+                amount: $this->itemsTotal($items),
+                cancelledBy: 'vendor',
+                reason: $reason,
+            )
+            : new OrderStatusUpdatedNotification(
+                orderId: $order->id,
+                orderNumber: $order->order_number,
+                vendorId: $vendor->id,
+                stallName: $vendor->stall_name,
+                amount: $this->itemsTotal($items),
+                status: $status,
+            );
+
+        $this->safeNotify($customer, $notification);
+    }
+
+    /**
+     * Notify each affected vendor when a customer cancels an unconfirmed order.
+     *
+     * @param  Collection<int, OrderItem>  $items
+     */
+    public function notifyVendorsOrderCancelled(Order $order, Collection $items, ?string $reason = null): void
+    {
+        $items->loadMissing('vendor.user');
+
+        foreach ($items->groupBy('vendor_id') as $vendorItems) {
+            $vendor = $vendorItems->first()->vendor;
+            $vendorUser = $vendor?->user;
+
+            if (! $vendor || ! $vendorUser || (int) $vendorUser->id === (int) $order->user_id) {
+                continue;
+            }
+
+            if (! $this->vendorWantsOrderAlerts($vendor)) {
+                continue;
+            }
+
+            $this->safeNotify($vendorUser, new OrderCancelledNotification(
+                orderId: $order->id,
+                orderNumber: $order->order_number,
+                vendorId: $vendor->id,
+                stallName: $vendor->stall_name,
+                amount: $this->itemsTotal($vendorItems),
+                cancelledBy: 'customer',
+                reason: $reason,
+            ));
+        }
+    }
+
+    /**
+     * Notify both the customer and affected vendors when an order auto-cancels after 1 hour.
+     *
+     * @param  Collection<int, OrderItem>  $items
+     */
+    public function notifyOrderAutoCancelled(Order $order, Collection $items, string $reason): void
+    {
+        $items->loadMissing('vendor.user');
+        $customer = $order->user;
+
+        foreach ($items->groupBy('vendor_id') as $vendorItems) {
+            $vendor = $vendorItems->first()->vendor;
+            if (! $vendor) {
+                continue;
+            }
+
+            $amount = $this->itemsTotal($vendorItems);
+            $notification = new OrderCancelledNotification(
+                orderId: $order->id,
+                orderNumber: $order->order_number,
+                vendorId: $vendor->id,
+                stallName: $vendor->stall_name,
+                amount: $amount,
+                cancelledBy: 'system',
+                reason: $reason,
+            );
+
+            if ($customer && $this->customerWantsOrderAlerts($customer)) {
+                $this->safeNotify($customer, $notification);
+            }
+
+            $vendorUser = $vendor->user;
+            if ($vendorUser && (int) $vendorUser->id !== (int) $order->user_id && $this->vendorWantsOrderAlerts($vendor)) {
+                $this->safeNotify($vendorUser, $notification);
+            }
+        }
     }
 
     /**

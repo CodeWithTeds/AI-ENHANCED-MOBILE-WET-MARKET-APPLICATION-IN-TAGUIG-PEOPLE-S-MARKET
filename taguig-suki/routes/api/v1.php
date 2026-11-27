@@ -123,6 +123,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/track', [OrderController::class, 'track']);
     Route::get('/orders/{id}/receipt', [OrderController::class, 'receipt']);
+    Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
     Route::post('/orders/{id}/payment-reference', [OrderController::class, 'submitPaymentReference']);
 
     // Customer–Vendor In-App Order Messaging & Confirmation
@@ -150,6 +151,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // Vendor Orders & Sales (orders that contain this vendor's products)
     Route::get('/vendor/orders', [OrderController::class, 'vendorOrders']);
     Route::patch('/vendor/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::post('/vendor/orders/{id}/cancel', [OrderController::class, 'vendorCancel']);
     Route::get('/vendor/payments/pending', [OrderController::class, 'vendorPendingPayments']);
     Route::patch('/vendor/orders/{id}/verify-payment', [OrderController::class, 'verifyPayment']);
     Route::get('/vendor/sales', [OrderController::class, 'vendorSales']);
@@ -158,5 +160,3 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 });
 
 Route::apiResource('tasks', TaskController::class);
-
-

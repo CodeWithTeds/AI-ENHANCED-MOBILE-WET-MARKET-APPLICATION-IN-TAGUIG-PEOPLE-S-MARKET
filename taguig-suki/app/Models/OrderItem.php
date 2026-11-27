@@ -19,6 +19,12 @@ class OrderItem extends Model
         'subtotal',
         'status',
         'confirmation_status',
+        'vendor_confirmed_at',
+        'ready_at',
+        'pickup_expires_at',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
         'payment_status',
         'payment_reference_number',
         'payment_submitted_at',
@@ -29,11 +35,15 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity'             => 'decimal:2',
-            'unit_price'           => 'decimal:2',
-            'subtotal'             => 'decimal:2',
+            'quantity' => 'decimal:2',
+            'unit_price' => 'decimal:2',
+            'subtotal' => 'decimal:2',
+            'vendor_confirmed_at' => 'datetime',
+            'ready_at' => 'datetime',
+            'pickup_expires_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'payment_submitted_at' => 'datetime',
-            'payment_verified_at'  => 'datetime',
+            'payment_verified_at' => 'datetime',
         ];
     }
 

@@ -3,10 +3,15 @@
 namespace App\Services\Admin;
 
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
+use App\Services\OrderService;
+use Illuminate\Support\Facades\DB;
 
 class OrderManagementService
 {
+    public function __construct(private readonly OrderService $orderService) {}
+
     public function getIndexData(array $filters): array
     {
         $query = Order::query()->with([
@@ -41,17 +46,24 @@ class OrderManagementService
 
     public function updateStatus(Order $order, string $status, ?string $note = null): Order
     {
-        $order->update(['status' => $status]);
+        DB::transaction(function () use ($order, $status, $note) {
+            $previousStatus = $order->status;
+            $order->update(['status' => $status]);
 
-        // Keep per-vendor portions in sync with the admin's decision so the
-        // derived overall status can never regress it afterwards.
-        $order->items()->update(['status' => $status]);
+            // Keep per-vendor portions in sync with the admin's decision so the
+            // derived overall status can never regress it afterwards.
+            $order->items()->update(['status' => $status]);
 
-        OrderStatusHistory::create([
-            'order_id' => $order->id,
-            'status' => $status,
-            'note' => $note ?? 'Status updated by admin',
-        ]);
+            if ($status === 'completed' && $previousStatus !== 'completed') {
+                $this->orderService->deductCompletedItems($order, $order->items()->get(), 'Market Administrator');
+            }
+
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => $status,
+                'note' => $note ?? 'Status updated by admin',
+            ]);
+        });
 
         return $order->load([
             'user:id,name,email',
@@ -165,7 +177,7 @@ class OrderManagementService
     {
         $totalOrders = Order::where('status', 'completed')->count() ?: 1;
 
-        return \App\Models\OrderItem::query()
+        return OrderItem::query()
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('vendors', 'order_items.vendor_id', '=', 'vendors.id')
             ->where('orders.status', 'completed')

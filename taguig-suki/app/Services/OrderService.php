@@ -5,10 +5,14 @@ namespace App\Services;
 use App\Models\Inventory;
 use App\Models\InventoryLog;
 use App\Models\Order;
+use App\Models\OrderConversation;
+use App\Models\OrderItem;
+use App\Models\OrderMessage;
 use App\Models\OrderStatusHistory;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -17,16 +21,20 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class OrderService
 {
+    public const CONFIRMATION_TIMEOUT_MINUTES = 60;
+
+    public const PICKUP_TIMEOUT_MINUTES = 60;
+
     public function __construct(private readonly NotificationService $notificationService) {}
 
     /**
      * Place an order atomically:
-     *  1. Validate every item has enough stock.
+     *  1. Validate every item has enough remaining stock.
      *  2. Create the Order record.
      *  3. Create OrderItems.
-     *  4. Deduct inventory + log each sale.
      *
-     * If any step fails the whole transaction rolls back.
+     * Stock is NOT deducted on order placement — it is deducted only once the
+     * vendor marks the order as Completed (picked up by the customer).
      *
      * Payment logic:
      *  - cash => payment_status = paid (no verification needed)
@@ -103,6 +111,14 @@ class OrderService
                             "Only {$stockDisplay} {$product->unit}(s) of \"$product->name\" remaining in stock."
                         );
                     }
+
+                    $reorderLevel = (float) ($inventory->reorder_level ?? 0);
+                    if ($reorderLevel > 0 && $qty > $reorderLevel + 1e-9) {
+                        $maxDisplay = rtrim(rtrim(number_format($reorderLevel, 2, '.', ''), '0'), '.');
+                        throw new UnprocessableEntityHttpException(
+                            "You can only order up to {$maxDisplay} {$product->unit}(s) of \"{$product->name}\" per order (reorder level limit: {$maxDisplay})."
+                        );
+                    }
                 }
 
                 $totalAmount += (float) $product->price * $qty;
@@ -113,12 +129,13 @@ class OrderService
                 // Check that at least one vendor in the order has configured the selected method
                 // This prevents customers from selecting GCash when no vendor supports it
                 $vendorIds = Product::whereIn('id', $productIds)->pluck('vendor_id')->unique();
-                $vendors = \App\Models\Vendor::whereIn('id', $vendorIds)->get();
+                $vendors = Vendor::whereIn('id', $vendorIds)->get();
                 $hasMethod = $vendors->contains(function ($vendor) use ($paymentMethod) {
                     if ($paymentMethod === 'gcash') {
-                        return !empty($vendor->gcash_number) || !empty($vendor->gcash_qr_path);
+                        return ! empty($vendor->gcash_number) || ! empty($vendor->gcash_qr_path);
                     }
-                    return !empty($vendor->maya_number) || !empty($vendor->maya_qr_path);
+
+                    return ! empty($vendor->maya_number) || ! empty($vendor->maya_qr_path);
                 });
 
                 // We do not hard-fail here; just allow but payment_status will be unpaid if not configured
@@ -132,21 +149,26 @@ class OrderService
             $vendorRefMap = [];
             foreach ($vendorPayments as $key => $val) {
                 if (is_array($val) && isset($val['vendor_id'])) {
-                    $vendorRefMap[(int)$val['vendor_id']] = trim((string)($val['payment_reference_number'] ?? ''));
+                    $vendorRefMap[(int) $val['vendor_id']] = trim((string) ($val['payment_reference_number'] ?? ''));
                 } elseif (is_numeric($key)) {
-                    $vendorRefMap[(int)$key] = is_string($val) ? trim($val) : trim((string)($val['payment_reference_number'] ?? ''));
+                    $vendorRefMap[(int) $key] = is_string($val) ? trim($val) : trim((string) ($val['payment_reference_number'] ?? ''));
                 }
             }
 
             // ── 5. Create Order ────────────────────────────────────────────
             $isCod = $paymentMethod === 'cash';
-            $confirmationStatus = $isCod ? 'pending_confirmation' : 'not_required';
+            // Clicking Buy Now / Place Order is already confirmation for COD orders.
+            $confirmationStatus = $isCod ? 'confirmed' : 'not_required';
+            $now = now();
 
             $order = Order::create([
                 'user_id' => $user->id,
                 'order_number' => Order::generateOrderNumber(),
                 'status' => 'pending',
                 'confirmation_status' => $confirmationStatus,
+                'confirmed_at' => $isCod ? $now : null,
+                'confirmed_by' => $isCod ? $user->id : null,
+                'confirmation_expires_at' => null,
                 'total_amount' => round($totalAmount, 2),
                 'payment_method' => $paymentMethod,
                 'payment_reference_number' => $paymentReference ? trim($paymentReference) : null,
@@ -177,7 +199,7 @@ class OrderService
                 if ($paymentMethod === 'cash') {
                     $itemPaymentStatus = 'paid';
                 } elseif (in_array($paymentMethod, ['gcash', 'maya'])) {
-                    if (!empty($vRef)) {
+                    if (! empty($vRef)) {
                         $itemPaymentStatus = 'pending_verification';
                         $itemRef = $vRef;
                         $itemSubmittedAt = now();
@@ -186,6 +208,7 @@ class OrderService
 
                 // Create order item (snapshot of product data at purchase time).
                 // Each vendor's portion tracks its own fulfillment & payment status.
+                // Stock remains untouched until the portion is marked Completed.
                 $order->items()->create([
                     'product_id' => $product->id,
                     'vendor_id' => $product->vendor_id,
@@ -201,28 +224,6 @@ class OrderService
                     'payment_reference_number' => $itemRef,
                     'payment_submitted_at' => $itemSubmittedAt,
                 ]);
-
-                // Deduct stock and log the sale
-                if ($inventory) {
-                    $before = (float) $inventory->stock_quantity;
-                    $after = max(0.0, round($before - $qty, 2));
-
-                    $inventory->update(['stock_quantity' => $after]);
-
-                    InventoryLog::create([
-                        'inventory_id' => $inventory->id,
-                        'vendor_id' => $inventory->vendor_id,
-                        'product_id' => $product->id,
-                        'type' => 'sold',
-                        'quantity_before' => $before,
-                        'quantity_change' => -$qty,
-                        'quantity_after' => $after,
-                        'reason' => "Customer order #{$order->order_number}",
-                        'reference_number' => $order->order_number,
-                        'unit_cost' => $inventory->cost_price,
-                        'performed_by' => $user->name,
-                    ]);
-                }
             }
 
             // ── 6b. Refresh overall payment status & record verification timeline ──
@@ -258,7 +259,7 @@ class OrderService
             // ── 7. Initialize Order Conversations for each vendor ──────────
             $vendorIds = $order->items->pluck('vendor_id')->unique()->filter()->values();
             foreach ($vendorIds as $vId) {
-                $conv = \App\Models\OrderConversation::firstOrCreate([
+                $conv = OrderConversation::firstOrCreate([
                     'order_id' => $order->id,
                     'vendor_id' => $vId,
                     'customer_id' => $user->id,
@@ -268,14 +269,14 @@ class OrderService
                 ]);
 
                 if ($isCod) {
-                    \App\Models\OrderMessage::create([
+                    OrderMessage::create([
                         'order_conversation_id' => $conv->id,
                         'sender_id' => $user->id,
                         'sender_type' => 'system',
-                        'message' => "Cash on Delivery (COD) order placed. The vendor may request order confirmation before preparing items.",
-                        'message_type' => 'confirmation_request',
+                        'message' => 'Cash on Delivery (COD) order placed and automatically confirmed. Vendor can proceed to prepare your items.',
+                        'message_type' => 'order_confirmed',
                         'metadata' => [
-                            'action' => 'cod_order_placed',
+                            'action' => 'cod_order_confirmed',
                             'order_number' => $order->order_number,
                             'total_amount' => (float) $order->total_amount,
                         ],
@@ -300,7 +301,7 @@ class OrderService
     {
         $order = Order::where('user_id', $user->id)->findOrFail($orderId);
 
-        if (!in_array($order->payment_method, ['gcash', 'maya'])) {
+        if (! in_array($order->payment_method, ['gcash', 'maya'])) {
             throw new UnprocessableEntityHttpException('Payment reference is only required for GCash or Maya payments.');
         }
 
@@ -375,12 +376,12 @@ class OrderService
         $isAdmin = $user->is_admin ?? false;
         $vendor = $user->vendor ?? null;
 
-        if (!$isAdmin && !$vendor) {
+        if (! $isAdmin && ! $vendor) {
             throw new AccessDeniedHttpException('Vendor profile not found');
         }
 
         $query = Order::query();
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $query->whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id));
         }
 
@@ -398,7 +399,7 @@ class OrderService
         }
 
         $hasPending = $items->contains(fn ($i) => $i->payment_status === 'pending_verification');
-        if (!$hasPending && $order->payment_status !== 'pending_verification') {
+        if (! $hasPending && $order->payment_status !== 'pending_verification') {
             throw new UnprocessableEntityHttpException('No pending verification for this vendor portion. Current status: '.($items->first()->payment_status ?? $order->payment_status));
         }
 
@@ -499,6 +500,8 @@ class OrderService
      */
     public function getCustomerOrders(User $user, int $perPage = 20)
     {
+        $this->processExpiredOrders(userId: $user->id);
+
         return Order::where('user_id', $user->id)
             ->with([
                 'items.product:id,image',
@@ -513,6 +516,8 @@ class OrderService
      */
     public function getOrder(User $user, int $orderId): Order
     {
+        $this->processExpiredOrders(userId: $user->id);
+
         return Order::where('user_id', $user->id)
             ->with([
                 'items.product:id,image',
@@ -527,6 +532,8 @@ class OrderService
      */
     public function track(User $user, int $orderId): Order
     {
+        $this->processExpiredOrders(userId: $user->id);
+
         return Order::where('user_id', $user->id)
             ->with([
                 'items.product:id,image',
@@ -616,6 +623,8 @@ class OrderService
             return collect();
         }
 
+        $this->processExpiredOrders(vendorId: $vendor->id);
+
         // Find all orders that have at least one item for this vendor
         $orders = Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
             ->with([
@@ -628,11 +637,21 @@ class OrderService
         foreach ($orders as $order) {
             $firstItem = $order->items->first();
             if ($firstItem) {
-                if (!empty($firstItem->payment_status)) {
+                if (! empty($firstItem->payment_status)) {
                     $order->payment_status = $firstItem->payment_status;
                 }
-                if (!empty($firstItem->payment_reference_number)) {
+                if (! empty($firstItem->payment_reference_number)) {
                     $order->payment_reference_number = $firstItem->payment_reference_number;
+                }
+                if ($firstItem->ready_at) {
+                    $order->ready_at = $firstItem->ready_at;
+                    $order->pickup_expires_at = $firstItem->pickup_expires_at
+                        ?? $firstItem->ready_at->copy()->addMinutes(self::PICKUP_TIMEOUT_MINUTES);
+                }
+                if ($firstItem->status === 'cancelled') {
+                    $order->cancelled_at = $firstItem->cancelled_at ?? $order->cancelled_at;
+                    $order->cancelled_by = $firstItem->cancelled_by ?? $order->cancelled_by;
+                    $order->cancellation_reason = $firstItem->cancellation_reason ?? $order->cancellation_reason;
                 }
             }
         }
@@ -647,7 +666,7 @@ class OrderService
     {
         $vendor = $user->vendor ?? null;
 
-        if (!$vendor) {
+        if (! $vendor) {
             return collect();
         }
 
@@ -660,10 +679,10 @@ class OrderService
         foreach ($orders as $order) {
             $firstItem = $order->items->first();
             if ($firstItem) {
-                if (!empty($firstItem->payment_status)) {
+                if (! empty($firstItem->payment_status)) {
                     $order->payment_status = $firstItem->payment_status;
                 }
-                if (!empty($firstItem->payment_reference_number)) {
+                if (! empty($firstItem->payment_reference_number)) {
                     $order->payment_reference_number = $firstItem->payment_reference_number;
                 }
             }
@@ -694,8 +713,16 @@ class OrderService
      * Processing status removed: pending → confirmed → ready → completed.
      * When vendor confirms a pending portion, it automatically moves to Ready.
      */
-    public function updateOrderStatus(User $user, int $orderId, string $status): Order
+    /**
+     * Update order status for a specific vendor's portion.
+     * Enforces 1-hour Ready-for-Pickup rule on vendor cancellation and restores stock.
+     */
+    public function updateOrderStatus(User $user, int $orderId, string $status, ?string $reason = null): Order
     {
+        if ($status === 'cancelled') {
+            return $this->cancelByVendor($user, $orderId, $reason);
+        }
+
         $vendor = $user->vendor ?? null;
 
         if (! $vendor) {
@@ -705,6 +732,8 @@ class OrderService
         if ($status === 'processing') {
             throw new UnprocessableEntityHttpException('Processing status has been removed. Use Ready instead.');
         }
+
+        $this->processExpiredOrders(vendorId: $vendor->id);
 
         // Confirm this vendor has items in this order (load ALL items for aggregation)
         $order = Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
@@ -716,24 +745,58 @@ class OrderService
         }
 
         $portionStatus = $this->portionStatus($order, $vendor->id);
+        if ($portionStatus === 'cancelled') {
+            throw new UnprocessableEntityHttpException('This order portion has already been cancelled.');
+        }
 
         // Auto-advance: pending + confirm => directly to Ready (one-click confirm)
         $effectiveStatus = ($portionStatus === 'pending' && $status === 'confirmed') ? 'ready' : $status;
+        $now = now();
+        $vendorItemsBefore = $order->items->where('vendor_id', $vendor->id);
+        $firstItemBefore = $vendorItemsBefore->first();
+        $vendorConfirmedAt = $firstItemBefore?->vendor_confirmed_at ?? $now;
 
-        // Update ONLY this vendor's items — never another vendor's portion.
-        $order->items()
-            ->where('vendor_id', $vendor->id)
-            ->update(['status' => $effectiveStatus]);
-
-        if ($portionStatus === 'pending' && $status === 'confirmed') {
-            OrderStatusHistory::create([
-                'order_id' => $order->id,
-                'status' => 'confirmed',
-                'note' => "Portion confirmed by {$vendor->stall_name}",
-            ]);
+        $itemUpdate = ['status' => $effectiveStatus];
+        if ($effectiveStatus === 'confirmed') {
+            $itemUpdate['vendor_confirmed_at'] = $vendorConfirmedAt;
+        } elseif ($effectiveStatus === 'ready') {
+            $readyAt = $firstItemBefore?->ready_at ?? $now;
+            $itemUpdate['vendor_confirmed_at'] = $vendorConfirmedAt;
+            $itemUpdate['ready_at'] = $readyAt;
+            $itemUpdate['pickup_expires_at'] = $firstItemBefore?->pickup_expires_at
+                ?? $readyAt->copy()->addMinutes(self::PICKUP_TIMEOUT_MINUTES);
+        } elseif ($effectiveStatus === 'completed') {
+            $itemUpdate['vendor_confirmed_at'] = $vendorConfirmedAt;
         }
 
-        $this->refreshOverallStatus($order->fresh('items'), "Portion updated to {$effectiveStatus} by {$vendor->stall_name}");
+        DB::transaction(function () use ($order, $vendor, $status, $portionStatus, $effectiveStatus, $itemUpdate, $user) {
+            // Update ONLY this vendor's items — never another vendor's portion.
+            $order->items()
+                ->where('vendor_id', $vendor->id)
+                ->update($itemUpdate);
+
+            if ($portionStatus === 'pending' && $status === 'confirmed') {
+                OrderStatusHistory::create([
+                    'order_id' => $order->id,
+                    'status' => 'confirmed',
+                    'note' => "Portion confirmed by {$vendor->stall_name}",
+                ]);
+            }
+
+            // Deduct vendor inventory ONLY once items are marked Completed (picked up).
+            if ($effectiveStatus === 'completed' && $portionStatus !== 'completed') {
+                $completedItems = $order->items()->where('vendor_id', $vendor->id)->get();
+                $this->deductCompletedItems($order, $completedItems, $user->name);
+            }
+
+            $freshOrder = $order->fresh('items');
+            $hasPendingItems = $freshOrder->items->contains(fn (OrderItem $item) => $item->status === 'pending');
+            if (! $hasPendingItems && $freshOrder->confirmation_expires_at !== null) {
+                $freshOrder->update(['confirmation_expires_at' => null]);
+            }
+
+            $this->refreshOverallStatus($freshOrder, "Portion updated to {$effectiveStatus} by {$vendor->stall_name}");
+        });
 
         if ($portionStatus !== $effectiveStatus) {
             $vendorItems = $order->items()->where('vendor_id', $vendor->id)->get();
@@ -746,7 +809,491 @@ class OrderService
             );
         }
 
-        return $order->fresh()->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+        $result = $order->fresh()->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+        $firstResultItem = $result->items->first();
+        if ($firstResultItem && $firstResultItem->ready_at) {
+            $result->ready_at = $firstResultItem->ready_at;
+            $result->pickup_expires_at = $firstResultItem->pickup_expires_at;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Customer cancels an entire pending order before any vendor confirms it.
+     */
+    public function cancelByCustomer(User $user, int $orderId, ?string $reason = null): Order
+    {
+        $this->processExpiredOrders(userId: $user->id);
+
+        $order = Order::where('user_id', $user->id)
+            ->with(['items.vendor.user', 'items.product', 'user'])
+            ->findOrFail($orderId);
+
+        $this->ensureCustomerCanCancel($order);
+
+        $trimmedReason = $reason ? trim($reason) : null;
+        $effectiveReason = $trimmedReason ?: 'Cancelled by customer before vendor confirmation.';
+
+        $cancelledItems = DB::transaction(function () use ($order, $user, $effectiveReason) {
+            $lockedOrder = Order::whereKey($order->id)
+                ->with(['items.vendor.user', 'user'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->ensureCustomerCanCancel($lockedOrder);
+
+            $activeItems = $lockedOrder->items->where('status', '!=', 'cancelled');
+
+            $this->restoreVendorItemsAndCancel(
+                order: $lockedOrder,
+                itemsToCancel: $activeItems,
+                actorName: $user->name,
+                cancelledBy: 'customer',
+                reason: $effectiveReason,
+                historyNote: "Order cancelled by customer ({$user->name}).".($effectiveReason ? " Reason: {$effectiveReason}" : ''),
+            );
+
+            $this->appendCancellationChatMessages(
+                order: $lockedOrder,
+                senderUserId: $user->id,
+                cancelledBy: 'customer',
+                reason: $effectiveReason,
+                message: "Order #{$lockedOrder->order_number} was CANCELLED by {$user->name} before vendor confirmation. Stock has been restored.",
+            );
+
+            return $activeItems;
+        });
+
+        $this->notificationService->notifyVendorsOrderCancelled($order, $cancelledItems, $trimmedReason);
+
+        return $order->fresh()->load([
+            'items.product:id,image',
+            'items.vendor:id,stall_name,stall_location,gcash_number,maya_number,gcash_qr_path,maya_qr_path',
+        ]);
+    }
+
+    /**
+     * Vendor cancels their portion of an order (Ready orders require >= 1 hour unclaimed).
+     */
+    public function cancelByVendor(User $user, int $orderId, ?string $reason = null): Order
+    {
+        $vendor = $user->vendor ?? null;
+
+        if (! $vendor) {
+            throw new AccessDeniedHttpException('Vendor profile not found');
+        }
+
+        $this->processExpiredOrders(vendorId: $vendor->id);
+
+        $order = Order::whereHas('items', fn ($q) => $q->where('vendor_id', $vendor->id))
+            ->with(['items', 'user'])
+            ->findOrFail($orderId);
+
+        $trimmedReason = $reason ? trim($reason) : null;
+        $effectiveReason = $trimmedReason ?: 'Order was not picked up within 1 hour of being ready.';
+
+        $cancelledItems = DB::transaction(function () use ($order, $vendor, $user, $effectiveReason) {
+            $lockedOrder = Order::whereKey($order->id)
+                ->with(['items', 'user'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $vendorItems = $lockedOrder->items->where('vendor_id', $vendor->id);
+            $this->ensureVendorCanCancelPortion($lockedOrder, $vendorItems);
+
+            $this->restoreVendorItemsAndCancel(
+                order: $lockedOrder,
+                itemsToCancel: $vendorItems,
+                actorName: $user->name,
+                cancelledBy: 'vendor',
+                reason: $effectiveReason,
+                historyNote: "Portion cancelled by {$vendor->stall_name}.".($effectiveReason ? " Reason: {$effectiveReason}" : ''),
+                vendorId: $vendor->id,
+            );
+
+            $this->appendCancellationChatMessages(
+                order: $lockedOrder,
+                senderUserId: $user->id,
+                cancelledBy: 'vendor',
+                reason: $effectiveReason,
+                message: "Order #{$lockedOrder->order_number} for {$vendor->stall_name} was CANCELLED by vendor. Reason: {$effectiveReason}",
+                vendorId: $vendor->id,
+            );
+
+            return $vendorItems;
+        });
+
+        $this->notificationService->notifyCustomerOrderStatus(
+            $order,
+            $vendor,
+            $cancelledItems,
+            'cancelled',
+            $effectiveReason,
+        );
+
+        $result = $order->fresh()->load(['items' => fn ($q) => $q->where('vendor_id', $vendor->id), 'user:id,name,email']);
+        $firstResultItem = $result->items->first();
+        if ($firstResultItem && $firstResultItem->status === 'cancelled') {
+            $result->cancelled_at = $firstResultItem->cancelled_at ?? $result->cancelled_at;
+            $result->cancelled_by = $firstResultItem->cancelled_by ?? $result->cancelled_by;
+            $result->cancellation_reason = $firstResultItem->cancellation_reason ?? $result->cancellation_reason;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Auto-cancel unconfirmed pending orders whose 1-hour confirmation window has expired.
+     */
+    public function processExpiredOrders(?int $userId = null, ?int $vendorId = null): int
+    {
+        $query = Order::query()
+            ->where('status', 'pending')
+            ->where('confirmation_status', 'pending_confirmation')
+            ->whereNotNull('confirmation_expires_at')
+            ->where('confirmation_expires_at', '<=', now());
+
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+
+        if ($vendorId !== null) {
+            $query->whereHas('items', fn ($q) => $q->where('vendor_id', $vendorId));
+        }
+
+        $candidateIds = $query->pluck('id');
+        if ($candidateIds->isEmpty()) {
+            return 0;
+        }
+
+        $autoReason = 'Automatically cancelled after 1 hour without customer confirmation.';
+        $cancelledCount = 0;
+
+        foreach ($candidateIds as $orderId) {
+            $autoCancelledItems = null;
+            $lockedOrder = null;
+
+            DB::transaction(function () use ($orderId, $autoReason, &$autoCancelledItems, &$lockedOrder) {
+                $lockedOrder = Order::whereKey($orderId)
+                    ->with(['items.vendor.user', 'user'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedOrder) {
+                    return;
+                }
+
+                if ($lockedOrder->status !== 'pending' || $lockedOrder->confirmation_status !== 'pending_confirmation') {
+                    return;
+                }
+
+                if (! $lockedOrder->confirmation_expires_at || $lockedOrder->confirmation_expires_at->isFuture()) {
+                    return;
+                }
+
+                $pendingUnconfirmed = $lockedOrder->items->filter(
+                    fn (OrderItem $item) => $item->status === 'pending' && $item->vendor_confirmed_at === null
+                );
+
+                if ($pendingUnconfirmed->isEmpty()) {
+                    return;
+                }
+
+                $this->restoreVendorItemsAndCancel(
+                    order: $lockedOrder,
+                    itemsToCancel: $pendingUnconfirmed,
+                    actorName: 'System Auto-Cancel',
+                    cancelledBy: 'system',
+                    reason: $autoReason,
+                    historyNote: "Order #{$lockedOrder->order_number} automatically cancelled after 1 hour without customer confirmation.",
+                );
+
+                $this->appendCancellationChatMessages(
+                    order: $lockedOrder,
+                    senderUserId: $lockedOrder->user_id,
+                    cancelledBy: 'system',
+                    reason: $autoReason,
+                    message: "Order #{$lockedOrder->order_number} was AUTOMATICALLY CANCELLED after 1 hour without confirmation. Stock has been restored.",
+                );
+
+                $autoCancelledItems = $pendingUnconfirmed;
+            });
+
+            if ($autoCancelledItems && $lockedOrder) {
+                $this->notificationService->notifyOrderAutoCancelled($lockedOrder, $autoCancelledItems, $autoReason);
+                $cancelledCount++;
+            }
+        }
+
+        return $cancelledCount;
+    }
+
+    /**
+     * Validate that a customer is allowed to cancel before the vendor confirms.
+     */
+    public function ensureCustomerCanCancel(Order $order, ?int $vendorId = null): void
+    {
+        if ($order->status === 'cancelled') {
+            throw new UnprocessableEntityHttpException('This order has already been cancelled.');
+        }
+
+        if ($order->status === 'completed') {
+            throw new UnprocessableEntityHttpException('Cannot cancel an order that is already completed.');
+        }
+
+        $items = $vendorId ? $order->items->where('vendor_id', $vendorId) : $order->items;
+
+        if ($items->isEmpty()) {
+            throw new AccessDeniedHttpException('No items found to cancel for this order.');
+        }
+
+        if ($items->every(fn (OrderItem $item) => $item->status === 'cancelled')) {
+            throw new UnprocessableEntityHttpException('This order has already been cancelled.');
+        }
+
+        $lockedByConfirmation = $order->status !== 'pending'
+            || $items->contains(
+                fn (OrderItem $item) => in_array($item->status, ['confirmed', 'ready', 'completed'], true)
+                    || $item->vendor_confirmed_at !== null
+            );
+
+        if ($lockedByConfirmation) {
+            throw new UnprocessableEntityHttpException('Order can no longer be cancelled once confirmed by the vendor.');
+        }
+    }
+
+    /**
+     * Validate that a vendor may cancel their portion (Ready portions require >= 1 hour unclaimed).
+     *
+     * @param  Collection<int, OrderItem>  $vendorItems
+     */
+    public function ensureVendorCanCancelPortion(Order $order, Collection $vendorItems): void
+    {
+        if ($vendorItems->isEmpty()) {
+            throw new AccessDeniedHttpException('No items found for this vendor in this order.');
+        }
+
+        $portionStatus = $vendorItems->first()->status ?? $order->status;
+
+        if ($order->status === 'cancelled' || $portionStatus === 'cancelled') {
+            throw new UnprocessableEntityHttpException('This order has already been cancelled.');
+        }
+
+        if ($order->status === 'completed' || $portionStatus === 'completed') {
+            throw new UnprocessableEntityHttpException('Cannot cancel an order that is already completed.');
+        }
+
+        if ($portionStatus === 'ready') {
+            $readyAt = $vendorItems->first()->ready_at ?? $order->ready_at;
+            $pickupExpiresAt = $vendorItems->first()->pickup_expires_at
+                ?? $order->pickup_expires_at
+                ?? ($readyAt ? $readyAt->copy()->addMinutes(self::PICKUP_TIMEOUT_MINUTES) : null);
+
+            if (! $pickupExpiresAt || now()->lt($pickupExpiresAt)) {
+                throw new UnprocessableEntityHttpException(
+                    'You can cancel a Ready for Pickup order only after 1 hour has passed without customer pickup.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Deduct inventory stock for completed order items (idempotent per order item).
+     *
+     * @param  Collection<int, OrderItem>  $items
+     */
+    public function deductCompletedItems(Order $order, Collection $items, string $actorName): void
+    {
+        foreach ($items as $item) {
+            $alreadyDeducted = InventoryLog::where('reference_number', $order->order_number)
+                ->where('vendor_id', $item->vendor_id)
+                ->where('product_id', $item->product_id)
+                ->where('type', 'sold')
+                ->exists();
+
+            if ($alreadyDeducted) {
+                continue;
+            }
+
+            $inventory = Inventory::where('product_id', $item->product_id)
+                ->where('vendor_id', $item->vendor_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $inventory) {
+                continue;
+            }
+
+            $before = (float) $inventory->stock_quantity;
+            $qty = (float) $item->quantity;
+            $after = max(0.0, round($before - $qty, 2));
+            $deducted = round($before - $after, 2);
+
+            if ($deducted <= 0) {
+                continue;
+            }
+
+            $inventory->update(['stock_quantity' => $after]);
+
+            InventoryLog::create([
+                'inventory_id' => $inventory->id,
+                'vendor_id' => $inventory->vendor_id,
+                'product_id' => $item->product_id,
+                'type' => 'sold',
+                'quantity_before' => $before,
+                'quantity_change' => -$deducted,
+                'quantity_after' => $after,
+                'reason' => "Order #{$order->order_number} completed (picked up)",
+                'reference_number' => $order->order_number,
+                'unit_cost' => $inventory->cost_price,
+                'performed_by' => $actorName,
+            ]);
+        }
+    }
+
+    /**
+     * Mark given order items (and order if empty) cancelled; restores stock only if a prior sale deduction exists.
+     *
+     * @param  Collection<int, OrderItem>  $itemsToCancel
+     */
+    public function restoreVendorItemsAndCancel(
+        Order $order,
+        Collection $itemsToCancel,
+        string $actorName,
+        string $cancelledBy,
+        string $reason,
+        string $historyNote,
+        ?int $vendorId = null,
+    ): void {
+        $now = now();
+        $activeItems = $itemsToCancel->where('status', '!=', 'cancelled');
+
+        foreach ($activeItems as $item) {
+            $soldAmount = (float) InventoryLog::where('reference_number', $order->order_number)
+                ->where('vendor_id', $item->vendor_id)
+                ->where('product_id', $item->product_id)
+                ->where('type', 'sold')
+                ->sum('quantity_change');
+
+            $returnedAmount = (float) InventoryLog::where('reference_number', $order->order_number)
+                ->where('vendor_id', $item->vendor_id)
+                ->where('product_id', $item->product_id)
+                ->where('type', 'returned')
+                ->sum('quantity_change');
+
+            // Stock is normally deducted only upon Completed; only restore if previously deducted.
+            $netDeducted = round(abs($soldAmount) - $returnedAmount, 2);
+            if ($soldAmount >= 0 || $netDeducted <= 0) {
+                continue;
+            }
+
+            $inventory = Inventory::where('product_id', $item->product_id)
+                ->where('vendor_id', $item->vendor_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($inventory) {
+                $before = (float) $inventory->stock_quantity;
+                $restored = min((float) $item->quantity, $netDeducted);
+                $after = round($before + $restored, 2);
+
+                $inventory->update(['stock_quantity' => $after]);
+
+                InventoryLog::create([
+                    'inventory_id' => $inventory->id,
+                    'vendor_id' => $item->vendor_id,
+                    'product_id' => $item->product_id,
+                    'type' => 'returned',
+                    'quantity_before' => $before,
+                    'quantity_change' => $restored,
+                    'quantity_after' => $after,
+                    'reason' => "Order #{$order->order_number} cancelled by {$actorName}".($reason ? ": {$reason}" : ''),
+                    'reference_number' => $order->order_number,
+                    'unit_cost' => $inventory->cost_price,
+                    'performed_by' => $actorName,
+                ]);
+            }
+        }
+
+        $itemIds = $activeItems->pluck('id')->all();
+        if (! empty($itemIds)) {
+            OrderItem::whereIn('id', $itemIds)->update([
+                'status' => 'cancelled',
+                'confirmation_status' => 'cancelled',
+                'cancelled_at' => $now,
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+            ]);
+        }
+
+        $affectedVendorIds = $vendorId !== null
+            ? [$vendorId]
+            : $activeItems->pluck('vendor_id')->unique()->values()->all();
+
+        if (! empty($affectedVendorIds)) {
+            OrderConversation::where('order_id', $order->id)
+                ->whereIn('vendor_id', $affectedVendorIds)
+                ->update(['confirmation_status' => 'cancelled']);
+        }
+
+        $freshOrder = $order->fresh('items');
+        $this->refreshOverallStatus($freshOrder, $historyNote);
+
+        $nonCancelledItems = $freshOrder->items->where('status', '!=', 'cancelled');
+        if ($nonCancelledItems->isEmpty()) {
+            $order->update([
+                'status' => 'cancelled',
+                'confirmation_status' => 'cancelled',
+                'confirmation_expires_at' => null,
+                'cancelled_at' => $now,
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+            ]);
+        }
+
+        OrderStatusHistory::create([
+            'order_id' => $order->id,
+            'status' => 'cancelled',
+            'note' => $historyNote,
+        ]);
+    }
+
+    /**
+     * Append a cancellation notice to existing order conversations when available.
+     */
+    private function appendCancellationChatMessages(
+        Order $order,
+        int $senderUserId,
+        string $cancelledBy,
+        string $reason,
+        string $message,
+        ?int $vendorId = null,
+    ): void {
+        $conversations = OrderConversation::where('order_id', $order->id)
+            ->when($vendorId !== null, fn ($q) => $q->where('vendor_id', $vendorId))
+            ->get();
+
+        foreach ($conversations as $conversation) {
+            OrderMessage::create([
+                'order_conversation_id' => $conversation->id,
+                'sender_id' => $senderUserId,
+                'sender_type' => $cancelledBy === 'system' ? 'system' : $cancelledBy,
+                'message' => $message,
+                'message_type' => 'order_cancelled',
+                'metadata' => [
+                    'action' => 'order_cancelled',
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'vendor_id' => $conversation->vendor_id,
+                    'cancelled_by' => $cancelledBy,
+                    'reason' => $reason,
+                ],
+                'is_read' => false,
+            ]);
+
+            $conversation->update(['last_message_at' => now()]);
+        }
     }
 
     /**
@@ -769,22 +1316,40 @@ class OrderService
     public function refreshOverallStatus(Order $order, ?string $note = null): bool
     {
         $ranks = self::PORTION_STATUS_RANKS;
+        $activeItems = $order->items->where('status', '!=', 'cancelled');
 
-        $overall = $order->items->reduce(
-            fn (?string $carry, $item) => $carry === null || ($ranks[$item->status] ?? 0) < ($ranks[$carry] ?? 0) ? $item->status : $carry
-        ) ?? 'pending';
+        if ($activeItems->isEmpty()) {
+            $overall = 'cancelled';
+        } else {
+            $overall = $activeItems->reduce(
+                fn (?string $carry, $item) => $carry === null || ($ranks[$item->status] ?? 0) < ($ranks[$carry] ?? 0) ? $item->status : $carry
+            ) ?? 'pending';
+        }
 
         if ($overall === $order->status) {
             return false;
         }
 
-        $order->update(['status' => $overall]);
+        $updateData = ['status' => $overall];
+        if ($overall === 'ready') {
+            $latestReadyAt = $activeItems->max('ready_at') ?? now();
+            $readyAtCarbon = $latestReadyAt instanceof Carbon ? $latestReadyAt : Carbon::parse($latestReadyAt);
+            $updateData['ready_at'] = $order->ready_at ?? $readyAtCarbon;
+            $updateData['pickup_expires_at'] = $order->pickup_expires_at ?? $readyAtCarbon->copy()->addMinutes(self::PICKUP_TIMEOUT_MINUTES);
+            $updateData['confirmation_expires_at'] = null;
+        } elseif ($overall === 'completed') {
+            $updateData['confirmation_expires_at'] = null;
+        }
 
-        OrderStatusHistory::create([
-            'order_id' => $order->id,
-            'status' => $overall,
-            'note' => $note ?? "Order status updated to {$overall}",
-        ]);
+        $order->update($updateData);
+
+        if ($overall !== 'cancelled') {
+            OrderStatusHistory::create([
+                'order_id' => $order->id,
+                'status' => $overall,
+                'note' => $note ?? "Order status updated to {$overall}",
+            ]);
+        }
 
         return true;
     }
@@ -798,7 +1363,7 @@ class OrderService
     {
         $products = Product::whereIn('id', $productIds)->get();
         $vendorIds = $products->pluck('vendor_id')->unique()->filter()->values();
-        $vendors = \App\Models\Vendor::whereIn('id', $vendorIds)->get();
+        $vendors = Vendor::whereIn('id', $vendorIds)->get();
 
         return $vendors->map(function ($vendor) use ($products, $quantities) {
             $vendorProducts = $products->where('vendor_id', $vendor->id);
@@ -825,7 +1390,7 @@ class OrderService
             if ($vendor->gcash_qr_path) {
                 try {
                     $host = request()->getSchemeAndHttpHost();
-                    $gcashUrl = rtrim($host, '/') . '/storage/' . ltrim($vendor->gcash_qr_path, '/');
+                    $gcashUrl = rtrim($host, '/').'/storage/'.ltrim($vendor->gcash_qr_path, '/');
                 } catch (\Throwable $e) {
                     $gcashUrl = Storage::disk('public')->url($vendor->gcash_qr_path);
                 }
@@ -833,14 +1398,14 @@ class OrderService
             if ($vendor->maya_qr_path) {
                 try {
                     $host = request()->getSchemeAndHttpHost();
-                    $mayaUrl = rtrim($host, '/') . '/storage/' . ltrim($vendor->maya_qr_path, '/');
+                    $mayaUrl = rtrim($host, '/').'/storage/'.ltrim($vendor->maya_qr_path, '/');
                 } catch (\Throwable $e) {
                     $mayaUrl = Storage::disk('public')->url($vendor->maya_qr_path);
                 }
             }
 
-            $hasGcash = !empty($vendor->gcash_number) || !empty($vendor->gcash_qr_path);
-            $hasMaya = !empty($vendor->maya_number) || !empty($vendor->maya_qr_path);
+            $hasGcash = ! empty($vendor->gcash_number) || ! empty($vendor->gcash_qr_path);
+            $hasMaya = ! empty($vendor->maya_number) || ! empty($vendor->maya_qr_path);
 
             return [
                 'vendor_id' => $vendor->id,
@@ -858,12 +1423,12 @@ class OrderService
                 'gcash' => [
                     'number' => $vendor->gcash_number,
                     'qr_url' => $gcashUrl,
-                    'has_qr' => !empty($vendor->gcash_qr_path),
+                    'has_qr' => ! empty($vendor->gcash_qr_path),
                 ],
                 'maya' => [
                     'number' => $vendor->maya_number,
                     'qr_url' => $mayaUrl,
-                    'has_qr' => !empty($vendor->maya_qr_path),
+                    'has_qr' => ! empty($vendor->maya_qr_path),
                 ],
                 'has_ewallet' => $hasGcash || $hasMaya,
             ];
@@ -1031,6 +1596,7 @@ class OrderService
 
             $dayOrders = $completedOrders->filter(function ($o) use ($dayStart, $dayEnd) {
                 $t = $o->updated_at ?? $o->created_at;
+
                 return $t >= $dayStart && $t <= $dayEnd;
             });
 

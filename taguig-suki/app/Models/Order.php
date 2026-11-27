@@ -15,6 +15,12 @@ class Order extends Model
         'confirmation_status',
         'confirmed_at',
         'confirmed_by',
+        'confirmation_expires_at',
+        'ready_at',
+        'pickup_expires_at',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
         'total_amount',
         'payment_method',
         'payment_reference_number',
@@ -36,6 +42,10 @@ class Order extends Model
             'payment_submitted_at' => 'datetime',
             'payment_verified_at' => 'datetime',
             'confirmed_at' => 'datetime',
+            'confirmation_expires_at' => 'datetime',
+            'ready_at' => 'datetime',
+            'pickup_expires_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -74,7 +84,7 @@ class Order extends Model
      */
     public function getVendorPortionsAttribute(): array
     {
-        if (!$this->relationLoaded('items')) {
+        if (! $this->relationLoaded('items')) {
             return [];
         }
 
@@ -88,15 +98,16 @@ class Order extends Model
             $host = null;
             try {
                 $host = request()->getSchemeAndHttpHost();
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+            }
 
             $gcashUrl = null;
             if ($vendor?->gcash_qr_path) {
-                $gcashUrl = $host ? rtrim($host, '/') . '/storage/' . ltrim($vendor->gcash_qr_path, '/') : asset('storage/' . $vendor->gcash_qr_path);
+                $gcashUrl = $host ? rtrim($host, '/').'/storage/'.ltrim($vendor->gcash_qr_path, '/') : asset('storage/'.$vendor->gcash_qr_path);
             }
             $mayaUrl = null;
             if ($vendor?->maya_qr_path) {
-                $mayaUrl = $host ? rtrim($host, '/') . '/storage/' . ltrim($vendor->maya_qr_path, '/') : asset('storage/' . $vendor->maya_qr_path);
+                $mayaUrl = $host ? rtrim($host, '/').'/storage/'.ltrim($vendor->maya_qr_path, '/') : asset('storage/'.$vendor->maya_qr_path);
             }
 
             return [
@@ -106,6 +117,12 @@ class Order extends Model
                 'subtotal' => $subtotal,
                 'status' => $firstItem->status ?? $this->status,
                 'confirmation_status' => $firstItem->confirmation_status ?? $this->confirmation_status ?? 'not_required',
+                'vendor_confirmed_at' => $firstItem->vendor_confirmed_at?->toISOString(),
+                'ready_at' => $firstItem->ready_at?->toISOString(),
+                'pickup_expires_at' => $firstItem->pickup_expires_at?->toISOString(),
+                'cancelled_at' => $firstItem->cancelled_at?->toISOString(),
+                'cancelled_by' => $firstItem->cancelled_by,
+                'cancellation_reason' => $firstItem->cancellation_reason,
                 'payment_status' => $firstItem->payment_status ?? $this->payment_status ?? 'unpaid',
                 'payment_reference_number' => $firstItem->payment_reference_number ?? $this->payment_reference_number,
                 'payment_submitted_at' => $firstItem->payment_submitted_at?->toISOString() ?? $this->payment_submitted_at?->toISOString(),
@@ -114,8 +131,8 @@ class Order extends Model
                 'gcash_qr_url' => $gcashUrl,
                 'maya_number' => $vendor?->maya_number,
                 'maya_qr_url' => $mayaUrl,
-                'has_gcash' => !empty($vendor?->gcash_number) || !empty($vendor?->gcash_qr_path),
-                'has_maya' => !empty($vendor?->maya_number) || !empty($vendor?->maya_qr_path),
+                'has_gcash' => ! empty($vendor?->gcash_number) || ! empty($vendor?->gcash_qr_path),
+                'has_maya' => ! empty($vendor?->maya_number) || ! empty($vendor?->maya_qr_path),
                 'items' => $items->values()->all(),
             ];
         })->values()->all();

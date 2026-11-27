@@ -4,6 +4,9 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\RecipeRecommendation;
+use App\Models\Review;
+use App\Models\Vendor;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  * 4. I-parse ang structured JSON response mula sa Gemini, i-check ang safety, at ilista ang available na ingredients.
  *
  * @category AI_Services
- * @package  TaguigSuki\Services
+ *
  * @see      https://ai.google.dev/docs/gemini_api
  */
 class RecipeService
@@ -34,7 +37,7 @@ class RecipeService
     {
         try {
             $vendorIds = Product::where('is_available', true)->pluck('vendor_id')->unique()->filter()->values();
-            $vendorRatings = \App\Models\Review::where('reviewable_type', \App\Models\Vendor::class)
+            $vendorRatings = Review::where('reviewable_type', Vendor::class)
                 ->whereIn('reviewable_id', $vendorIds)
                 ->selectRaw('reviewable_id, AVG(rating) as avg_rating, COUNT(*) as review_count')
                 ->groupBy('reviewable_id')
@@ -42,7 +45,7 @@ class RecipeService
                 ->keyBy('reviewable_id');
 
             $availableProducts = Product::where('is_available', true)
-                ->with(['vendor.stall', 'vendor:id,stall_name,stall_location'])
+                ->with(['vendor.stall', 'vendor:id,stall_name,stall_location', 'inventory:id,product_id,stock_quantity'])
                 ->get()
                 ->map(function ($p) use ($vendorRatings) {
                     $stallNumber = $p->vendor?->stall?->stall_number ?? $p->vendor?->stall_location ?? 'Stall';
@@ -50,6 +53,8 @@ class RecipeService
                     $r = $vendorRatings->get($p->vendor_id);
                     $rating = $r ? round((float) $r->avg_rating, 1) : 4.8;
                     $reviewCount = $r ? (int) $r->review_count : 0;
+                    $stockQty = $p->inventory ? (float) $p->inventory->stock_quantity : null;
+                    $outOfStock = ! $p->is_available || ($p->inventory !== null && $stockQty <= 0);
 
                     return [
                         'id' => $p->id,
@@ -58,6 +63,9 @@ class RecipeService
                         'price' => (float) $p->price,
                         'unit' => $p->unit,
                         'image' => $p->image,
+                        'is_available' => (bool) ($p->is_available && ! $outOfStock),
+                        'is_out_of_stock' => $outOfStock,
+                        'stock_quantity' => $stockQty,
                         'vendor_id' => $p->vendor_id,
                         'vendor_name' => $vendorName,
                         'stall_location' => $p->vendor?->stall_location ?? 'Taguig Public Market',
@@ -216,7 +224,7 @@ PROMPT;
      * - Response MIME: application/json (Diretsong JSON format para madaling i-parse)
      * - Safety Filters: HARM_CATEGORY_DANGEROUS_CONTENT, HARASSMENT, atbp.
      *
-     * @param string $prompt Prompt na naglalaman ng recipe request at live wet market inventory
+     * @param  string  $prompt  Prompt na naglalaman ng recipe request at live wet market inventory
      * @return string Raw JSON response mula kay Google Gemini
      */
     private function callGemini(string $prompt): string
@@ -319,6 +327,7 @@ PROMPT;
                     if ($idx === count($apiKeys) - 1) {
                         throw new \RuntimeException('AI quota exceeded. All API keys are rate-limited. Please try again in a minute.');
                     }
+
                     continue;
                 }
 
@@ -334,7 +343,7 @@ PROMPT;
 
                 $lastError = $response->body();
                 throw new \RuntimeException('AI service unavailable. Please try again later.');
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            } catch (ConnectionException $e) {
                 Log::warning('[RecipeService] Groq connection failed on key #'.($idx + 1), ['msg' => $e->getMessage()]);
                 $lastError = $e->getMessage();
                 if ($idx < count($apiKeys) - 1) {
@@ -478,8 +487,13 @@ PROMPT;
             }
 
             if (! empty($scoredProducts)) {
-                // Sort ayon sa rating (highest), match score (highest), at presyo (lowest)
+                // Sort ayon sa in-stock muna, rating (highest), match score (highest), at presyo (lowest)
                 usort($scoredProducts, function ($a, $b) {
+                    $oosA = (bool) ($a['product']['is_out_of_stock'] ?? false);
+                    $oosB = (bool) ($b['product']['is_out_of_stock'] ?? false);
+                    if ($oosA !== $oosB) {
+                        return $oosA <=> $oosB;
+                    }
                     $rA = (float) ($a['product']['rating'] ?? 4.5);
                     $rB = (float) ($b['product']['rating'] ?? 4.5);
                     if ($rB != $rA) {
@@ -488,6 +502,7 @@ PROMPT;
                     if ($b['score'] != $a['score']) {
                         return $b['score'] <=> $a['score'];
                     }
+
                     return $a['product']['price'] <=> $b['product']['price'];
                 });
 
@@ -508,6 +523,9 @@ PROMPT;
                         'unit' => $prod['unit'],
                         'category' => $prod['category'],
                         'image' => $prod['image'] ?? null,
+                        'is_available' => (bool) ($prod['is_available'] ?? true),
+                        'is_out_of_stock' => (bool) ($prod['is_out_of_stock'] ?? false),
+                        'stock_quantity' => $prod['stock_quantity'] ?? null,
                         'vendor_id' => $prod['vendor_id'] ?? null,
                         'vendor_name' => $prod['vendor_name'] ?? 'Market Vendor',
                         'stall_name' => $prod['vendor_name'] ?? 'Market Stall',
@@ -534,6 +552,9 @@ PROMPT;
                         'unit' => $bestProduct['unit'],
                         'category' => $bestProduct['category'],
                         'image' => $bestProduct['image'] ?? null,
+                        'is_available' => $bestProduct['is_available'],
+                        'is_out_of_stock' => $bestProduct['is_out_of_stock'],
+                        'stock_quantity' => $bestProduct['stock_quantity'],
                         'vendor_id' => $bestProduct['vendor_id'] ?? null,
                         'vendor_name' => $bestProduct['vendor_name'] ?? 'Market Vendor',
                         'stall_number' => $bestProduct['stall_number'] ?? 'Stall',

@@ -4,11 +4,8 @@ namespace App\Services;
 
 use App\Events\NewOrderMessageEvent;
 use App\Events\OrderConfirmationUpdatedEvent;
-use App\Models\Inventory;
-use App\Models\InventoryLog;
 use App\Models\Order;
 use App\Models\OrderConversation;
-use App\Models\OrderItem;
 use App\Models\OrderMessage;
 use App\Models\OrderStatusHistory;
 use App\Models\User;
@@ -29,12 +26,14 @@ class OrderChatService
      */
     public function getOrCreateConversation(int $orderId, int $vendorId, User $user): OrderConversation
     {
+        $this->orderService->processExpiredOrders(vendorId: $vendorId);
+
         $order = Order::with(['items.vendor', 'user'])->findOrFail($orderId);
         $vendor = Vendor::findOrFail($vendorId);
 
         // Verify this vendor actually has items in this order
         $hasItems = $order->items->contains('vendor_id', $vendorId);
-        if (!$hasItems) {
+        if (! $hasItems) {
             throw new NotFoundHttpException("Vendor #{$vendorId} does not have any items in Order #{$orderId}.");
         }
 
@@ -57,7 +56,7 @@ class OrderChatService
         );
 
         return $conversation->load([
-            'order:id,order_number,status,confirmation_status,total_amount,payment_method,payment_status,created_at',
+            'order:id,order_number,status,confirmation_status,confirmation_expires_at,ready_at,pickup_expires_at,cancelled_at,cancelled_by,cancellation_reason,total_amount,payment_method,payment_status,created_at',
             'vendor:id,stall_name,stall_location,user_id',
             'customer:id,name,email',
         ]);
@@ -88,9 +87,9 @@ class OrderChatService
     {
         $order = Order::with(['items.vendor', 'user'])->findOrFail($orderId);
 
-        if (!$user->isAdmin() && (int) $order->user_id !== (int) $user->id) {
+        if (! $user->isAdmin() && (int) $order->user_id !== (int) $user->id) {
             $userVendor = $user->vendor;
-            if (!$userVendor || !$order->items->contains('vendor_id', $userVendor->id)) {
+            if (! $userVendor || ! $order->items->contains('vendor_id', $userVendor->id)) {
                 throw new AccessDeniedHttpException('You are not authorized to access conversations for this order.');
             }
         }
@@ -99,7 +98,7 @@ class OrderChatService
         $vendorIds = $order->items->pluck('vendor_id')->unique()->filter()->values();
 
         // If user is a vendor, restrict only to their own vendor ID
-        if (!$user->isAdmin() && (int) $order->user_id !== (int) $user->id) {
+        if (! $user->isAdmin() && (int) $order->user_id !== (int) $user->id) {
             $userVendor = $user->vendor;
             $vendorIds = $vendorIds->filter(fn ($vId) => (int) $vId === (int) $userVendor->id)->values();
         }
@@ -112,7 +111,7 @@ class OrderChatService
                 $conv->unread_count = $conv->unreadCountFor($user);
                 $conversations->push($conv);
             } catch (\Throwable $e) {
-                Log::warning("Could not load conversation for order {$orderId} vendor {$vId}: " . $e->getMessage());
+                Log::warning("Could not load conversation for order {$orderId} vendor {$vId}: ".$e->getMessage());
             }
         }
 
@@ -180,9 +179,9 @@ class OrderChatService
         $vendor = Vendor::findOrFail($vendorId);
 
         // Only vendor or admin can request confirmation
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $userVendor = $user->vendor;
-            if (!$userVendor || (int) $userVendor->id !== (int) $vendorId) {
+            if (! $userVendor || (int) $userVendor->id !== (int) $vendorId) {
                 throw new AccessDeniedHttpException('Only the vendor can request order confirmation.');
             }
         }
@@ -199,7 +198,11 @@ class OrderChatService
         DB::transaction(function () use ($conversation, $order, $vendorId) {
             $conversation->update(['confirmation_status' => 'pending_confirmation']);
 
-            $order->update(['confirmation_status' => 'pending_confirmation']);
+            $order->update([
+                'confirmation_status' => 'pending_confirmation',
+                'confirmation_expires_at' => $order->confirmation_expires_at
+                    ?? now()->addMinutes(OrderService::CONFIRMATION_TIMEOUT_MINUTES),
+            ]);
 
             $order->items()
                 ->where('vendor_id', $vendorId)
@@ -281,6 +284,7 @@ class OrderChatService
 
             $order->update([
                 'confirmation_status' => 'confirmed',
+                'confirmation_expires_at' => null,
                 'confirmed_at' => now(),
                 'confirmed_by' => $user->id,
             ]);
@@ -301,7 +305,7 @@ class OrderChatService
             OrderStatusHistory::create([
                 'order_id' => $order->id,
                 'status' => 'confirmed',
-                'note' => "Order confirmed by {$user->name}." . ($note ? " Note: {$note}" : ""),
+                'note' => "Order confirmed by {$user->name}.".($note ? " Note: {$note}" : ''),
             ]);
         });
 
@@ -360,8 +364,8 @@ class OrderChatService
     }
 
     /**
-     * Customer (or authorized vendor) cancels the order through chat before items are prepared.
-     * Restores deducted inventory stock.
+     * Customer (or authorized vendor) cancels the order through chat.
+     * Restores deducted inventory stock and enforces confirmation/pickup rules.
      */
     public function cancelOrder(User $user, int $orderId, int $vendorId, ?string $reason = null): array
     {
@@ -369,73 +373,47 @@ class OrderChatService
         $order = Order::with(['items.product', 'user'])->findOrFail($orderId);
         $vendor = Vendor::findOrFail($vendorId);
 
-        if ($order->status === 'completed') {
-            throw new UnprocessableEntityHttpException('Cannot cancel an order that is already completed.');
+        $senderType = $this->determineSenderType($user, $conversation);
+        $vendorItems = $order->items()->where('vendor_id', $vendorId)->get();
+
+        if ($senderType === 'customer') {
+            $this->orderService->ensureCustomerCanCancel($order, $vendorId);
+        } else {
+            $this->orderService->ensureVendorCanCancelPortion($order, $vendorItems);
         }
 
-        $senderType = $this->determineSenderType($user, $conversation);
+        $trimmedReason = $reason ? trim($reason) : null;
+        $effectiveReason = $trimmedReason ?: "Cancelled via order chat by {$user->name}.";
 
-        DB::transaction(function () use ($conversation, $order, $vendorId, $user, $reason) {
+        DB::transaction(function () use ($conversation, $order, $vendorId, $user, $senderType, $trimmedReason, $effectiveReason) {
+            $lockedOrder = Order::whereKey($order->id)
+                ->with(['items.product', 'user'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedVendorItems = $lockedOrder->items->where('vendor_id', $vendorId);
+
+            if ($senderType === 'customer') {
+                $this->orderService->ensureCustomerCanCancel($lockedOrder, $vendorId);
+            } else {
+                $this->orderService->ensureVendorCanCancelPortion($lockedOrder, $lockedVendorItems);
+            }
+
             $conversation->update(['confirmation_status' => 'cancelled']);
 
-            // Get vendor's items to restore inventory
-            $vendorItems = $order->items()->where('vendor_id', $vendorId)->get();
-
-            foreach ($vendorItems as $item) {
-                $inventory = Inventory::where('product_id', $item->product_id)
-                    ->where('vendor_id', $vendorId)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($inventory) {
-                    $before = (float) $inventory->stock_quantity;
-                    $restored = (float) $item->quantity;
-                    $after = round($before + $restored, 2);
-
-                    $inventory->update(['stock_quantity' => $after]);
-
-                    InventoryLog::create([
-                        'inventory_id' => $inventory->id,
-                        'vendor_id' => $vendorId,
-                        'product_id' => $item->product_id,
-                        'type' => 'returned',
-                        'quantity_before' => $before,
-                        'quantity_change' => $restored,
-                        'quantity_after' => $after,
-                        'reason' => "Order #{$order->order_number} cancelled by {$user->name}" . ($reason ? ": {$reason}" : ""),
-                        'reference_number' => $order->order_number,
-                        'unit_cost' => $inventory->cost_price,
-                        'performed_by' => $user->name,
-                    ]);
-                }
-            }
-
-            // Update vendor's item status
-            $order->items()
-                ->where('vendor_id', $vendorId)
-                ->update([
-                    'status' => 'cancelled',
-                    'confirmation_status' => 'cancelled',
-                ]);
-
-            // Recompute overall order status
-            $this->orderService->refreshOverallStatus($order->fresh('items'), "Vendor {$vendorId} portion cancelled.");
-
-            // If all items in the order are cancelled, ensure whole order is cancelled
-            $nonCancelledItems = $order->fresh('items')->items->where('status', '!=', 'cancelled');
-            if ($nonCancelledItems->isEmpty()) {
-                $order->update(['status' => 'cancelled', 'confirmation_status' => 'cancelled']);
-            }
-
-            OrderStatusHistory::create([
-                'order_id' => $order->id,
-                'status' => 'cancelled',
-                'note' => "Portion cancelled by {$user->name}." . ($reason ? " Reason: {$reason}" : ""),
-            ]);
+            $this->orderService->restoreVendorItemsAndCancel(
+                order: $lockedOrder,
+                itemsToCancel: $lockedVendorItems,
+                actorName: $user->name,
+                cancelledBy: $senderType,
+                reason: $effectiveReason,
+                historyNote: "Portion cancelled by {$user->name}.".($trimmedReason ? " Reason: {$trimmedReason}" : ''),
+                vendorId: $vendorId,
+            );
         });
 
-        $cancelText = "Order #{$order->order_number} portion for {$vendor->stall_name} has been CANCELLED by {$user->name}." .
-            ($reason ? " Reason: {$reason}." : "") . " Items were not prepared and stock was restored.";
+        $cancelText = "Order #{$order->order_number} portion for {$vendor->stall_name} has been CANCELLED by {$user->name}.".
+            ($reason ? " Reason: {$reason}." : '').' Items were not prepared and stock was restored.';
 
         $metadata = [
             'action' => 'order_cancelled',
@@ -496,7 +474,7 @@ class OrderChatService
     {
         $conversation = OrderConversation::findOrFail($conversationId);
 
-        if (!$conversation->isAuthorized($user)) {
+        if (! $conversation->isAuthorized($user)) {
             throw new AccessDeniedHttpException('You are not authorized to access this conversation.');
         }
 
@@ -593,7 +571,7 @@ class OrderChatService
         try {
             broadcast($event);
         } catch (\Throwable $e) {
-            Log::warning('Broadcast failed: ' . $e->getMessage(), [
+            Log::warning('Broadcast failed: '.$e->getMessage(), [
                 'event' => get_class($event),
                 'error' => $e->getMessage(),
             ]);
