@@ -162,29 +162,6 @@ export default function RentalMonitoringIndex({
         });
     }
 
-    function handleQuickToggleStatus(rental: RentalPayment, newStatus: 'paid' | 'unpaid') {
-        const actionLabel = newStatus === 'paid' ? 'Mark as Paid' : 'Mark as Unpaid';
-        if (
-            confirm(
-                `${actionLabel} for ${rental.vendor?.stall_name || 'Vendor'} (${rental.billing_period})?\nAmount: ₱${Number(
-                    rental.amount
-                ).toFixed(2)}`
-            )
-        ) {
-            router.patch(
-                `/admin/dashboard/vendors/rentals/${rental.id}/status`,
-                {
-                    status: newStatus,
-                    payment_method: newStatus === 'paid' ? (rental.payment_method || 'cash') : null,
-                    paid_at: newStatus === 'paid' ? new Date().toISOString().slice(0, 10) : null,
-                },
-                {
-                    preserveScroll: true,
-                }
-            );
-        }
-    }
-
     function handleGenerateBills(e: React.FormEvent) {
         e.preventDefault();
         genForm.transform((data) => ({
@@ -447,7 +424,6 @@ export default function RentalMonitoringIndex({
                                     rentals.data.map((r) => {
                                         const badge = statusBadge(r.status);
                                         const BadgeIcon = badge.icon;
-                                        const isPaid = r.status === 'paid';
 
                                         return (
                                             <tr key={r.id} className="hover:bg-gray-50/60 transition-colors">
@@ -495,28 +471,7 @@ export default function RentalMonitoringIndex({
                                                 </td>
                                                 <td className="px-4 py-3.5 text-right">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        {/* Quick Status Action Button */}
-                                                        {isPaid ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleQuickToggleStatus(r, 'unpaid')}
-                                                                className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100 transition shadow-sm"
-                                                                title="Revert rental status to Unpaid"
-                                                            >
-                                                                Mark Unpaid
-                                                            </button>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleOpenStatusModal(r, 'paid')}
-                                                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition"
-                                                                title="Mark this rental bill as Paid"
-                                                            >
-                                                                Mark as Paid
-                                                            </button>
-                                                        )}
-
-                                                        {/* Full Edit / Update Status Modal Button */}
+                                                        {/* Update Status Modal Button */}
                                                         <button
                                                             type="button"
                                                             onClick={() => handleOpenStatusModal(r)}
