@@ -146,6 +146,11 @@ class AdminNotificationService
             ];
         }
 
+        $mailer = (string) config('mail.default', 'log');
+        $host = (string) config("mail.mailers.{$mailer}.host", '');
+        $port = (string) config("mail.mailers.{$mailer}.port", '');
+        $endpoint = $host !== '' ? " ({$host}".($port !== '' ? ":{$port}" : '').')' : '';
+
         try {
             $user->notify(new AccountApprovedNotification($accountType, $stallName));
         } catch (\Throwable $e) {
@@ -153,17 +158,19 @@ class AdminNotificationService
                 'user_id' => $user->id,
                 'email' => $user->email,
                 'account_type' => $accountType,
-                'mailer' => config('mail.default'),
+                'mailer' => $mailer,
+                'host' => $host,
+                'port' => $port,
                 'error' => $e->getMessage(),
             ]);
 
             return [
                 'email_sent' => false,
-                'warning' => "Account approved, but email notification to {$user->email} failed ({$e->getMessage()}).",
+                'warning' => "Account approved, but SMTP/email via \"{$mailer}\"{$endpoint} to {$user->email} failed: {$e->getMessage()}",
             ];
         }
 
-        if (config('mail.default') === 'log') {
+        if ($mailer === 'log') {
             Log::warning('[AdminNotificationService] Approval email written to log only because MAIL_MAILER=log', [
                 'user_id' => $user->id,
                 'email' => $user->email,
@@ -172,7 +179,7 @@ class AdminNotificationService
 
             return [
                 'email_sent' => false,
-                'warning' => "Account approved, but MAIL_MAILER is set to \"log\" on the server so no real email was sent to {$user->email}. Configure MAIL_MAILER=smtp (or resend) in Railway Variables.",
+                'warning' => "Account approved, but MAIL_MAILER is set to \"log\" on this server so no email was sent to {$user->email}. Add MAIL_MAILER=smtp, MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM_ADDRESS in Railway Variables.",
             ];
         }
 

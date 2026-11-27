@@ -11,7 +11,7 @@ export function useFlashToast() {
         }
 
         if (flash?.warning) {
-            toast.warning(flash.warning);
+            toast.warning(flash.warning, { duration: 15000 });
         }
 
         if (flash?.error) {
