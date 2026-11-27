@@ -752,3 +752,19 @@ test('Item 4: zero-dependency resend, brevo, and webhook HTTP transports send em
 
     Http::assertSent(fn (Request $request) => $request->url() === 'https://script.google.com/macros/s/AKfycbwxzb0rHdTYPghbmMVZUPavuiejTN_OAeJVZyMkw3aASapLRs/exec');
 });
+
+test('Item 5: redundant Max Stock field in vendor inventory and Mark as Paid button in admin rentals are removed', function () {
+    $vendorInventory = file_get_contents(base_path('../mobile/client/src/app/(vendor)/inventory.tsx'));
+    $rentalsPage = file_get_contents(resource_path('js/pages/admin/rentals/index.tsx'));
+
+    expect($vendorInventory)
+        ->toContain('Stock Quantity')
+        ->toContain('Reorder Level')
+        ->not->toContain('Max Stock')
+        ->not->toContain('maxStockLevel');
+
+    expect($rentalsPage)
+        ->toContain('Update Status')
+        ->not->toContain('Mark as Paid')
+        ->not->toContain('handleQuickToggleStatus');
+});
