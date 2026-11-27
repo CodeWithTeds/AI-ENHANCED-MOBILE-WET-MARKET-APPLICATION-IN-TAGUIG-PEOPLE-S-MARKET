@@ -17,8 +17,8 @@ import {
     Users,
 } from 'lucide-react';
 
-const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/314b1699-02d4-4547-a25c-a3c54c0a0b59';
-const APK_DOWNLOAD_URL = 'https://expo.dev/artifacts/eas/1oIurF_GVs7C0zBRpqP5ZjAoR8i0JNxEhNLs-CxsE_E.apk';
+const EAS_BUILD_URL = 'https://expo.dev/accounts/teadlol12345/projects/taguig-suki/builds/545e5919-76b2-4b6d-8e9a-a3d90e87df3f';
+const APK_DOWNLOAD_URL = 'https://expo.dev/artifacts/eas/JGdGiYcyVeMPfWobUQd5gkUzzhKdxxIPTYqtitATvuQ.apk';
 
 export default function Welcome() {
     const { auth } = usePage().props;
@@ -370,7 +370,7 @@ export default function Welcome() {
                                     </a>
                                 </div>
                                 <p className="mt-4 text-xs text-gray-500">
-                                    File: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> • Build 314b1699 • Package: com.taguigsuki.client • Requires Android 8.0+ •{' '}
+                                    File: <span className="font-semibold text-gray-700">TaguigSuki-v1.0.0.apk</span> • Build 545e5919 • Package: com.taguigsuki.client • Requires Android 8.0+ •{' '}
                                     <a href={EAS_BUILD_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#488562] underline underline-offset-2">Expo build page</a>
                                 </p>
                             </div>
