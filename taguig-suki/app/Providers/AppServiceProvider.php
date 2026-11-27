@@ -94,12 +94,12 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->registerHttpTransport('webhook', function (array $mailData): void {
-            $url = (string) config('services.mail_webhook.url', '');
+            $url = trim((string) config('services.mail_webhook.url', ''), " \t\n\r\0\x0B\"'");
             if ($url === '') {
                 throw new \RuntimeException('MAIL_WEBHOOK_URL is not configured.');
             }
 
-            $secret = (string) config('services.mail_webhook.secret', '');
+            $secret = trim((string) config('services.mail_webhook.secret', ''), " \t\n\r\0\x0B\"'");
             $payload = array_filter([
                 'secret' => $secret !== '' ? $secret : null,
                 'from' => [
@@ -113,13 +113,20 @@ class AppServiceProvider extends ServiceProvider
             ], fn ($value) => $value !== null);
 
             $response = Http::timeout(10)->post($url, $payload);
-            if ($response->failed()) {
-                throw new \RuntimeException('Mail webhook error ('.$response->status().'): '.$response->body());
+            $contentType = strtolower((string) $response->header('Content-Type'));
+            $isHtml = str_contains($contentType, 'text/html') || str_contains($response->body(), '<html');
+
+            if ($isHtml) {
+                $status = $response->status();
+                $hint = $status === 404
+                    ? 'Web app URL not found (HTTP 404). Verify MAIL_WEBHOOK_URL ends with /exec and has no extra text/quotes, and that Google Apps Script is deployed.'
+                    : "Google returned an HTML page (HTTP {$status}). In Google Apps Script Deploy → Manage deployments, set \"Who has access\" to \"Anyone\" and deploy.";
+
+                throw new \RuntimeException($hint);
             }
 
-            $contentType = strtolower((string) $response->header('Content-Type'));
-            if (str_contains($contentType, 'text/html') || str_contains($response->body(), '<html')) {
-                throw new \RuntimeException('Mail webhook returned an HTML page instead of JSON. In Google Apps Script deployment, set "Who has access" to "Anyone".');
+            if ($response->failed()) {
+                throw new \RuntimeException('Mail webhook error ('.$response->status().'): '.$response->body());
             }
         });
     }
