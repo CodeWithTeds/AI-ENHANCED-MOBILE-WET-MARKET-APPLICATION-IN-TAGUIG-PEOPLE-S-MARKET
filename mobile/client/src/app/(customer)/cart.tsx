@@ -1007,7 +1007,11 @@ function OrderConfirmationModal({
   }, []);
 
   const statusCfg = ORDER_STATUS_CONFIG[order.status as keyof typeof ORDER_STATUS_CONFIG] ?? ORDER_STATUS_CONFIG.pending;
-  const paymentCfg = order.payment_status ? PAYMENT_STATUS_CONFIG[order.payment_status as keyof typeof PAYMENT_STATUS_CONFIG] : null;
+  const effectivePaymentStatus =
+    order.payment_method === 'cash' && order.status !== 'completed' && order.payment_status === 'paid'
+      ? 'unpaid'
+      : order.payment_status;
+  const paymentCfg = effectivePaymentStatus ? PAYMENT_STATUS_CONFIG[effectivePaymentStatus as keyof typeof PAYMENT_STATUS_CONFIG] : null;
   const isEwallet = order.payment_method === 'gcash' || order.payment_method === 'maya';
   const isPendingVerification = order.payment_status === 'pending_verification';
 

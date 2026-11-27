@@ -514,8 +514,8 @@ export default function OrderTrackingScreen() {
                   </View>
                   <View style={styles.receiptMetaRow}>
                     <Text style={styles.receiptMetaLabel}>Payment Status:</Text>
-                    <Text style={[styles.receiptMetaValue, { color: '#059669', fontWeight: '800' }]}>
-                      {(order.payment_status || 'pending').toUpperCase()}
+                    <Text style={[styles.receiptMetaValue, { color: order.payment_status === 'paid' ? '#059669' : '#6B7280', fontWeight: '800' }]}>
+                      {(order.payment_status || 'unpaid').toUpperCase()}
                     </Text>
                   </View>
                   {order.payment_reference_number ? (
