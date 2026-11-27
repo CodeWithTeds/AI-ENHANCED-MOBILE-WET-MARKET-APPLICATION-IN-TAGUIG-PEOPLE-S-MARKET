@@ -37,7 +37,7 @@ class OrderService
      * vendor marks the order as Completed (picked up by the customer).
      *
      * Payment logic:
-     *  - cash => payment_status = paid (no verification needed)
+     *  - cash => payment_status = unpaid at checkout; marked paid once completed (picked up)
      *  - gcash/maya with reference => pending_verification
      *  - gcash/maya without reference => unpaid (customer must submit later)
      */
@@ -196,9 +196,7 @@ class OrderService
                 $itemSubmittedAt = null;
                 $itemRef = null;
 
-                if ($paymentMethod === 'cash') {
-                    $itemPaymentStatus = 'paid';
-                } elseif (in_array($paymentMethod, ['gcash', 'maya'])) {
+                if (in_array($paymentMethod, ['gcash', 'maya'])) {
                     if (! empty($vRef)) {
                         $itemPaymentStatus = 'pending_verification';
                         $itemRef = $vRef;
@@ -767,6 +765,10 @@ class OrderService
                 ?? $readyAt->copy()->addMinutes(self::PICKUP_TIMEOUT_MINUTES);
         } elseif ($effectiveStatus === 'completed') {
             $itemUpdate['vendor_confirmed_at'] = $vendorConfirmedAt;
+            if ($order->payment_method === 'cash') {
+                $itemUpdate['payment_status'] = 'paid';
+                $itemUpdate['payment_verified_at'] = $firstItemBefore?->payment_verified_at ?? $now;
+            }
         }
 
         DB::transaction(function () use ($order, $vendor, $status, $portionStatus, $effectiveStatus, $itemUpdate, $user) {
@@ -790,6 +792,10 @@ class OrderService
             }
 
             $freshOrder = $order->fresh('items');
+            if ($effectiveStatus === 'completed' && $freshOrder->payment_method === 'cash') {
+                $this->refreshOverallPaymentStatus($freshOrder);
+                $freshOrder = $order->fresh('items');
+            }
             $hasPendingItems = $freshOrder->items->contains(fn (OrderItem $item) => $item->status === 'pending');
             if (! $hasPendingItems && $freshOrder->confirmation_expires_at !== null) {
                 $freshOrder->update(['confirmation_expires_at' => null]);

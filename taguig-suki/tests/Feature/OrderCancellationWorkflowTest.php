@@ -201,16 +201,53 @@ test('cod checkout marks confirmation as confirmed immediately without secondary
     $orderRes->assertCreated()
         ->assertJsonPath('data.status', 'pending')
         ->assertJsonPath('data.confirmation_status', 'confirmed')
-        ->assertJsonPath('data.confirmed_by', $customer->id);
+        ->assertJsonPath('data.confirmed_by', $customer->id)
+        ->assertJsonPath('data.payment_status', 'unpaid')
+        ->assertJsonPath('data.items.0.payment_status', 'unpaid');
 
     $orderId = $orderRes->json('data.id');
 
-    // Immediately visible to vendor as pending and ready to process
+    // Immediately visible to vendor as pending and ready to process, still unpaid until completed
     $vendorList = $this->actingAs($vendorUser, 'sanctum')->getJson('/api/v1/vendor/orders');
     $vendorList->assertOk()
         ->assertJsonPath('data.0.id', $orderId)
         ->assertJsonPath('data.0.status', 'pending')
-        ->assertJsonPath('data.0.confirmation_status', 'confirmed');
+        ->assertJsonPath('data.0.confirmation_status', 'confirmed')
+        ->assertJsonPath('data.0.payment_status', 'unpaid');
+
+    // Confirming (auto-moves to Ready) still keeps COD payment_status as unpaid
+    $this->actingAs($vendorUser, 'sanctum')
+        ->patchJson("/api/v1/vendor/orders/{$orderId}/status", ['status' => 'confirmed'])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'ready')
+        ->assertJsonPath('data.payment_status', 'unpaid');
+
+    // Completing pickup marks the COD order as paid
+    $this->actingAs($vendorUser, 'sanctum')
+        ->patchJson("/api/v1/vendor/orders/{$orderId}/status", ['status' => 'completed'])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.payment_status', 'paid');
+});
+
+test('admin completing a cod order transitions payment_status from unpaid to paid', function () {
+    [$customer, $vendorUser, $vendor, $product] = makeCancellationSetup(10.0);
+
+    $order = app(OrderService::class)->placeOrder($customer, [
+        ['product_id' => $product->id, 'product_name' => $product->name, 'quantity' => 1.0],
+    ], 'cash');
+
+    expect($order->payment_status)->toBe('unpaid');
+
+    $admin = User::factory()->create(['is_admin' => true, 'is_active' => true, 'email_verified_at' => now()]);
+    $this->actingAs($admin)
+        ->patch("/admin/dashboard/orders/{$order->id}/status", ['status' => 'completed'])
+        ->assertRedirect();
+
+    $order->refresh();
+    expect($order->status)->toBe('completed')
+        ->and($order->payment_status)->toBe('paid')
+        ->and($order->items()->firstOrFail()->payment_status)->toBe('paid');
 });
 
 test('pending_confirmation order automatically cancels after 1 hour countdown for both customer and vendor', function () {

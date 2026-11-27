@@ -48,11 +48,23 @@ class OrderManagementService
     {
         DB::transaction(function () use ($order, $status, $note) {
             $previousStatus = $order->status;
-            $order->update(['status' => $status]);
+            $now = now();
+            $orderUpdate = ['status' => $status];
+            $itemUpdate = ['status' => $status];
+
+            if ($status === 'completed' && $order->payment_method === 'cash') {
+                $verifiedAt = $order->payment_verified_at ?? $now;
+                $orderUpdate['payment_status'] = 'paid';
+                $orderUpdate['payment_verified_at'] = $verifiedAt;
+                $itemUpdate['payment_status'] = 'paid';
+                $itemUpdate['payment_verified_at'] = $verifiedAt;
+            }
+
+            $order->update($orderUpdate);
 
             // Keep per-vendor portions in sync with the admin's decision so the
             // derived overall status can never regress it afterwards.
-            $order->items()->update(['status' => $status]);
+            $order->items()->update($itemUpdate);
 
             if ($status === 'completed' && $previousStatus !== 'completed') {
                 $this->orderService->deductCompletedItems($order, $order->items()->get(), 'Market Administrator');
