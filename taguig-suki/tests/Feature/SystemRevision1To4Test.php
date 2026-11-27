@@ -728,7 +728,7 @@ test('Item 4: zero-dependency resend, brevo, and webhook HTTP transports send em
     config()->set('mail.default', 'brevo');
     $user->notify(new AccountApprovedNotification('vendor', 'Brevo Stall'));
 
-    config()->set('services.mail_webhook.url', 'https://script.google.com/macros/s/demo/exec');
+    config()->set('services.mail_webhook.url', "\"https://script.google.com/macros/s/demo/\nexec\"");
     config()->set('services.mail_webhook.secret', 'sec_123');
     config()->set('mail.mailers.webhook', ['transport' => 'webhook']);
     config()->set('mail.default', 'webhook');

@@ -94,7 +94,8 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->registerHttpTransport('webhook', function (array $mailData): void {
-            $url = trim((string) config('services.mail_webhook.url', ''), " \t\n\r\0\x0B\"'");
+            $rawUrl = trim((string) config('services.mail_webhook.url', ''), " \t\n\r\0\x0B\"'");
+            $url = (string) preg_replace('/\s+/', '', $rawUrl);
             if ($url === '') {
                 throw new \RuntimeException('MAIL_WEBHOOK_URL is not configured.');
             }
@@ -118,8 +119,9 @@ class AppServiceProvider extends ServiceProvider
 
             if ($isHtml) {
                 $status = $response->status();
+                $suffix = substr($url, -28);
                 $hint = $status === 404
-                    ? 'Web app URL not found (HTTP 404). Verify MAIL_WEBHOOK_URL ends with /exec and has no extra text/quotes, and that Google Apps Script is deployed.'
+                    ? "Web app URL not found (HTTP 404, ending \"...{$suffix}\"). Verify Google Apps Script deployment is active and \"Who has access\" is \"Anyone\"."
                     : "Google returned an HTML page (HTTP {$status}). In Google Apps Script Deploy → Manage deployments, set \"Who has access\" to \"Anyone\" and deploy.";
 
                 throw new \RuntimeException($hint);
@@ -127,6 +129,11 @@ class AppServiceProvider extends ServiceProvider
 
             if ($response->failed()) {
                 throw new \RuntimeException('Mail webhook error ('.$response->status().'): '.$response->body());
+            }
+
+            $json = $response->json();
+            if (is_array($json) && isset($json['error'])) {
+                throw new \RuntimeException('Mail webhook rejected request: '.$json['error']);
             }
         });
     }
