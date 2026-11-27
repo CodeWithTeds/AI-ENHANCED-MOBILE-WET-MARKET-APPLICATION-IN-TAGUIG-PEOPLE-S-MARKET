@@ -745,4 +745,10 @@ test('Item 4: zero-dependency resend, brevo, and webhook HTTP transports send em
     Http::assertSent(fn (Request $request) => $request->url() === 'https://script.google.com/macros/s/demo/exec'
         && (($request->data()['secret'] ?? null) === 'sec_123')
         && (($request->data()['to'][0]['email'] ?? null) === 'resend.user@gmail.com'));
+
+    config()->set('services.mail_webhook.url', 'AKfycbwxzb0rHdTYPghbmMVZUPavuiejTN_OAeJVZyMkw3aASapLRs');
+    Http::fake(['https://script.google.com/macros/s/AKfycbwxzb0rHdTYPghbmMVZUPavuiejTN_OAeJVZyMkw3aASapLRs/exec' => Http::response(['ok' => true], 200)]);
+    $user->notify(new AccountApprovedNotification('customer'));
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://script.google.com/macros/s/AKfycbwxzb0rHdTYPghbmMVZUPavuiejTN_OAeJVZyMkw3aASapLRs/exec');
 });

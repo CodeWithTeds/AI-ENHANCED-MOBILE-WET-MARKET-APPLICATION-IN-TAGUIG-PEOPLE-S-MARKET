@@ -96,8 +96,21 @@ class AppServiceProvider extends ServiceProvider
         $this->registerHttpTransport('webhook', function (array $mailData): void {
             $rawUrl = trim((string) config('services.mail_webhook.url', ''), " \t\n\r\0\x0B\"'");
             $url = (string) preg_replace('/\s+/', '', $rawUrl);
+            if (str_starts_with($url, 'MAIL_WEBHOOK_URL=')) {
+                $url = trim(substr($url, strlen('MAIL_WEBHOOK_URL=')), "\"'");
+            }
+            if (str_starts_with($url, 'script.google.com/')) {
+                $url = 'https://'.$url;
+            }
+            if (preg_match('/^(AKfycb[A-Za-z0-9_-]{20,})(?:\/exec)?$/', $url, $matches) === 1) {
+                $url = 'https://script.google.com/macros/s/'.$matches[1].'/exec';
+            }
             if ($url === '') {
                 throw new \RuntimeException('MAIL_WEBHOOK_URL is not configured.');
+            }
+            if (! filter_var($url, FILTER_VALIDATE_URL) || ! parse_url($url, PHP_URL_HOST)) {
+                $preview = substr($url, 0, 60);
+                throw new \RuntimeException("Invalid MAIL_WEBHOOK_URL (\"{$preview}\"). Must be full https://script.google.com/macros/s/.../exec URL or AKfycb... deployment ID.");
             }
 
             $secret = trim((string) config('services.mail_webhook.secret', ''), " \t\n\r\0\x0B\"'");
