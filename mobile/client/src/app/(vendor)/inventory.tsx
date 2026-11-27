@@ -511,7 +511,6 @@ function CreateInventoryModal({
   const [sellingPrice, setSellingPrice] = useState('');
   const [markupPercentage, setMarkupPercentage] = useState('');
   const [reorderLevel, setReorderLevel] = useState('5');
-  const [maxStockLevel, setMaxStockLevel] = useState('');
   const [status, setStatus] = useState<InventoryStatus>('active');
   const [saving, setSaving] = useState(false);
 
@@ -523,7 +522,6 @@ function CreateInventoryModal({
       setSellingPrice('');
       setMarkupPercentage('');
       setReorderLevel('5');
-      setMaxStockLevel('');
       setStatus('active');
     }
   }, [visible]);
@@ -565,7 +563,6 @@ function CreateInventoryModal({
     };
     if (costPrice) data.cost_price = parseFloat(costPrice);
     if (markupPercentage) data.markup_percentage = parseFloat(markupPercentage);
-    if (maxStockLevel) data.max_stock_level = Math.round(parseFloat(maxStockLevel) * 100) / 100;
 
     await onSave(data);
     setSaving(false);
@@ -684,30 +681,15 @@ function CreateInventoryModal({
 
           {/* Stock Levels */}
           <Text style={styles.sectionTitle}>Stock Levels</Text>
-          <View style={styles.rowInputs}>
-            <View style={styles.halfInput}>
-              <Text style={styles.fieldLabel}>Reorder Level</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="5"
-                placeholderTextColor="#9CA3AF"
-                value={reorderLevel}
-                onChangeText={setReorderLevel}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.fieldLabel}>Max Stock</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Optional"
-                placeholderTextColor="#9CA3AF"
-                value={maxStockLevel}
-                onChangeText={setMaxStockLevel}
-                keyboardType="decimal-pad"
-              />
-            </View>
-          </View>
+          <Text style={styles.fieldLabel}>Reorder Level</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="5"
+            placeholderTextColor="#9CA3AF"
+            value={reorderLevel}
+            onChangeText={setReorderLevel}
+            keyboardType="decimal-pad"
+          />
 
           {/* Status */}
           <Text style={styles.fieldLabel}>Status</Text>
@@ -764,7 +746,6 @@ function EditInventoryModal({
   const [sellingPrice, setSellingPrice] = useState('');
   const [markupPercentage, setMarkupPercentage] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
-  const [maxStockLevel, setMaxStockLevel] = useState('');
   const [status, setStatus] = useState<InventoryStatus>('active');
   const [saving, setSaving] = useState(false);
 
@@ -774,7 +755,6 @@ function EditInventoryModal({
       setSellingPrice(String(item.selling_price));
       setMarkupPercentage(item.markup_percentage ? String(item.markup_percentage) : '');
       setReorderLevel(String(item.reorder_level));
-      setMaxStockLevel(item.max_stock_level ? String(item.max_stock_level) : '');
       setStatus(item.status);
     }
   }, [item, visible]);
@@ -800,7 +780,6 @@ function EditInventoryModal({
     };
     if (costPrice) data.cost_price = parseFloat(costPrice);
     if (markupPercentage) data.markup_percentage = parseFloat(markupPercentage);
-    if (maxStockLevel) data.max_stock_level = Math.round(parseFloat(maxStockLevel) * 100) / 100;
 
     await onSave(item.id, data);
     setSaving(false);
@@ -866,28 +845,13 @@ function EditInventoryModal({
 
           {/* Stock Levels */}
           <Text style={styles.sectionTitle}>Stock Levels</Text>
-          <View style={styles.rowInputs}>
-            <View style={styles.halfInput}>
-              <Text style={styles.fieldLabel}>Reorder Level</Text>
-              <TextInput
-                style={styles.input}
-                value={reorderLevel}
-                onChangeText={setReorderLevel}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            <View style={styles.halfInput}>
-              <Text style={styles.fieldLabel}>Max Stock</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Optional"
-                placeholderTextColor="#9CA3AF"
-                value={maxStockLevel}
-                onChangeText={setMaxStockLevel}
-                keyboardType="decimal-pad"
-              />
-            </View>
-          </View>
+          <Text style={styles.fieldLabel}>Reorder Level</Text>
+          <TextInput
+            style={styles.input}
+            value={reorderLevel}
+            onChangeText={setReorderLevel}
+            keyboardType="decimal-pad"
+          />
 
           {/* Status */}
           <Text style={styles.fieldLabel}>Status</Text>
