@@ -22,6 +22,9 @@ export interface MatchingProductVendor {
   unit: string;
   category?: string;
   image?: string | null;
+  is_available?: boolean;
+  is_out_of_stock?: boolean;
+  stock_quantity?: number | null;
   vendor_id?: number | null;
   vendor_name?: string;
   stall_name?: string;
@@ -40,6 +43,9 @@ export interface MatchingProduct {
   unit: string;
   category: string;
   image?: string | null;
+  is_available?: boolean;
+  is_out_of_stock?: boolean;
+  stock_quantity?: number | null;
   vendor_id?: number | null;
   vendor_name?: string;
   stall_number?: string;

@@ -33,6 +33,12 @@ export interface OrderItem {
   /** Per-vendor fulfillment status of this item's portion (vendor-scoped responses). */
   status?: OrderStatus;
   confirmation_status?: ConfirmationStatus;
+  vendor_confirmed_at?: string | null;
+  ready_at?: string | null;
+  pickup_expires_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
   payment_status?: PaymentStatus;
   payment_reference_number?: string | null;
   vendor?: {
@@ -57,6 +63,12 @@ export interface VendorOrderPortion {
   subtotal: number;
   status: OrderStatus;
   confirmation_status?: ConfirmationStatus;
+  vendor_confirmed_at?: string | null;
+  ready_at?: string | null;
+  pickup_expires_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
   payment_status: PaymentStatus;
   payment_reference_number?: string | null;
   payment_submitted_at?: string | null;
@@ -84,6 +96,12 @@ export interface Order {
   order_number: string;
   status: OrderStatus;
   confirmation_status?: ConfirmationStatus;
+  confirmation_expires_at?: string | null;
+  ready_at?: string | null;
+  pickup_expires_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
   total_amount: number;
   payment_method: PaymentMethod | string;
   payment_reference_number?: string | null;
@@ -202,13 +220,116 @@ export async function updateOrderStatus(
   id: number,
   status: OrderStatus,
   token: string,
+  reason?: string,
 ): Promise<Order> {
   const response = await api.request<Order>(`/vendor/orders/${id}/status`, {
     method: 'PATCH',
-    body: { status } as unknown as Record<string, unknown>,
+    body: { status, ...(reason ? { reason } : {}) } as unknown as Record<string, unknown>,
     token,
   });
   return response.data;
+}
+
+export async function cancelCustomerOrder(
+  id: number,
+  token: string,
+  reason?: string,
+): Promise<Order> {
+  const response = await api.request<Order>(`/orders/${id}/cancel`, {
+    method: 'POST',
+    body: (reason ? { reason } : {}) as Record<string, unknown>,
+    token,
+  });
+  return response.data;
+}
+
+export async function cancelVendorOrder(
+  id: number,
+  token: string,
+  reason?: string,
+): Promise<Order> {
+  const response = await api.request<Order>(`/vendor/orders/${id}/cancel`, {
+    method: 'POST',
+    body: (reason ? { reason } : {}) as Record<string, unknown>,
+    token,
+  });
+  return response.data;
+}
+
+/* ─── Cancellation & Countdown Helpers ─── */
+
+/**
+ * Customer may cancel ONLY while vendor has not yet confirmed the order.
+ */
+export function canCustomerCancelOrder(order: Order): boolean {
+  if (order.status !== 'pending') {
+    return false;
+  }
+
+  return !order.items.some(
+    (item) =>
+      item.status === 'confirmed' ||
+      item.status === 'ready' ||
+      item.status === 'completed' ||
+      Boolean(item.vendor_confirmed_at),
+  );
+}
+
+/**
+ * Resolve the ISO timestamp when a Ready-for-Pickup order unlocks vendor cancellation (+1 hr).
+ */
+export function getPickupCancelUnlockAt(order: Order, vendorId?: number): string | null {
+  const scopedItems = vendorId
+    ? order.items.filter((item) => Number(item.vendor_id) === Number(vendorId))
+    : order.items;
+
+  const firstItem = scopedItems.find((i) => i.pickup_expires_at || i.ready_at);
+  if (firstItem?.pickup_expires_at) {
+    return firstItem.pickup_expires_at;
+  }
+  if (order.pickup_expires_at) {
+    return order.pickup_expires_at;
+  }
+
+  const readyIso = firstItem?.ready_at ?? order.ready_at;
+  if (!readyIso) {
+    return null;
+  }
+
+  const readyMs = Date.parse(readyIso);
+  if (Number.isNaN(readyMs)) {
+    return null;
+  }
+  return new Date(readyMs + 60 * 60 * 1000).toISOString();
+}
+
+export function getRemainingSeconds(deadlineIso?: string | null, nowMs: number = Date.now()): number | null {
+  if (!deadlineIso) {
+    return null;
+  }
+  const deadlineMs = Date.parse(deadlineIso);
+  if (Number.isNaN(deadlineMs)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
+}
+
+export function canVendorCancelReadyOrder(
+  order: Order,
+  vendorId?: number,
+  nowMs: number = Date.now(),
+): boolean {
+  const remaining = getRemainingSeconds(getPickupCancelUnlockAt(order, vendorId), nowMs);
+  return remaining !== null && remaining <= 0;
+}
+
+export function formatCountdown(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / 3600);
+  const mins = Math.floor((clamped % 3600) / 60);
+  const secs = clamped % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
 /* ─── Vendor Portion Helpers ─── */

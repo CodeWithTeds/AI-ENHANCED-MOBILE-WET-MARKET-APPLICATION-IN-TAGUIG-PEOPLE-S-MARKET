@@ -43,6 +43,12 @@ export interface OrderConversation {
     order_number: string;
     status: OrderStatus;
     confirmation_status: ConfirmationStatus;
+    confirmation_expires_at?: string | null;
+    ready_at?: string | null;
+    pickup_expires_at?: string | null;
+    cancelled_at?: string | null;
+    cancelled_by?: string | null;
+    cancellation_reason?: string | null;
     total_amount: number;
     payment_method: string;
     payment_status?: string;

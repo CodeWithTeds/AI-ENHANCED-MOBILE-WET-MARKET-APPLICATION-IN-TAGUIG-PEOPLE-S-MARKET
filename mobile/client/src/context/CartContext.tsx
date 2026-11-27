@@ -16,6 +16,8 @@ export interface CartItem {
   category: string;
   quantity: number;
   image?: string | null;
+  reorder_level?: number | null;
+  stock_quantity?: number | null;
 }
 
 interface CartContextValue {
