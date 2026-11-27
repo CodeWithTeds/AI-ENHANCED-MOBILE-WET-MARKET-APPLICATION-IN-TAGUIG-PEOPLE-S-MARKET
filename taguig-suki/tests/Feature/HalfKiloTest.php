@@ -5,6 +5,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Services\OrderService;
+use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 function makeKgSetup(): array
 {
@@ -52,6 +53,7 @@ function makeKgSetup(): array
         'cost_price' => 7.00,
         'status' => 'active',
     ]);
+
     return [$customer, $vendorUser, $vendor, $productKg, $productPcs, $invKg, $invPcs];
 }
 
@@ -65,6 +67,9 @@ test('customer can order 0.5 kg and price is half', function () {
     expect($order->total_amount)->toBe('100.00');
     expect((float) $order->items->first()->quantity)->toBe(0.5);
     expect((float) $order->items->first()->subtotal)->toBe(100.0);
+    expect((float) $invKg->fresh()->stock_quantity)->toBe(10.0);
+
+    $service->updateOrderStatus($vendorUser, $order->id, 'completed');
     $invKg->refresh();
     expect((float) $invKg->stock_quantity)->toBe(9.5);
 });
@@ -88,7 +93,7 @@ test('customer can order 1 kg and 0.5 kg increments work', function () {
 test('kg product with 0.7 fails', function () {
     [$customer, $vendorUser, $vendor, $productKg, $productPcs, $invKg, $invPcs] = makeKgSetup();
     $service = app(OrderService::class);
-    $this->expectException(Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException::class);
+    $this->expectException(UnprocessableEntityHttpException::class);
     $service->placeOrder($customer, [
         ['product_id' => $productKg->id, 'product_name' => $productKg->name, 'quantity' => 0.7],
     ], 'cash');
@@ -97,7 +102,7 @@ test('kg product with 0.7 fails', function () {
 test('pcs product with 0.5 fails', function () {
     [$customer, $vendorUser, $vendor, $productKg, $productPcs, $invKg, $invPcs] = makeKgSetup();
     $service = app(OrderService::class);
-    $this->expectException(Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException::class);
+    $this->expectException(UnprocessableEntityHttpException::class);
     $service->placeOrder($customer, [
         ['product_id' => $productPcs->id, 'product_name' => $productPcs->name, 'quantity' => 0.5],
     ], 'cash');
@@ -111,15 +116,22 @@ test('pcs product with integer passes', function () {
     ], 'cash');
     expect((float) $order->items->first()->quantity)->toBe(2.0);
     expect($order->total_amount)->toBe('20.00');
+    expect((float) $invPcs->fresh()->stock_quantity)->toBe(20.0);
+
+    $service->updateOrderStatus($vendorUser, $order->id, 'completed');
     $invPcs->refresh();
     expect((float) $invPcs->stock_quantity)->toBe(18.0);
 });
 
-test('inventory deduction handles 0.5 correctly for multiple orders', function () {
+test('inventory deduction handles 0.5 correctly for multiple completed orders', function () {
     [$customer, $vendorUser, $vendor, $productKg, $productPcs, $invKg, $invPcs] = makeKgSetup();
     $service = app(OrderService::class);
-    $service->placeOrder($customer, [['product_id' => $productKg->id, 'product_name' => $productKg->name, 'quantity' => 0.5]], 'cash');
-    $service->placeOrder($customer, [['product_id' => $productKg->id, 'product_name' => $productKg->name, 'quantity' => 1]], 'cash');
+    $o1 = $service->placeOrder($customer, [['product_id' => $productKg->id, 'product_name' => $productKg->name, 'quantity' => 0.5]], 'cash');
+    $o2 = $service->placeOrder($customer, [['product_id' => $productKg->id, 'product_name' => $productKg->name, 'quantity' => 1]], 'cash');
+
+    $service->updateOrderStatus($vendorUser, $o1->id, 'completed');
+    $service->updateOrderStatus($vendorUser, $o2->id, 'completed');
+
     $invKg->refresh();
     expect((float) $invKg->stock_quantity)->toBe(8.5);
 });

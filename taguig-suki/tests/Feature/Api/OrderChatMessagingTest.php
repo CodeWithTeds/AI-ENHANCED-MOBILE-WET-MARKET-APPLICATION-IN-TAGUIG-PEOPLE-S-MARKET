@@ -6,9 +6,7 @@ use App\Events\NewOrderMessageEvent;
 use App\Events\OrderConfirmationUpdatedEvent;
 use App\Models\Inventory;
 use App\Models\Order;
-use App\Models\OrderConversation;
 use App\Models\OrderItem;
-use App\Models\OrderMessage;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -69,7 +67,7 @@ class OrderChatMessagingTest extends TestCase
         return [$product, $inventory];
     }
 
-    public function test_placing_cod_order_initializes_conversation_and_sets_pending_confirmation(): void
+    public function test_placing_cod_order_initializes_conversation_as_confirmed_immediately(): void
     {
         Event::fake([NewOrderMessageEvent::class, OrderConfirmationUpdatedEvent::class]);
 
@@ -93,18 +91,20 @@ class OrderChatMessagingTest extends TestCase
         $orderId = $response->json('data.id');
 
         $order = Order::findOrFail($orderId);
-        $this->assertEquals('pending_confirmation', $order->confirmation_status);
+        $this->assertEquals('confirmed', $order->confirmation_status);
+        $this->assertEquals($customer->id, $order->confirmed_by);
+        $this->assertNotNull($order->confirmed_at);
 
         $this->assertDatabaseHas('order_conversations', [
             'order_id' => $orderId,
             'vendor_id' => $vendor->id,
             'customer_id' => $customer->id,
-            'confirmation_status' => 'pending_confirmation',
+            'confirmation_status' => 'confirmed',
         ]);
 
         $this->assertDatabaseHas('order_messages', [
             'sender_type' => 'system',
-            'message_type' => 'confirmation_request',
+            'message_type' => 'order_confirmed',
         ]);
     }
 
@@ -227,7 +227,8 @@ class OrderChatMessagingTest extends TestCase
         ]);
         $orderId = $orderResponse->json('data.id');
 
-        $this->assertEquals(8.0, (float) $inventory->fresh()->stock_quantity);
+        // Stock is NOT deducted upon placement (only once Completed)
+        $this->assertEquals(10.0, (float) $inventory->fresh()->stock_quantity);
 
         // Customer cancels order via chat
         $cancelResponse = $this->actingAs($customer, 'sanctum')
@@ -238,7 +239,7 @@ class OrderChatMessagingTest extends TestCase
         $cancelResponse->assertOk()
             ->assertJsonPath('data.status', 'cancelled');
 
-        // Verify stock is restored to 10.0 kg!
+        // Verify stock remains completely untouched at 10.0 kg
         $this->assertEquals(10.0, (float) $inventory->fresh()->stock_quantity);
 
         $this->assertDatabaseHas('orders', [

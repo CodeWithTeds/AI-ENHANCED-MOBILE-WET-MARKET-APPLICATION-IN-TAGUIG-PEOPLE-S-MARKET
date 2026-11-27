@@ -63,7 +63,7 @@ function placeFishOrder(User $customer, Product $product, float $qty = 3): Order
     ], 'gcash', 'Feature test order');
 }
 
-test('placing an order deducts the vendor inventory and logs the sale', function () {
+test('placing an order holds stock untouched until completed, then deducts inventory and logs the sale', function () {
     [$admin, $customer, $vendorUser, $vendor, $product, $inventory] = makeFishSetup();
 
     $order = placeFishOrder($customer, $product, 3);
@@ -73,11 +73,21 @@ test('placing an order deducts the vendor inventory and logs the sale', function
     expect($order->total_amount)->toBe('540.00');
     expect($order->items)->toHaveCount(1);
 
-    // Stock deducted: 25 - 3 = 22 (decimal cast returns string)
+    // Stock NOT deducted on placement or when marked Ready
+    expect((float) $inventory->fresh()->stock_quantity)->toBe(25.0);
+    expect(InventoryLog::where('inventory_id', $inventory->id)->where('type', 'sold')->count())->toBe(0);
+
+    $service = app(OrderService::class);
+    $service->updateOrderStatus($vendorUser, $order->id, 'confirmed');
+    expect((float) $inventory->fresh()->stock_quantity)->toBe(25.0);
+
+    // Stock deducted only once order is marked Completed (picked up)
+    $service->updateOrderStatus($vendorUser, $order->id, 'completed');
+
     $inventory->refresh();
     expect((float) $inventory->stock_quantity)->toBe(22.0);
 
-    // Sale is logged
+    // Sale is logged on completion
     $log = InventoryLog::where('inventory_id', $inventory->id)->latest()->first();
     expect($log->type)->toBe('sold');
     expect((float) $log->quantity_before)->toBe(25.0);
