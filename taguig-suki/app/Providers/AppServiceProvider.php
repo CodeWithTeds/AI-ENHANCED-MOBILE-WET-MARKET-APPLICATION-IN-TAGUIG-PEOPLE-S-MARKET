@@ -116,6 +116,11 @@ class AppServiceProvider extends ServiceProvider
             if ($response->failed()) {
                 throw new \RuntimeException('Mail webhook error ('.$response->status().'): '.$response->body());
             }
+
+            $contentType = strtolower((string) $response->header('Content-Type'));
+            if (str_contains($contentType, 'text/html') || str_contains($response->body(), '<html')) {
+                throw new \RuntimeException('Mail webhook returned an HTML page instead of JSON. In Google Apps Script deployment, set "Who has access" to "Anyone".');
+            }
         });
     }
 
