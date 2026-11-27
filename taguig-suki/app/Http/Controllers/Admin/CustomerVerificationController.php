@@ -7,8 +7,6 @@ use App\Models\CustomerVerification;
 use App\Services\CustomerVerificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class CustomerVerificationController extends Controller
 {
@@ -22,7 +20,13 @@ class CustomerVerificationController extends Controller
     public function approve(Request $request, CustomerVerification $customerVerification): RedirectResponse
     {
         $this->service->approve($customerVerification, $request->user());
-        return back()->with('success', 'Verification approved.');
+
+        $response = back()->with('success', 'Verification approved.');
+        if ($warning = $this->service->getLastApprovalWarning()) {
+            $response->with('warning', $warning);
+        }
+
+        return $response;
     }
 
     public function reject(Request $request, CustomerVerification $customerVerification): RedirectResponse
@@ -32,6 +36,7 @@ class CustomerVerificationController extends Controller
         ]);
 
         $this->service->reject($customerVerification, $request->user(), $validated['rejection_reason'] ?? null);
+
         return back()->with('success', 'Verification rejected.');
     }
 }

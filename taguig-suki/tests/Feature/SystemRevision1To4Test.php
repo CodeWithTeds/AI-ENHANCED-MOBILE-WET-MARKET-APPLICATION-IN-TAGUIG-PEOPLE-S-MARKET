@@ -1,17 +1,23 @@
 <?php
 
 use App\Enums\StallSize;
+use App\Models\CustomerVerification;
 use App\Models\Section;
 use App\Models\Stall;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Notifications\AccountApprovalRequestedNotification;
 use App\Notifications\AccountApprovedNotification;
 use App\Services\Admin\StallManagementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\Mailer\SentMessage;
+use Symfony\Component\Mailer\Transport\AbstractTransport;
 
 uses(RefreshDatabase::class);
 
@@ -539,4 +545,204 @@ test('Item 4: admin notification endpoints list requests and mark single or all 
         ->postJson('/admin/dashboard/notifications/read-all')
         ->assertOk()
         ->assertJsonPath('unread_count', 0);
+});
+
+test('Item 4: approving customer and vendor actually dispatches real email to registered address via array transport and saves DB notifications', function () {
+    Storage::fake('public');
+    config()->set('mail.default', 'array');
+
+    $admin = makeVerifiedAdmin();
+    $section = makeActiveSection('fish-section', 'Fish Section', 'FISH');
+    $stall = Stall::create([
+        'section_id' => $section->id,
+        'section' => $section->slug,
+        'stall_number' => 'Stall 22',
+        'store_name' => 'Vacant Stall 22',
+        'status' => 'vacant',
+        'size' => 'small',
+        'monthly_rent' => 1500.00,
+    ]);
+
+    $this->post('/api/v1/register', [
+        'name' => 'Maria Clara',
+        'email' => 'maria.clara@gmail.com',
+        'password' => 'Password123!',
+        'password_confirmation' => 'Password123!',
+        'id_type' => 'national_id',
+        'id_image' => UploadedFile::fake()->image('maria.jpg', 400, 300),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $this->post('/api/v1/vendor/register', [
+        'full_name' => 'Mang Jose',
+        'email' => 'mang.jose@gmail.com',
+        'phone' => '09181234567',
+        'password' => 'SecurePass123!',
+        'stall_name' => 'Jose Fresh Catch',
+        'stall_id' => $stall->id,
+        'product_categories' => ['Fish'],
+        'valid_id' => UploadedFile::fake()->image('id.jpg', 400, 300),
+        'business_permit' => UploadedFile::fake()->image('bp.jpg', 400, 300),
+        'sanitary_permit' => UploadedFile::fake()->image('sp.jpg', 400, 300),
+        'dti_registration' => UploadedFile::fake()->create('dti.pdf', 200, 'application/pdf'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $customer = User::where('email', 'maria.clara@gmail.com')->firstOrFail();
+    $vendorUser = User::where('email', 'mang.jose@gmail.com')->firstOrFail();
+
+    app('mailer')->getSymfonyTransport()->flush();
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/verifications/{$customer->verification->id}/approve")
+        ->assertRedirect()
+        ->assertSessionMissing('warning');
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/vendors/{$vendorUser->vendor->id}/approve")
+        ->assertRedirect()
+        ->assertSessionMissing('warning');
+
+    $sentEmails = collect(app('mailer')->getSymfonyTransport()->messages())
+        ->map(fn ($sent) => $sent->getOriginalMessage());
+
+    expect($sentEmails)->toHaveCount(2)
+        ->and($sentEmails[0]->getTo()[0]->getAddress())->toBe('maria.clara@gmail.com')
+        ->and($sentEmails[0]->getSubject())->toContain('Customer Account Has Been Approved')
+        ->and($sentEmails[1]->getTo()[0]->getAddress())->toBe('mang.jose@gmail.com')
+        ->and($sentEmails[1]->getSubject())->toContain('Vendor Account Has Been Approved')
+        ->and($customer->notifications()->count())->toBe(1)
+        ->and($vendorUser->notifications()->count())->toBe(1);
+});
+
+test('Item 4: activating a pending vendor via vendor management sends approval email while reactivating a previously approved suspended vendor does not duplicate initial approval', function () {
+    config()->set('mail.default', 'array');
+    $admin = makeVerifiedAdmin();
+
+    $pendingUser = User::factory()->create(['email' => 'pending.vendor@gmail.com']);
+    $pendingVendor = Vendor::create([
+        'user_id' => $pendingUser->id,
+        'stall_name' => 'Pending Stall',
+        'stall_location' => 'Stall 1',
+        'product_categories' => ['Fish'],
+        'status' => 'pending',
+    ]);
+
+    $suspendedUser = User::factory()->create(['email' => 'suspended.vendor@gmail.com']);
+    $suspendedVendor = Vendor::create([
+        'user_id' => $suspendedUser->id,
+        'stall_name' => 'Suspended Stall',
+        'stall_location' => 'Stall 2',
+        'product_categories' => ['Meat'],
+        'status' => 'suspended',
+        'approved_at' => now()->subDays(10),
+    ]);
+
+    Notification::fake();
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/vendors/{$pendingVendor->id}/activate")
+        ->assertRedirect();
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/vendors/{$suspendedVendor->id}/activate")
+        ->assertRedirect();
+
+    Notification::assertSentTo($pendingUser, AccountApprovedNotification::class);
+    Notification::assertNotSentTo($suspendedUser, AccountApprovedNotification::class);
+});
+
+test('Item 4: approval warns admin via flash when mail driver is log or email fails while still saving DB approval and notification', function () {
+    config()->set('mail.default', 'log');
+    $admin = makeVerifiedAdmin();
+    $customer = User::factory()->create(['email' => 'warn.customer@gmail.com']);
+    $verification = CustomerVerification::create([
+        'user_id' => $customer->id,
+        'id_type' => 'national_id',
+        'id_image_path' => 'customer_ids/test.jpg',
+        'status' => 'pending',
+        'submitted_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/verifications/{$verification->id}/approve")
+        ->assertRedirect()
+        ->assertSessionHas('success')
+        ->assertSessionHas('warning');
+
+    expect($verification->fresh()->status)->toBe('verified')
+        ->and($customer->notifications()->count())->toBe(1);
+
+    // Also simulate a failing mail transport (e.g. blocked SMTP port on host)
+    Mail::extend('failing', fn () => new class extends AbstractTransport
+    {
+        protected function doSend(SentMessage $message): void
+        {
+            throw new RuntimeException('Connection timed out');
+        }
+
+        public function __toString(): string
+        {
+            return 'failing';
+        }
+    });
+    config()->set('mail.mailers.failing', ['transport' => 'failing']);
+    config()->set('mail.default', 'failing');
+
+    $customer2 = User::factory()->create(['email' => 'smtp.fail@gmail.com']);
+    $verification2 = CustomerVerification::create([
+        'user_id' => $customer2->id,
+        'id_type' => 'national_id',
+        'id_image_path' => 'customer_ids/test2.jpg',
+        'status' => 'pending',
+        'submitted_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->post("/admin/dashboard/verifications/{$verification2->id}/approve")
+        ->assertRedirect()
+        ->assertSessionHas('success')
+        ->assertSessionHas('warning');
+
+    expect($verification2->fresh()->status)->toBe('verified')
+        ->and($customer2->notifications()->count())->toBe(1);
+});
+
+test('Item 4: zero-dependency resend, brevo, and webhook HTTP transports send email payloads cleanly', function () {
+    Http::fake([
+        'https://api.resend.com/emails' => Http::response(['id' => 're_123'], 200),
+        'https://api.brevo.com/v3/smtp/email' => Http::response(['messageId' => 'br_123'], 200),
+        'https://script.google.com/macros/s/demo/exec' => Http::response(['ok' => true], 200),
+    ]);
+
+    config()->set('services.resend.key', 're_test_key');
+    config()->set('mail.mailers.resend', ['transport' => 'resend']);
+    config()->set('mail.default', 'resend');
+
+    $user = User::factory()->create([
+        'name' => 'Resend User',
+        'email' => 'resend.user@gmail.com',
+    ]);
+    $user->notify(new AccountApprovedNotification('customer'));
+
+    config()->set('services.brevo.key', 'xkeysib_test_key');
+    config()->set('mail.mailers.brevo', ['transport' => 'brevo']);
+    config()->set('mail.default', 'brevo');
+    $user->notify(new AccountApprovedNotification('vendor', 'Brevo Stall'));
+
+    config()->set('services.mail_webhook.url', 'https://script.google.com/macros/s/demo/exec');
+    config()->set('services.mail_webhook.secret', 'sec_123');
+    config()->set('mail.mailers.webhook', ['transport' => 'webhook']);
+    config()->set('mail.default', 'webhook');
+    $user->notify(new AccountApprovedNotification('customer'));
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://api.resend.com/emails'
+        && $request->hasHeader('Authorization', 'Bearer re_test_key')
+        && in_array('resend.user@gmail.com', $request->data()['to'] ?? [], true));
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://api.brevo.com/v3/smtp/email'
+        && $request->hasHeader('api-key', 'xkeysib_test_key')
+        && (($request->data()['to'][0]['email'] ?? null) === 'resend.user@gmail.com'));
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://script.google.com/macros/s/demo/exec'
+        && (($request->data()['secret'] ?? null) === 'sec_123')
+        && (($request->data()['to'][0]['email'] ?? null) === 'resend.user@gmail.com'));
 });

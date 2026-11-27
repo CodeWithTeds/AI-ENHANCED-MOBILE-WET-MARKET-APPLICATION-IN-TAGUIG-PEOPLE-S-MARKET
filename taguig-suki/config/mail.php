@@ -39,13 +39,17 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            'scheme' => match (strtolower((string) (env('MAIL_SCHEME') ?: env('MAIL_ENCRYPTION', '')))) {
+                'smtps', 'ssl' => 'smtps',
+                'smtp', 'tls', 'starttls' => 'smtp',
+                default => null,
+            },
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => (int) env('MAIL_TIMEOUT', 5),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -63,6 +67,14 @@ return [
 
         'resend' => [
             'transport' => 'resend',
+        ],
+
+        'brevo' => [
+            'transport' => 'brevo',
+        ],
+
+        'webhook' => [
+            'transport' => 'webhook',
         ],
 
         'sendmail' => [

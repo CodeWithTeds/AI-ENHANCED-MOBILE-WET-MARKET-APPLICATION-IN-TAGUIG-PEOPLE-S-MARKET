@@ -7,6 +7,7 @@ use App\Models\CustomerVerification;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Notifications\AccountApprovalRequestedNotification;
+use App\Notifications\AccountApprovedNotification;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -127,5 +128,57 @@ class AdminNotificationService
         $admin->unreadNotifications()->update(['read_at' => now()]);
 
         return $this->getForAdmin($admin);
+    }
+
+    /**
+     * Clear pending admin approval alerts and notify an approved customer or vendor via database and email.
+     *
+     * @return array{email_sent: bool, warning: ?string}
+     */
+    public function notifyAccountApproved(User $user, string $accountType, ?string $stallName = null): array
+    {
+        $this->markApprovalRequestsReadForApplicant($user->id, $accountType);
+
+        if (! $user->email) {
+            return [
+                'email_sent' => false,
+                'warning' => 'Account approved, but this user has no email address configured.',
+            ];
+        }
+
+        try {
+            $user->notify(new AccountApprovedNotification($accountType, $stallName));
+        } catch (\Throwable $e) {
+            Log::warning('[AdminNotificationService] Failed to send approval notification email', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'account_type' => $accountType,
+                'mailer' => config('mail.default'),
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'email_sent' => false,
+                'warning' => "Account approved, but email notification to {$user->email} failed ({$e->getMessage()}).",
+            ];
+        }
+
+        if (config('mail.default') === 'log') {
+            Log::warning('[AdminNotificationService] Approval email written to log only because MAIL_MAILER=log', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'account_type' => $accountType,
+            ]);
+
+            return [
+                'email_sent' => false,
+                'warning' => "Account approved, but MAIL_MAILER is set to \"log\" on the server so no real email was sent to {$user->email}. Configure MAIL_MAILER=smtp (or resend) in Railway Variables.",
+            ];
+        }
+
+        return [
+            'email_sent' => true,
+            'warning' => null,
+        ];
     }
 }

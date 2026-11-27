@@ -5,13 +5,13 @@ namespace App\Services\Admin;
 use App\Enums\VendorStatus;
 use App\Models\RejectedEmail;
 use App\Models\Vendor;
-use App\Notifications\AccountApprovedNotification;
 use App\Notifications\RegistrationRejectedNotification;
 use App\Services\AdminNotificationService;
-use Illuminate\Support\Facades\Log;
 
 class VendorApprovalService
 {
+    private ?string $lastApprovalWarning = null;
+
     public function __construct(
         private readonly AdminNotificationService $adminNotificationService,
     ) {}
@@ -41,6 +41,8 @@ class VendorApprovalService
 
     public function approve(Vendor $vendor): Vendor
     {
+        $this->lastApprovalWarning = null;
+
         $vendor->update([
             'status' => VendorStatus::Approved->value,
             'approved_at' => now(),
@@ -49,21 +51,16 @@ class VendorApprovalService
 
         $user = $vendor->user;
         if ($user) {
-            $this->adminNotificationService->markApprovalRequestsReadForApplicant($user->id, 'vendor');
-
-            try {
-                $user->notify(new AccountApprovedNotification('vendor', $vendor->stall_name));
-            } catch (\Throwable $e) {
-                Log::warning('[VendorApprovalService] Failed to send vendor approval email', [
-                    'vendor_id' => $vendor->id,
-                    'user_id' => $user->id,
-                    'email' => $user->email,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $result = $this->adminNotificationService->notifyAccountApproved($user, 'vendor', $vendor->stall_name);
+            $this->lastApprovalWarning = $result['warning'];
         }
 
         return $vendor;
+    }
+
+    public function getLastApprovalWarning(): ?string
+    {
+        return $this->lastApprovalWarning;
     }
 
     public function reject(Vendor $vendor, string $reason): Vendor

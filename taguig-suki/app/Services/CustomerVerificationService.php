@@ -4,14 +4,14 @@ namespace App\Services;
 
 use App\Models\CustomerVerification;
 use App\Models\User;
-use App\Notifications\AccountApprovedNotification;
 use App\Notifications\RegistrationRejectedNotification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class CustomerVerificationService
 {
+    private ?string $lastApprovalWarning = null;
+
     public function __construct(
         private readonly AdminNotificationService $adminNotificationService,
     ) {}
@@ -176,6 +176,8 @@ class CustomerVerificationService
 
     public function approve(CustomerVerification $verification, User $admin): array
     {
+        $this->lastApprovalWarning = null;
+
         $verification->update([
             'status' => CustomerVerification::STATUS_VERIFIED,
             'rejection_reason' => null,
@@ -183,22 +185,20 @@ class CustomerVerificationService
             'verified_at' => now(),
         ]);
 
-        $this->adminNotificationService->markApprovalRequestsReadForApplicant($verification->user_id, 'customer');
-
         $user = $verification->user;
         if ($user) {
-            try {
-                $user->notify(new AccountApprovedNotification('customer'));
-            } catch (\Throwable $e) {
-                Log::warning('[CustomerVerificationService] Failed to send customer approval email', [
-                    'user_id' => $user->id,
-                    'email' => $user->email,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $result = $this->adminNotificationService->notifyAccountApproved($user, 'customer');
+            $this->lastApprovalWarning = $result['warning'];
+        } else {
+            $this->adminNotificationService->markApprovalRequestsReadForApplicant($verification->user_id, 'customer');
         }
 
         return $this->format($verification->fresh());
+    }
+
+    public function getLastApprovalWarning(): ?string
+    {
+        return $this->lastApprovalWarning;
     }
 
     public function reject(CustomerVerification $verification, User $admin, ?string $reason = null): array

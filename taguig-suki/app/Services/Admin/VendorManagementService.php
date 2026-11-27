@@ -5,10 +5,17 @@ namespace App\Services\Admin;
 use App\Enums\VendorStatus;
 use App\Models\Stall;
 use App\Models\Vendor;
+use App\Services\AdminNotificationService;
 use Illuminate\Database\Eloquent\Builder;
 
 class VendorManagementService
 {
+    private ?string $lastApprovalWarning = null;
+
+    public function __construct(
+        private readonly ?AdminNotificationService $adminNotificationService = null,
+    ) {}
+
     public function getIndexData(array $filters): array
     {
         $query = Vendor::query()
@@ -45,13 +52,27 @@ class VendorManagementService
 
     public function activate(Vendor $vendor): Vendor
     {
+        $this->lastApprovalWarning = null;
+        $wasInitialApproval = $vendor->status !== VendorStatus::Approved->value && $vendor->approved_at === null;
+
         $vendor->update([
             'status' => VendorStatus::Approved->value,
             'approved_at' => $vendor->approved_at ?? now(),
             'rejection_reason' => null,
         ]);
 
+        if ($wasInitialApproval && $vendor->user) {
+            $result = ($this->adminNotificationService ?? app(AdminNotificationService::class))
+                ->notifyAccountApproved($vendor->user, 'vendor', $vendor->stall_name);
+            $this->lastApprovalWarning = $result['warning'];
+        }
+
         return $vendor;
+    }
+
+    public function getLastApprovalWarning(): ?string
+    {
+        return $this->lastApprovalWarning;
     }
 
     private function present(Vendor $vendor, ?string $stallNumber): array

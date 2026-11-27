@@ -32,6 +32,11 @@ class VendorManagementController extends Controller
     {
         $this->vendorService->activate($vendor);
 
-        return back()->with('success', "Vendor \"{$vendor->stall_name}\" has been activated.");
+        $response = back()->with('success', "Vendor \"{$vendor->stall_name}\" has been activated.");
+        if ($warning = $this->vendorService->getLastApprovalWarning()) {
+            $response->with('warning', $warning);
+        }
+
+        return $response;
     }
 }

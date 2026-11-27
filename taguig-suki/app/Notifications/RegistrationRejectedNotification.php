@@ -2,15 +2,11 @@
 
 namespace App\Notifications;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class RegistrationRejectedNotification extends Notification implements ShouldQueue
+class RegistrationRejectedNotification extends Notification
 {
-    use Queueable;
-
     public function __construct(
         protected string $reason,
         protected string $rejectedByType = 'user',
@@ -35,7 +31,7 @@ class RegistrationRejectedNotification extends Notification implements ShouldQue
 
         return (new MailMessage)
             ->subject('TaguigSuki — Your Registration Has Been Rejected')
-            ->greeting('Hello ' . ($notifiable->name ?? 'User') . ',')
+            ->greeting('Hello '.($notifiable->name ?? 'User').',')
             ->line("We regret to inform you that your {$typeLabel} registration on TaguigSuki has been rejected by the administrator.")
             ->line('**Reason for rejection:**')
             ->line($this->reason)
@@ -55,7 +51,7 @@ class RegistrationRejectedNotification extends Notification implements ShouldQue
             'type' => 'registration_rejected',
             'rejected_by_type' => $this->rejectedByType,
             'reason' => $this->reason,
-            'message' => 'Your registration has been rejected. Reason: ' . $this->reason,
+            'message' => 'Your registration has been rejected. Reason: '.$this->reason,
         ];
     }
 }

@@ -25,7 +25,14 @@ class VendorApprovalController extends Controller
 
     public function approve(Vendor $vendor)
     {
-        return back()->with('success', "Vendor '{$this->approvalService->approve($vendor)->stall_name}' has been approved.");
+        $approved = $this->approvalService->approve($vendor);
+
+        $response = back()->with('success', "Vendor '{$approved->stall_name}' has been approved.");
+        if ($warning = $this->approvalService->getLastApprovalWarning()) {
+            $response->with('warning', $warning);
+        }
+
+        return $response;
     }
 
     public function reject(RejectVendorRequest $request, Vendor $vendor)
