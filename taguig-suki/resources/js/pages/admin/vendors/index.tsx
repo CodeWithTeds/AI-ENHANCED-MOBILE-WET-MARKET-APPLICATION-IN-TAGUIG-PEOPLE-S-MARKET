@@ -109,6 +109,20 @@ export default function VendorManagementIndex({
         }
     }
 
+    function handleApprove(vendor: Vendor) {
+        if (
+            confirm(
+                `Approve vendor "${vendor.stall_name}"? An approval email will be sent to their registered email.`,
+            )
+        ) {
+            router.post(
+                `/admin/dashboard/vendors/${vendor.id}/approve`,
+                {},
+                { preserveScroll: true },
+            );
+        }
+    }
+
     function handleActivate(vendor: Vendor) {
         if (
             confirm(
@@ -338,6 +352,19 @@ export default function VendorManagementIndex({
                                                         View
                                                     </button>
                                                     {vendor.status ===
+                                                    'pending' ? (
+                                                        <button
+                                                            onClick={() =>
+                                                                handleApprove(
+                                                                    vendor,
+                                                                )
+                                                            }
+                                                            className="inline-flex items-center gap-1 rounded-lg bg-[#488562] px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#3a6e50]"
+                                                        >
+                                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                                            Approve
+                                                        </button>
+                                                    ) : vendor.status ===
                                                     'suspended' ? (
                                                         <button
                                                             onClick={() =>

@@ -64,7 +64,6 @@ export default function PendingApprovalIndex({ vendors, stats }: Props) {
         if (confirm(`Approve vendor "${vendor.stall_name}"?`)) {
             router.post(`/admin/dashboard/vendors/${vendor.id}/approve`, {}, {
                 preserveScroll: true,
-                onSuccess: () => toast.success(`Vendor "${vendor.stall_name}" approved!`),
                 onError: () => toast.error('Failed to approve vendor'),
             });
         }

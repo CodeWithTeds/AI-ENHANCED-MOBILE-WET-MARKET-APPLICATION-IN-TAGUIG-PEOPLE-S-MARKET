@@ -163,9 +163,23 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
     }
 
     function handleApproveVerif(user: AppUser) {
-        if (!user.verification?.id) return;
-        if (!confirm(`Approve ID verification for "${user.name}" (${user.verification.id_type})?`)) return;
-        router.post(`/admin/dashboard/verifications/${user.verification.id}/approve`, {}, { preserveScroll: true });
+        if (user.verification?.id) {
+            if (!confirm(`Approve ID verification for "${user.name}" (${user.verification.id_type})?`)) {
+                return;
+            }
+
+            router.post(`/admin/dashboard/verifications/${user.verification.id}/approve`, {}, { preserveScroll: true });
+
+            return;
+        }
+
+        if (user.vendor?.status === 'pending') {
+            if (!confirm(`Approve vendor "${user.vendor.stall_name}" (${user.email})?`)) {
+                return;
+            }
+
+            router.post(`/admin/dashboard/vendors/${user.vendor.id}/approve`, {}, { preserveScroll: true });
+        }
     }
 
     function handleRejectVerifConfirm(reason: string) {
@@ -536,7 +550,7 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                                           : 'Not submitted'}
                                                 </p>
                                                 <div className="mt-2 flex gap-1.5">
-                                                    {viewUser.verification.status === 'pending' && (
+                                                    {viewUser.verification.status === 'pending' && (viewUser.verification.id || viewUser.vendor?.status === 'pending') && (
                                                         <>
                                                             <button
                                                                 onClick={() => {
@@ -547,15 +561,17 @@ export default function UserManagementIndex({ users, stats, verificationStats, f
                                                             >
                                                                 Approve
                                                             </button>
-                                                            <button
-                                                                onClick={() => {
-                                                                    setViewUser(null);
-                                                                    setRejectVerif(viewUser);
-                                                                }}
-                                                                className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
-                                                            >
-                                                                Reject
-                                                            </button>
+                                                            {viewUser.verification.id && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setViewUser(null);
+                                                                        setRejectVerif(viewUser);
+                                                                    }}
+                                                                    className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100"
+                                                                >
+                                                                    Reject
+                                                                </button>
+                                                            )}
                                                         </>
                                                     )}
                                                     {vImgUrl && (
@@ -986,7 +1002,14 @@ function VerificationCell({ user, onPreview, onApprove, onReject }: { user: AppU
             <div className="flex items-center gap-1.5">
                 <VerificationBadge status="pending" />
                 <span className="text-[11px] font-medium text-amber-700">{v.id_type ?? 'Pending'}</span>
-                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                {v.id ? (
+                    <div className="flex gap-1">
+                        <button onClick={onApprove} className="rounded bg-[#488562] px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-[#3a6e50]" title="Approve">✓</button>
+                        <button onClick={onReject} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100" title="Reject">✕</button>
+                    </div>
+                ) : (
+                    <Clock className="h-3.5 w-3.5 text-amber-600" />
+                )}
             </div>
         );
     }
