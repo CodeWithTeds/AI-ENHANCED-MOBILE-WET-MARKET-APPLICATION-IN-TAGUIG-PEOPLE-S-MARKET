@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -26,6 +27,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
@@ -37,7 +39,16 @@ import { router } from 'expo-router';
 import { API_BASE_URL } from '@/config/api';
 import { useCart } from '@/context/CartContext';
 import { useFavorites } from '@/context/FavoritesContext';
-import { getProductDetail, type MarketProduct, type VendorComparisonItem } from '@/services/marketplace';
+import {
+  formatStockQuantity,
+  formatStocksAvailable,
+  getMaxOrderQuantity,
+  getProductDetail,
+  isProductOutOfStock,
+  validateOrderQuantity,
+  type MarketProduct,
+  type VendorComparisonItem,
+} from '@/services/marketplace';
 import { getProductReviews, type ReviewSummary } from '@/services/reviews';
 import { StarRatingDisplay } from '@/components/customer/StarRating';
 import { getCategoryConfig, getCategoryImage } from '@/constants/categories';
@@ -174,6 +185,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   const heartScaleAnim = useRef(new Animated.Value(1)).current;
 
   const [quantity, setQuantity] = useState(1);
+  const [qtyInput, setQtyInput] = useState('1');
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [snackVisible, setSnackVisible] = useState(false);
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,6 +202,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
     if (!product || !visible) return;
     getProductDetail(product.id)
       .then((detail) => {
+        setActiveProduct((prev) => ({ ...(prev ?? product), ...detail }));
         if (detail.comparison_vendors) {
           setComparisonVendors(detail.comparison_vendors);
           if (detail.comparison_vendors.length > 1) {
@@ -209,8 +222,38 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   const cartItem = displayProduct ? items.find((i) => i.product_id === displayProduct.id) : null;
   const isFav = displayProduct ? isProductFavorited(displayProduct.id) : false;
   const isWeightProduct = displayProduct ? displayProduct.unit.toLowerCase() === 'kg' : false;
-  const step = isWeightProduct ? 0.5 : 1;
-  const minQty = isWeightProduct ? 0.5 : 1;
+  const maxOrderQty = getMaxOrderQuantity(displayProduct);
+  const parsedQty = qtyInput.trim() === '' ? NaN : Number(qtyInput);
+  const isOutOfStock = isProductOutOfStock(displayProduct);
+  const qtyError = !displayProduct || isOutOfStock
+    ? null
+    : validateOrderQuantity(parsedQty, {
+        unit: displayProduct.unit,
+        stockQuantity: displayProduct.stock_quantity,
+        reorderLevel: displayProduct.reorder_level,
+      });
+  const stockAvailableLabel = formatStocksAvailable(
+    displayProduct?.stock_quantity,
+    displayProduct?.is_available ?? true,
+  );
+
+  function handleQtyTextChange(text: string) {
+    const cleaned = isWeightProduct
+      ? text.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+      : text.replace(/[^0-9]/g, '');
+    setQtyInput(cleaned);
+    const parsed = cleaned === '' ? NaN : Number(cleaned);
+    if (!Number.isNaN(parsed)) {
+      setQuantity(Math.round(parsed * 100) / 100);
+    } else {
+      setQuantity(0);
+    }
+  }
+
+  function applyQuickQuantity(val: number) {
+    setQuantity(val);
+    setQtyInput(String(val));
+  }
 
   const vendorHours = displayProduct?.vendor?.operating_hours ?? '4:00 AM - 8:00 PM';
   const isStoreOpen = displayProduct?.vendor?.is_open ?? computeIsOpen(displayProduct?.vendor?.opening_time, displayProduct?.vendor?.closing_time);
@@ -231,6 +274,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   useEffect(() => {
     if (visible) {
       setQuantity(1);
+      setQtyInput('1');
       setGalleryIndex(0);
       Animated.parallel([
         Animated.spring(slideAnim, {
@@ -269,7 +313,19 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   }, []);
 
   function handleAddToCart() {
-    if (!displayProduct) return;
+    if (!displayProduct || isOutOfStock || qtyError) return;
+
+    const existingCartQty = cartItem?.quantity ?? 0;
+    const cartCombinedError = validateOrderQuantity(parsedQty, {
+      unit: displayProduct.unit,
+      stockQuantity: displayProduct.stock_quantity,
+      reorderLevel: displayProduct.reorder_level,
+      extraExistingQty: existingCartQty,
+    });
+    if (cartCombinedError) {
+      Alert.alert('Quantity Limit Reached', cartCombinedError);
+      return;
+    }
 
     /* Button bounce */
     Animated.sequence([
@@ -285,6 +341,8 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
       unit: displayProduct.unit,
       category: displayProduct.category,
       image: displayProduct.image,
+      reorder_level: displayProduct.reorder_level ?? null,
+      stock_quantity: displayProduct.stock_quantity ?? null,
     }, quantity);
 
     /* Show snackbar */
@@ -294,7 +352,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
   }
 
   function handleBuyNow() {
-    if (!displayProduct || !displayProduct.is_available) return;
+    if (!displayProduct || isOutOfStock || qtyError) return;
 
     startBuyNow({
       product_id: displayProduct.id,
@@ -303,6 +361,8 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
       unit: displayProduct.unit,
       category: displayProduct.category,
       image: displayProduct.image,
+      reorder_level: displayProduct.reorder_level ?? null,
+      stock_quantity: displayProduct.stock_quantity ?? null,
     }, quantity);
 
     onClose();
@@ -387,6 +447,16 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           {/* Gradient overlay at bottom for readability */}
           <View style={styles.galleryGradient} />
 
+          {/* Out of Stock Overlay directly on the product picture */}
+          {isOutOfStock && (
+            <View style={styles.outOfStockGalleryOverlay}>
+              <View style={styles.outOfStockGalleryPill}>
+                <Ionicons name="close-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.outOfStockGalleryText}>OUT OF STOCK</Text>
+              </View>
+            </View>
+          )}
+
           {/* Close Button */}
           <TouchableOpacity style={styles.closeBtnOverlay} onPress={onClose} accessibilityLabel="Close">
             <Ionicons name="close" size={20} color="#374151" />
@@ -424,10 +494,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           </View>
 
           {/* Availability badge */}
-          <View style={[styles.availBadge, !displayProduct.is_available && styles.availBadgeUnavail]}>
-            <View style={[styles.availDot, !displayProduct.is_available && styles.availDotUnavail]} />
-            <Text style={[styles.availText, !displayProduct.is_available && styles.availTextUnavail]}>
-              {displayProduct.is_available ? 'Available' : 'Unavailable'}
+          <View style={[styles.availBadge, isOutOfStock && styles.availBadgeUnavail]}>
+            <View style={[styles.availDot, isOutOfStock && styles.availDotUnavail]} />
+            <Text style={[styles.availText, isOutOfStock && styles.availTextUnavail]}>
+              {isOutOfStock ? 'Out of Stock' : stockAvailableLabel}
             </Text>
           </View>
         </View>
@@ -548,6 +618,10 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                             name: item.name,
                             price: item.price,
                             unit: item.unit,
+                            is_available: item.is_available,
+                            is_out_of_stock: item.is_out_of_stock,
+                            stock_quantity: item.stock_quantity,
+                            reorder_level: item.reorder_level ?? displayProduct.reorder_level,
                             image: item.image ?? displayProduct.image,
                             vendor: {
                               id: item.vendor_id,
@@ -579,7 +653,9 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
                               <Text style={styles.vendorRowRating}>{item.rating.toFixed(1)}</Text>
                               <Text style={styles.vendorRowReviewCount}>({item.reviews_count} reviews)</Text>
                             </View>
-                            <Text style={styles.vendorRowStock}>• Stock: {item.stock_quantity} {item.unit}</Text>
+                            <Text style={styles.vendorRowStock}>
+                              • {formatStocksAvailable(item.stock_quantity, item.is_available)}
+                            </Text>
                           </View>
                         </View>
                         <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -608,18 +684,30 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             </View>
           )}
 
-          {/* Price + In-cart badge */}
+          {/* Price + Stock & In-cart badge */}
           <View style={styles.priceRow}>
             <View>
               <Text style={styles.priceLabel}>Price per {displayProduct.unit}</Text>
               <Text style={styles.price}>₱{Number(displayProduct.price).toFixed(2)}</Text>
             </View>
-            {inCart && cartItem ? (
-              <View style={styles.inCartBadge}>
-                <Ionicons name="cart" size={13} color="#1B6B45" />
-                <Text style={styles.inCartText}>{formatQty(cartItem.quantity)} {cartItem.unit} in cart</Text>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              <View style={[styles.stockRemainingPill, isOutOfStock && styles.stockRemainingPillOut]}>
+                <Ionicons
+                  name={isOutOfStock ? 'alert-circle-outline' : 'layers-outline'}
+                  size={13}
+                  color={isOutOfStock ? '#DC2626' : '#15803D'}
+                />
+                <Text style={[styles.stockRemainingText, isOutOfStock && styles.stockRemainingTextOut]}>
+                  {stockAvailableLabel}
+                </Text>
               </View>
-            ) : null}
+              {inCart && cartItem ? (
+                <View style={styles.inCartBadge}>
+                  <Ionicons name="cart" size={13} color="#1B6B45" />
+                  <Text style={styles.inCartText}>{formatQty(cartItem.quantity)} {cartItem.unit} in cart</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
 
           {/* Description */}
@@ -633,6 +721,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           {/* Info Grid */}
           <View style={styles.infoGrid}>
             <InfoTile icon="cube-outline" label="Unit" value={displayProduct.unit} />
+            <InfoTile icon="layers-outline" label="Remaining Stock" value={stockAvailableLabel} />
             <InfoTile icon="pricetag-outline" label="Category" value={categoryLabel} />
             <InfoTile
               icon="storefront-outline"
@@ -692,33 +781,46 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
           {/* Divider */}
           <View style={styles.divider} />
 
-          {/* Quantity Selector */}
+          {/* Direct Quantity Input Field */}
           <View style={styles.qtySection}>
-            <Text style={styles.qtyLabel}>Quantity{isWeightProduct ? ' (kg)' : ''}</Text>
-            <View style={styles.qtyControls}>
-              <TouchableOpacity
-                style={[styles.qtyBtn, quantity <= minQty && styles.qtyBtnDisabled]}
-                onPress={() => setQuantity((q) => Math.max(minQty, Math.round((q - step) * 100) / 100))}
-                accessibilityLabel="Decrease quantity"
-              >
-                <Ionicons name="remove" size={18} color={quantity <= minQty ? '#D1D5DB' : '#374151'} />
-              </TouchableOpacity>
-              <Text style={styles.qtyValue}>{formatQty(quantity)} {isWeightProduct ? 'kg' : displayProduct.unit}</Text>
-              <TouchableOpacity
-                style={styles.qtyBtn}
-                onPress={() => setQuantity((q) => Math.round((q + step) * 100) / 100)}
-                accessibilityLabel="Increase quantity"
-              >
-                <Ionicons name="add" size={18} color="#374151" />
-              </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.qtyLabel}>Quantity{isWeightProduct ? ' (kg)' : ''}</Text>
+              {maxOrderQty !== null && !isOutOfStock && (
+                <Text style={styles.qtyMaxHint}>
+                  Max {formatStockQuantity(maxOrderQty)} {displayProduct.unit} per order
+                </Text>
+              )}
+            </View>
+            <View style={styles.qtyInputWrap}>
+              <TextInput
+                style={[styles.qtyTextInput, Boolean(qtyError) && styles.qtyTextInputError]}
+                value={qtyInput}
+                onChangeText={handleQtyTextChange}
+                keyboardType={isWeightProduct ? 'decimal-pad' : 'number-pad'}
+                placeholder={isWeightProduct ? '0.5' : '1'}
+                placeholderTextColor="#9CA3AF"
+                editable={!isOutOfStock}
+                selectTextOnFocus
+                accessibilityLabel="Order quantity"
+              />
+              <Text style={styles.qtyUnitSuffix}>
+                {isWeightProduct ? 'kg' : displayProduct.unit}
+              </Text>
             </View>
           </View>
+
+          {Boolean(qtyError) && (
+            <View style={styles.qtyErrorBox}>
+              <Ionicons name="alert-circle-outline" size={14} color="#DC2626" />
+              <Text style={styles.qtyErrorText}>{qtyError}</Text>
+            </View>
+          )}
 
           {isWeightProduct && (
             <View style={styles.weightChipsRow}>
               <TouchableOpacity
                 style={[styles.weightChip, quantity === 0.5 && styles.weightChipActive]}
-                onPress={() => setQuantity(0.5)}
+                onPress={() => applyQuickQuantity(0.5)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.weightChipText, quantity === 0.5 && styles.weightChipTextActive]}>0.5 kg</Text>
@@ -726,7 +828,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.weightChip, quantity === 1 && styles.weightChipActive]}
-                onPress={() => setQuantity(1)}
+                onPress={() => applyQuickQuantity(1)}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.weightChipText, quantity === 1 && styles.weightChipTextActive]}>1 kg</Text>
@@ -734,7 +836,7 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
               </TouchableOpacity>
               <View style={styles.weightHint}>
                 <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
-                <Text style={styles.weightHintText}>Tap to select half or whole kilo</Text>
+                <Text style={styles.weightHintText}>Type any qty directly or tap a shortcut</Text>
               </View>
             </View>
           )}
@@ -752,28 +854,29 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
               <TouchableOpacity
                 style={[
                   styles.addToCartBtn,
-                  inCart && styles.addToCartBtnActive,
-                  !displayProduct.is_available && styles.addToCartBtnDisabled,
+                  inCart && !isOutOfStock && styles.addToCartBtnActive,
+                  (isOutOfStock || Boolean(qtyError)) && styles.addToCartBtnDisabled,
                 ]}
                 onPress={handleAddToCart}
-                disabled={!displayProduct.is_available}
+                disabled={isOutOfStock || Boolean(qtyError)}
                 activeOpacity={0.85}
-                accessibilityLabel={inCart ? 'Add more to cart' : 'Add to cart'}
+                accessibilityLabel={isOutOfStock ? 'Out of stock' : inCart ? 'Add more to cart' : 'Add to cart'}
               >
                 <Ionicons
-                  name={inCart ? 'cart' : 'cart-outline'}
+                  name={isOutOfStock ? 'close-circle-outline' : inCart ? 'cart' : 'cart-outline'}
                   size={19}
-                  color={inCart ? '#FFFFFF' : '#1B6B45'}
+                  color={isOutOfStock || qtyError ? '#9CA3AF' : inCart ? '#FFFFFF' : '#1B6B45'}
                 />
                 <Text
                   style={[
                     styles.addToCartBtnText,
-                    !inCart && displayProduct.is_available && styles.addToCartBtnTextOutline,
+                    !inCart && !isOutOfStock && !qtyError && styles.addToCartBtnTextOutline,
+                    (isOutOfStock || Boolean(qtyError)) && { color: '#9CA3AF' },
                   ]}
                   numberOfLines={1}
                 >
-                  {!displayProduct.is_available
-                    ? 'Unavailable'
+                  {isOutOfStock
+                    ? 'Out of Stock'
                     : inCart
                     ? 'Add More'
                     : 'Add to Cart'}
@@ -785,15 +888,17 @@ export function ProductDetailModal({ product, visible, onClose, onOpenVendorStor
             <TouchableOpacity
               style={[
                 styles.buyNowBtn,
-                !displayProduct.is_available && styles.buyNowBtnDisabled,
+                (isOutOfStock || Boolean(qtyError)) && styles.buyNowBtnDisabled,
               ]}
               onPress={handleBuyNow}
-              disabled={!displayProduct.is_available}
+              disabled={isOutOfStock || Boolean(qtyError)}
               activeOpacity={0.85}
-              accessibilityLabel="Buy now and checkout directly"
+              accessibilityLabel={isOutOfStock ? 'Out of stock' : 'Buy now and checkout directly'}
             >
-              <Ionicons name="flash" size={18} color="#FFFFFF" />
-              <Text style={styles.buyNowBtnText} numberOfLines={1}>Buy Now</Text>
+              <Ionicons name={isOutOfStock ? 'close-circle-outline' : 'flash'} size={18} color="#FFFFFF" />
+              <Text style={styles.buyNowBtnText} numberOfLines={1}>
+                {isOutOfStock ? 'Out of Stock' : 'Buy Now'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1483,6 +1588,107 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B6B45',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  stockRemainingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  stockRemainingPillOut: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  stockRemainingText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  stockRemainingTextOut: {
+    color: '#DC2626',
+  },
+  outOfStockGalleryOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(17, 24, 39, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outOfStockGalleryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  outOfStockGalleryText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+  },
+  qtyMaxHint: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  qtyInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qtyTextInput: {
+    width: 84,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#1B6B45',
+    backgroundColor: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  qtyTextInputError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+    color: '#DC2626',
+  },
+  qtyUnitSuffix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4B5563',
+    minWidth: 26,
+  },
+  qtyErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  qtyErrorText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });
 

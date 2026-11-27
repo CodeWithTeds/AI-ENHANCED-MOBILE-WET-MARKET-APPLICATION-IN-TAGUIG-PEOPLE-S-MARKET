@@ -22,11 +22,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
+  formatStocksAvailable,
   getCategories,
   getFeaturedProducts,
   browseProducts,
   searchProducts,
   getProductDetail,
+  isProductOutOfStock,
   type MarketProduct,
 } from '@/services/marketplace';
 import { searchRecipe, type RecipeResult, type MatchingProductVendor } from '@/services/recipe';
@@ -420,6 +422,7 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
   const [imageError, setImageError] = useState(false);
 
   const imageUrl = getProductImageUrl(product.image);
+  const outOfStock = isProductOutOfStock(product);
 
   function handleToggleFavorite() {
     Animated.sequence([
@@ -452,17 +455,29 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
             resizeMode="cover"
           />
         )}
+        {/* Out-of-Stock Overlay directly on Product Picture */}
+        {outOfStock && (
+          <View style={styles.outOfStockPictureOverlay}>
+            <View style={styles.outOfStockPictureBadge}>
+              <Ionicons name="close-circle" size={13} color="#FFFFFF" />
+              <Text style={styles.outOfStockPictureText}>Out of Stock</Text>
+            </View>
+          </View>
+        )}
+
         {/* Badge */}
-        {product.is_ai_recommended ? (
-          <View style={[styles.productBadge, { backgroundColor: '#B45309' }]}>
-            <Ionicons name="sparkles" size={10} color="#FFFFFF" />
-            <Text style={[styles.productBadgeText, { color: '#FFFFFF' }]}>AI Top Rated</Text>
-          </View>
-        ) : (
-          <View style={styles.productBadge}>
-            <Ionicons name="star" size={10} color="#F97316" />
-            <Text style={styles.productBadgeText}>Fresh</Text>
-          </View>
+        {!outOfStock && (
+          product.is_ai_recommended ? (
+            <View style={[styles.productBadge, { backgroundColor: '#B45309' }]}>
+              <Ionicons name="sparkles" size={10} color="#FFFFFF" />
+              <Text style={[styles.productBadgeText, { color: '#FFFFFF' }]}>AI Top Rated</Text>
+            </View>
+          ) : (
+            <View style={styles.productBadge}>
+              <Ionicons name="star" size={10} color="#F97316" />
+              <Text style={styles.productBadgeText}>Fresh</Text>
+            </View>
+          )
         )}
         {/* Heart */}
         <TouchableOpacity style={styles.productHeartBtn} onPress={handleToggleFavorite}>
@@ -497,10 +512,17 @@ function ProductCard({ product, onPress }: { product: MarketProduct; onPress: ()
               </Text>
             )}
           </View>
-          <Text style={{ fontSize: 10, fontWeight: '600', color: product.is_available ? '#059669' : '#DC2626' }}>
-            {product.is_available ? 'In Stock' : 'Out of stock'}
-          </Text>
         </View>
+
+        <Text
+          style={[
+            styles.productStockLabel,
+            outOfStock && styles.productStockLabelOut,
+          ]}
+          numberOfLines={1}
+        >
+          {formatStocksAvailable(product.stock_quantity, product.is_available)}
+        </Text>
 
         <View style={styles.productBottom}>
           <Text style={styles.productUnit}>per {product.unit}</Text>
@@ -763,6 +785,9 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
               unit: cv.unit,
               category: cv.category,
               image: cv.image,
+              is_available: cv.is_available,
+              is_out_of_stock: cv.is_out_of_stock,
+              stock_quantity: cv.stock_quantity,
               vendor_id: cv.vendor_id,
               vendor_name: cv.stall_name,
               stall_name: cv.stall_name,
@@ -783,9 +808,10 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
   }, [product.product_id, product.vendors]);
 
   const added = isInCart(selectedVendor.product_id);
+  const selectedOutOfStock = isProductOutOfStock(selectedVendor);
 
   function handleAddToCart() {
-    if (added) return;
+    if (added || selectedOutOfStock) return;
 
     // Bounce animation
     Animated.sequence([
@@ -812,6 +838,7 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
   }
 
   function handleBuyNow() {
+    if (selectedOutOfStock) return;
     startBuyNow({
       product_id: selectedVendor.product_id,
       product_name: selectedVendor.product_name,
@@ -869,19 +896,21 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
           <View style={styles.matchingProductActions}>
             <TouchableOpacity
               onPress={handleAddToCart}
+              disabled={selectedOutOfStock}
               activeOpacity={0.8}
-              accessibilityLabel={added ? 'Added to cart' : 'Add to cart'}
+              accessibilityLabel={selectedOutOfStock ? 'Out of stock' : added ? 'Added to cart' : 'Add to cart'}
             >
               <Animated.View
                 style={[
                   styles.addCartBtn,
                   added && styles.addCartBtnAdded,
+                  selectedOutOfStock && { opacity: 0.4, backgroundColor: '#9CA3AF' },
                   { transform: [{ scale: scaleAnim }] },
                 ]}
               >
                 <Animated.View style={{ opacity: added ? checkAnim : 1 }}>
                   <Ionicons
-                    name={added ? 'checkmark' : 'add'}
+                    name={selectedOutOfStock ? 'close' : added ? 'checkmark' : 'add'}
                     size={18}
                     color="#FFFFFF"
                   />
@@ -891,8 +920,9 @@ function MarketProductRow({ product }: { product: NonNullable<RecipeResult['matc
 
             <TouchableOpacity
               onPress={handleBuyNow}
+              disabled={selectedOutOfStock}
               activeOpacity={0.8}
-              style={styles.buyCartBtn}
+              style={[styles.buyCartBtn, selectedOutOfStock && { opacity: 0.4, backgroundColor: '#9CA3AF' }]}
               accessibilityLabel="Buy now directly"
             >
               <Ionicons name="flash" size={15} color="#FFFFFF" />
@@ -1101,6 +1131,33 @@ const styles = StyleSheet.create({
   cardDot: { width: 6, height: 6, borderRadius: 3 },
   cardDotOpen: { backgroundColor: '#16A34A' },
   cardDotClosed: { backgroundColor: '#DC2626' },
+  productStockLabel: { fontSize: 11, fontWeight: '700', color: '#059669', marginTop: 4 },
+  productStockLabelOut: { color: '#DC2626' },
+  outOfStockPictureOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(17, 24, 39, 0.48)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outOfStockPictureBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  outOfStockPictureText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
   productBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   productUnit: { fontSize: 11, color: '#9CA3AF' },
   productPrice: { fontSize: 16, fontWeight: '800', color: '#1B6B45' },

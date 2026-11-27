@@ -36,7 +36,12 @@ import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 import { getCustomerToken } from '@/services/customer-auth';
 import {
+  cancelCustomerOrder,
+  canCustomerCancelOrder,
+  formatCountdown,
   getOrderTracking,
+  getPickupCancelUnlockAt,
+  getRemainingSeconds,
   ORDER_STATUS_CONFIG,
   PAYMENT_STATUS_CONFIG,
   type Order,
@@ -44,6 +49,7 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from '@/services/orders';
+import { useNowTick } from '@/hooks/useNowTick';
 import {
   getEligibleReviews,
   type EligibleOrder,
@@ -75,6 +81,7 @@ export default function OrderTrackingScreen() {
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [complaintModalOpen, setComplaintModalOpen] = useState(false);
   const [targetComplaintStall, setTargetComplaintStall] = useState<TargetStall | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const fetchTracking = useCallback(async () => {
     const authToken = await getAuthToken();
@@ -151,6 +158,56 @@ export default function OrderTrackingScreen() {
     fetchTracking();
   }
 
+  const handleCancelOrder = () => {
+    if (!order) return;
+    Alert.alert(
+      'Cancel Order',
+      'Cancel this order before the vendor confirms it? Reserved stock will be returned immediately.',
+      [
+        { text: 'Keep Order', style: 'cancel' },
+        {
+          text: 'Yes, Cancel Order',
+          style: 'destructive',
+          onPress: async () => {
+            const authToken = await getAuthToken();
+            if (!authToken) return;
+            setCancelling(true);
+            try {
+              const updated = await cancelCustomerOrder(
+                order.id,
+                authToken,
+                'Cancelled by customer before vendor confirmation',
+              );
+              setOrder((prev) => (prev ? { ...prev, ...updated } : updated));
+              await fetchTracking();
+              Alert.alert('Order Cancelled', 'Your order has been cancelled and stock has been restored.');
+            } catch (err) {
+              const msg = err instanceof ApiError ? err.message : 'Could not cancel order.';
+              Alert.alert('Cannot Cancel Order', msg);
+              await fetchTracking();
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const confirmationDeadline =
+    order?.status === 'pending' && order.confirmation_status === 'pending_confirmation'
+      ? order.confirmation_expires_at
+      : null;
+  const pickupDeadline = order?.status === 'ready' ? getPickupCancelUnlockAt(order) : null;
+  const activeTimerDeadline = confirmationDeadline ?? pickupDeadline;
+  const nowMs = useNowTick(
+    Boolean(activeTimerDeadline),
+    confirmationDeadline,
+    confirmationDeadline ? fetchTracking : undefined,
+  );
+  const confirmationRemaining = getRemainingSeconds(confirmationDeadline, nowMs);
+  const pickupRemaining = getRemainingSeconds(pickupDeadline, nowMs);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -188,34 +245,26 @@ export default function OrderTrackingScreen() {
         {/* Current status banner */}
         <StatusBanner order={order} />
 
-        {/* COD Confirmation Required Card */}
-        {order.payment_method === 'cash' && (order.confirmation_status === 'pending_confirmation' || order.status === 'pending_confirmation') && (
-          <View style={styles.codCard}>
-            <View style={styles.codHeaderRow}>
-              <View style={styles.codIconWrap}>
-                <Ionicons name="alert-circle" size={20} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.codTitle}>Order Confirmation Required (COD)</Text>
-                <Text style={styles.codSub}>
-                  Vendors require your confirmation before butchering and preparing fresh items. Please confirm in the order chat.
-                </Text>
-              </View>
-            </View>
+        {/* 1-Hour Countdown Banners */}
+        {order.status === 'pending' && order.confirmation_status === 'pending_confirmation' && confirmationRemaining !== null && (
+          <View style={styles.timerBannerAmber}>
+            <Ionicons name="timer-outline" size={18} color="#D97706" />
+            <Text style={styles.timerTextAmber}>
+              {confirmationRemaining > 0
+                ? `Please confirm within ${formatCountdown(confirmationRemaining)} before automatic cancellation.`
+                : '1-hour confirmation window expired — cancelling order…'}
+            </Text>
+          </View>
+        )}
 
-            <TouchableOpacity
-              style={styles.codChatBtn}
-              activeOpacity={0.85}
-              onPress={() => {
-                const vendorItem = order.items.find((i) => !!i.vendor) ?? order.items[0];
-                const vId = vendorItem?.vendor?.id ?? vendorItem?.vendor_id ?? 1;
-                const vName = vendorItem?.vendor?.stall_name ?? 'Vendor';
-                setActiveChatVendor({ id: vId, stall_name: vName });
-              }}
-            >
-              <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
-              <Text style={styles.codChatBtnText}>Open Order Chat to Confirm</Text>
-            </TouchableOpacity>
+        {order.status === 'ready' && pickupRemaining !== null && (
+          <View style={styles.timerBannerGreen}>
+            <Ionicons name="time-outline" size={18} color="#15803D" />
+            <Text style={styles.timerTextGreen}>
+              {pickupRemaining > 0
+                ? `Pickup countdown: ${formatCountdown(pickupRemaining)} remaining. Vendor may cancel if unclaimed after 1 hour.`
+                : '1 hour has passed since Ready for Pickup. Vendor may now cancel if still unclaimed.'}
+            </Text>
           </View>
         )}
 
@@ -292,6 +341,34 @@ export default function OrderTrackingScreen() {
           ))}
         </View>
 
+        {/* Customer Cancel Order Action (enabled only while vendor has NOT confirmed) */}
+        {!isCompleted && !isCancelled && (
+          canCustomerCancelOrder(order) ? (
+            <TouchableOpacity
+              style={[styles.cancelOrderBtn, cancelling && { opacity: 0.6 }]}
+              activeOpacity={0.85}
+              disabled={cancelling}
+              onPress={handleCancelOrder}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color="#DC2626" />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+                  <Text style={styles.cancelOrderBtnText}>Cancel Order</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.cancelLockedBtn} accessibilityState={{ disabled: true }}>
+              <Ionicons name="lock-closed-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.cancelLockedBtnText}>
+                Cancel Order Disabled — Confirmed by Vendor
+              </Text>
+            </View>
+          )
+        )}
+
         {/* Customer Receipt Action Button (Item 9) */}
         <TouchableOpacity
           style={styles.receiptActionBtn}
@@ -354,9 +431,11 @@ export default function OrderTrackingScreen() {
 
         {isCancelled && (
           <View style={styles.cancelledNote}>
-            <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
+            <Ionicons name="information-circle-outline" size={16} color="#DC2626" />
             <Text style={styles.cancelledNoteText}>
-              This order was cancelled. Contact the market administrator if you have questions.
+              {order.cancellation_reason
+                ? order.cancellation_reason
+                : 'This order was cancelled. Contact the market administrator if you have questions.'}
             </Text>
           </View>
         )}
@@ -550,13 +629,20 @@ function StatusBanner({ order }: { order: Order }) {
   const cfg = ORDER_STATUS_CONFIG[order.status as OrderStatus];
 
   if (order.status === 'cancelled') {
+    const cancelTitle =
+      order.cancelled_by === 'system'
+        ? 'Auto-Cancelled (Timeout)'
+        : order.cancelled_by === 'vendor'
+        ? 'Cancelled by Vendor'
+        : 'Cancelled';
+
     return (
       <View style={[styles.statusBanner, { backgroundColor: '#FEE2E2' }]}>
         <Ionicons name="close-circle" size={22} color="#DC2626" />
-        <View>
-          <Text style={[styles.statusBannerLabel, { color: '#DC2626' }]}>Cancelled</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.statusBannerLabel, { color: '#DC2626' }]}>{cancelTitle}</Text>
           <Text style={[styles.statusBannerSub, { color: '#B91C1C' }]}>
-            This order was cancelled
+            {order.cancellation_reason ?? 'This order was cancelled'}
           </Text>
         </View>
       </View>
@@ -1238,4 +1324,54 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  timerBannerAmber: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  timerTextAmber: { flex: 1, fontSize: 12, fontWeight: '600', color: '#B45309', lineHeight: 17 },
+  timerBannerGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  timerTextGreen: { flex: 1, fontSize: 12, fontWeight: '600', color: '#15803D', lineHeight: 17 },
+  cancelOrderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#DC2626',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  cancelOrderBtnText: { fontSize: 14, fontWeight: '700', color: '#DC2626' },
+  cancelLockedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginBottom: 12,
+  },
+  cancelLockedBtnText: { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
 });

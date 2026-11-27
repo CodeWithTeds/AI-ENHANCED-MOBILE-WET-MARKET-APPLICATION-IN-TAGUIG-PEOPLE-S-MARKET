@@ -42,7 +42,13 @@ import {
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
 import { getProductImageUrl } from '@/utils/image';
-import { getProductDetail } from '@/services/marketplace';
+import {
+  formatStockQuantity,
+  getMaxOrderQuantity,
+  getProductDetail,
+  isProductOutOfStock,
+  validateOrderQuantity,
+} from '@/services/marketplace';
 
 type PaymentMethod = 'cash' | 'gcash' | 'maya';
 
@@ -95,6 +101,61 @@ export default function CartScreen() {
 
   // Full-screen QR viewer (tap a vendor QR to enlarge for scanning)
   const [qrViewer, setQrViewer] = useState<{ uri: string; stallName: string } | null>(null);
+  const [productLimitsMap, setProductLimitsMap] = useState<
+    Record<number, { isOutOfStock: boolean; stockQuantity: number | null; reorderLevel: number | null }>
+  >({});
+
+  // Check live stock and reorder level limits for items in cart / Buy Now right when Cart loads
+  useEffect(() => {
+    if (items.length === 0) {
+      setProductLimitsMap({});
+      return;
+    }
+
+    let cancelled = false;
+    Promise.allSettled(items.map((item) => getProductDetail(item.product_id))).then((results) => {
+      if (cancelled) return;
+      const next: Record<
+        number,
+        { isOutOfStock: boolean; stockQuantity: number | null; reorderLevel: number | null }
+      > = {};
+      results.forEach((res, idx) => {
+        if (res.status === 'fulfilled') {
+          const d = res.value;
+          next[items[idx].product_id] = {
+            isOutOfStock: isProductOutOfStock(d),
+            stockQuantity: d.stock_quantity ?? null,
+            reorderLevel: d.reorder_level ?? null,
+          };
+        }
+      });
+      setProductLimitsMap(next);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [itemsKey]);
+
+  const outOfStockItemNames = items
+    .filter((item) => productLimitsMap[item.product_id]?.isOutOfStock)
+    .map((item) => item.product_name);
+  const hasOutOfStockItems = outOfStockItemNames.length > 0;
+
+  const limitViolationMsg =
+    items
+      .map((item) => {
+        const limits = productLimitsMap[item.product_id];
+        if (limits?.isOutOfStock) return null;
+        const err = validateOrderQuantity(item.quantity, {
+          unit: item.unit,
+          stockQuantity: limits?.stockQuantity ?? item.stock_quantity,
+          reorderLevel: limits?.reorderLevel ?? item.reorder_level,
+        });
+        return err ? `${item.product_name}: ${err}` : null;
+      })
+      .find(Boolean) ?? null;
+  const hasBlockedOrderItems = hasOutOfStockItems || Boolean(limitViolationMsg);
 
   // Fetch vendor GCash/Maya details when user selects e-wallet
   useEffect(() => {
@@ -329,8 +390,20 @@ export default function CartScreen() {
         </Text>
       </View>
 
-      {/* Error Banner */}
-      {errorMsg ? (
+      {/* Error / Out-of-Stock / Limit Banner */}
+      {hasOutOfStockItems ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+          <Text style={styles.errorText}>
+            Out of stock: {outOfStockItemNames.join(', ')}. Please remove out-of-stock items to continue.
+          </Text>
+        </View>
+      ) : limitViolationMsg ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+          <Text style={styles.errorText}>{limitViolationMsg}</Text>
+        </View>
+      ) : errorMsg ? (
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
           <Text style={styles.errorText}>{errorMsg}</Text>
@@ -349,14 +422,20 @@ export default function CartScreen() {
         <View style={styles.stepSectionHeaderBox}>
           <Text style={styles.stepSectionHeader}>Step 1: Review Items & Stalls</Text>
         </View>
-        {items.map((item) => (
-          <CartItemCard
-            key={item.product_id}
-            item={item}
-            disabled={placing}
-            isBuyNow={isBuyNow}
-          />
-        ))}
+        {items.map((item) => {
+          const limits = productLimitsMap[item.product_id];
+          return (
+            <CartItemCard
+              key={item.product_id}
+              item={item}
+              disabled={placing}
+              isBuyNow={isBuyNow}
+              outOfStock={Boolean(limits?.isOutOfStock)}
+              stockQuantity={limits?.stockQuantity ?? item.stock_quantity}
+              reorderLevel={limits?.reorderLevel ?? item.reorder_level}
+            />
+          );
+        })}
 
         {/* Payment Method */}
         <View style={styles.sectionBox}>
@@ -638,10 +717,10 @@ export default function CartScreen() {
           style={[
             styles.checkoutBtn,
             isBuyNow && styles.checkoutBtnBuyNow,
-            placing && styles.checkoutBtnDisabled,
+            (placing || hasBlockedOrderItems) && styles.checkoutBtnDisabled,
           ]}
           onPress={handlePlaceOrder}
-          disabled={placing}
+          disabled={placing || hasBlockedOrderItems}
           activeOpacity={0.85}
         >
           {placing ? (
@@ -652,12 +731,18 @@ export default function CartScreen() {
           ) : (
             <>
               <Ionicons
-                name={isBuyNow ? 'flash' : 'bag-check-outline'}
+                name={hasBlockedOrderItems ? 'close-circle-outline' : isBuyNow ? 'flash' : 'bag-check-outline'}
                 size={20}
                 color="#FFFFFF"
               />
               <Text style={styles.checkoutBtnText}>
-                {isBuyNow ? 'Buy Now · Place Order' : 'Place Order'}
+                {hasOutOfStockItems
+                  ? 'Out of Stock Item in Cart'
+                  : limitViolationMsg
+                  ? 'Fix Quantity Limit First'
+                  : isBuyNow
+                  ? 'Buy Now · Place Order'
+                  : 'Place Order'}
               </Text>
             </>
           )}
@@ -718,19 +803,28 @@ function CartItemCard({
   item,
   disabled,
   isBuyNow,
+  outOfStock = false,
+  stockQuantity = null,
+  reorderLevel = null,
 }: {
   item: CartItem;
   disabled: boolean;
   isBuyNow?: boolean;
+  outOfStock?: boolean;
+  stockQuantity?: number | null;
+  reorderLevel?: number | null;
 }) {
   const { updateQuantity, removeItem, updateBuyNowQuantity, clearBuyNow } = useCart();
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const isWeight = item.unit.toLowerCase() === 'kg';
-  const step = isWeight ? 0.5 : 1;
-  const minQty = isWeight ? 0.5 : 1;
 
   const [imageUrl, setImageUrl] = useState<string | null>(() => getProductImageUrl(item.image));
   const [imageFailed, setImageFailed] = useState(false);
+  const [qtyText, setQtyText] = useState<string>(() => formatQty(item.quantity));
+
+  useEffect(() => {
+    setQtyText(formatQty(item.quantity));
+  }, [item.quantity]);
 
   useEffect(() => {
     if (item.image) {
@@ -767,27 +861,36 @@ function CartItemCard({
     );
   }
 
-  function handleDecrement() {
-    const next = Math.round((item.quantity - step) * 100) / 100;
-    if (next < minQty - 0.001) {
-      handleRemove();
-    } else if (isBuyNow) {
-      updateBuyNowQuantity(next);
-    } else {
-      updateQuantity(item.product_id, next);
-    }
-  }
+  const maxAllowed = getMaxOrderQuantity({
+    stock_quantity: stockQuantity,
+    reorder_level: reorderLevel,
+  });
+  const parsedQty = qtyText.trim() === '' ? NaN : Number(qtyText);
+  const itemQtyError = outOfStock
+    ? null
+    : validateOrderQuantity(parsedQty, {
+        unit: item.unit,
+        stockQuantity,
+        reorderLevel,
+      });
 
-  function handleIncrement() {
-    const next = Math.round((item.quantity + step) * 100) / 100;
+  function handleQtyChange(text: string) {
+    const cleaned = isWeight
+      ? text.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+      : text.replace(/[^0-9]/g, '');
+    setQtyText(cleaned);
+
+    const parsed = cleaned === '' ? NaN : Number(cleaned);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return;
+    }
+    const normalized = Math.round(parsed * 100) / 100;
     if (isBuyNow) {
-      updateBuyNowQuantity(next);
+      updateBuyNowQuantity(normalized);
     } else {
-      updateQuantity(item.product_id, next);
+      updateQuantity(item.product_id, normalized);
     }
   }
-
-  const isAtMin = item.quantity <= minQty + 0.001;
 
   return (
     <Animated.View style={[styles.itemCard, { opacity: fadeAnim }]}>
@@ -806,28 +909,48 @@ function CartItemCard({
             resizeMode="cover"
           />
         )}
+        {outOfStock && (
+          <View style={confirmStyles.itemOosOverlay}>
+            <Text style={confirmStyles.itemOosOverlayText}>OUT</Text>
+          </View>
+        )}
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
-        <Text style={styles.itemMeta}>{item.category} · per {item.unit}</Text>
-        <Text style={styles.itemPrice}>₱{(item.price * item.quantity).toFixed(2)}</Text>
-        {isWeight && <Text style={styles.weightHint}>{formatQty(item.quantity)} kg</Text>}
+        <Text style={styles.itemMeta}>
+          {item.category} · per {item.unit}
+          {maxAllowed !== null && !outOfStock ? ` · Max ${formatStockQuantity(maxAllowed)}` : ''}
+        </Text>
+        {outOfStock ? (
+          <Text style={confirmStyles.itemOosLabel}>Out of Stock — remove to proceed</Text>
+        ) : itemQtyError ? (
+          <Text style={confirmStyles.itemOosLabel}>{itemQtyError}</Text>
+        ) : (
+          <Text style={styles.itemPrice}>₱{(item.price * item.quantity).toFixed(2)}</Text>
+        )}
       </View>
       <View style={styles.qtyRow}>
-        <TouchableOpacity style={styles.qtyBtn} onPress={handleDecrement} disabled={disabled}>
-          <Ionicons
-            name={isAtMin ? 'trash-outline' : 'remove'}
-            size={14}
-            color={isAtMin ? '#DC2626' : '#374151'}
-          />
-        </TouchableOpacity>
-        <Text style={styles.qtyText}>{formatQty(item.quantity)} {isWeight ? 'kg' : ''}</Text>
+        <TextInput
+          style={[confirmStyles.cartQtyInput, Boolean(itemQtyError) && confirmStyles.cartQtyInputError]}
+          value={qtyText}
+          onChangeText={handleQtyChange}
+          onBlur={() => {
+            if (!qtyText.trim() || Number.isNaN(parsedQty) || parsedQty <= 0) {
+              setQtyText(formatQty(item.quantity));
+            }
+          }}
+          keyboardType={isWeight ? 'decimal-pad' : 'number-pad'}
+          editable={!disabled && !outOfStock}
+          selectTextOnFocus
+          accessibilityLabel={`Quantity for ${item.product_name}`}
+        />
         <TouchableOpacity
-          style={[styles.qtyBtn, styles.qtyBtnAdd]}
-          onPress={handleIncrement}
+          style={confirmStyles.removeItemBtn}
+          onPress={handleRemove}
           disabled={disabled}
+          accessibilityLabel={`Remove ${item.product_name}`}
         >
-          <Ionicons name="add" size={14} color="#FFFFFF" />
+          <Ionicons name="trash-outline" size={16} color="#DC2626" />
         </TouchableOpacity>
       </View>
     </Animated.View>
@@ -928,16 +1051,16 @@ function OrderConfirmationModal({
             </View>
           )}
 
-          {/* COD Perishables Notice & Chat Confirmation */}
+          {/* COD Direct Confirmation Banner */}
           {order.payment_method === 'cash' && (
-            <View style={[confirmStyles.paymentStatusBanner, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#D97706" />
+            <View style={[confirmStyles.paymentStatusBanner, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+              <Ionicons name="checkmark-circle-outline" size={16} color="#16A34A" />
               <View style={{ flex: 1 }}>
-                <Text style={[confirmStyles.paymentStatusLabel, { color: '#92400E' }]}>
-                  COD Order Confirmation
+                <Text style={[confirmStyles.paymentStatusLabel, { color: '#166534' }]}>
+                  COD Order Confirmed
                 </Text>
                 <Text style={confirmStyles.paymentStatusHint}>
-                  To avoid unclaimed fresh items, vendor will request confirmation in chat before butchering/preparing your order.
+                  Your Cash on Pickup order has been automatically confirmed and sent directly to the vendor to process.
                 </Text>
               </View>
             </View>
@@ -1457,4 +1580,45 @@ const confirmStyles = StyleSheet.create({
 
   secondaryBtn: { paddingVertical: 12, marginTop: 6 },
   secondaryBtnText: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
+  itemOosOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(220, 38, 38, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  itemOosOverlayText: { fontSize: 10, fontWeight: '900', color: '#FFFFFF' },
+  itemOosLabel: { fontSize: 11, fontWeight: '800', color: '#DC2626', marginTop: 2 },
+  cartQtyInput: {
+    width: 56,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#1B6B45',
+    backgroundColor: '#F9FAFB',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+    paddingHorizontal: 6,
+  },
+  cartQtyInputError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+    color: '#DC2626',
+  },
+  removeItemBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

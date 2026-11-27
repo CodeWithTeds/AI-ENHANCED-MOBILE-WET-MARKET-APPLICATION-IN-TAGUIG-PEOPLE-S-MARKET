@@ -18,6 +18,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFavorites, type FavoriteRecipe, type FavoriteProduct } from '@/context/FavoritesContext';
 import { useCart } from '@/context/CartContext';
+import { isProductOutOfStock } from '@/services/marketplace';
 import { getCategoryEmoji, getCategoryImage } from '@/constants/categories';
 import { getProductImageUrl } from '@/utils/image';
 
@@ -169,27 +170,31 @@ function ExpandedRecipe({ recipe }: { recipe: FavoriteRecipe }) {
           <Text style={[styles.expandSection, { marginTop: 12 }]}>🛒 Order from Market</Text>
           {recipe.matching_products.map((mp, i) => {
             const inCart = isInCart(mp.product_id);
+            const outOfStock = isProductOutOfStock(mp);
             return (
               <View key={i} style={styles.marketRow}>
                 <View style={styles.marketInfo}>
                   <Text style={styles.marketName}>{mp.product_name}</Text>
                   <Text style={styles.marketMeta}>
                     {mp.category} · per {mp.unit}{mp.vendor_name ? ` · ${mp.vendor_name}` : ''}
+                    {outOfStock ? ' · Out of Stock' : ''}
                   </Text>
                 </View>
                 <Text style={styles.marketPrice}>₱{Number(mp.price).toFixed(0)}</Text>
                 <View style={styles.marketRowActions}>
                   <TouchableOpacity
-                    style={[styles.addBtn, inCart && styles.addBtnAdded]}
-                    onPress={() => !inCart && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, image: mp.image })}
-                    accessibilityLabel="Add to cart"
+                    style={[styles.addBtn, inCart && !outOfStock && styles.addBtnAdded, outOfStock && { opacity: 0.4, backgroundColor: '#9CA3AF' }]}
+                    onPress={() => !inCart && !outOfStock && addItem({ product_id: mp.product_id, product_name: mp.product_name, price: mp.price, unit: mp.unit, category: mp.category, image: mp.image })}
+                    disabled={outOfStock}
+                    accessibilityLabel={outOfStock ? 'Out of stock' : 'Add to cart'}
                   >
-                    <Ionicons name={inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
+                    <Ionicons name={outOfStock ? 'close' : inCart ? 'checkmark' : 'add'} size={15} color="#FFFFFF" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.buyBtn}
-                    onPress={() => handleBuyNow(mp)}
-                    accessibilityLabel="Buy now directly"
+                    style={[styles.buyBtn, outOfStock && { opacity: 0.4, backgroundColor: '#9CA3AF' }]}
+                    onPress={() => !outOfStock && handleBuyNow(mp)}
+                    disabled={outOfStock}
+                    accessibilityLabel={outOfStock ? 'Out of stock' : 'Buy now directly'}
                   >
                     <Ionicons name="flash" size={13} color="#FFFFFF" />
                   </TouchableOpacity>

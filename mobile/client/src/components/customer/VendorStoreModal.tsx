@@ -22,7 +22,13 @@ import { router } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { getCategoryImage } from '@/constants/categories';
 import { getProductImageUrl } from '@/utils/image';
-import { getVendorStore, type MarketProduct, type VendorStoreData } from '@/services/marketplace';
+import {
+  formatStocksAvailable,
+  getVendorStore,
+  isProductOutOfStock,
+  type MarketProduct,
+  type VendorStoreData,
+} from '@/services/marketplace';
 import { getVendorReviews, resolveReviewImageUrl, type Review, type ReviewSummary } from '@/services/reviews';
 import { useCart } from '@/context/CartContext';
 import { MarketLocationModal } from './MarketLocationModal';
@@ -56,6 +62,7 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
   const { addItem, startBuyNow } = useCart();
 
   function handleBuyNow(item: MarketProduct) {
+    if (isProductOutOfStock(item)) return;
     startBuyNow({
       product_id: item.id,
       product_name: item.name,
@@ -295,7 +302,8 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
                   product={item as MarketProduct}
                   isOpen={isOpen}
                   onSelect={() => onSelectProduct?.(item as MarketProduct)}
-                  onAddToCart={() =>
+                  onAddToCart={() => {
+                    if (isProductOutOfStock(item as MarketProduct)) return;
                     addItem(
                       {
                         product_id: item.id,
@@ -305,9 +313,9 @@ export function VendorStoreModal({ vendorId, visible, onClose, onSelectProduct }
                         category: item.category,
                         image: item.image,
                       },
-                      1
-                    )
-                  }
+                      1,
+                    );
+                  }}
                   onBuyNow={() => handleBuyNow(item as MarketProduct)}
                 />
               ) : (
@@ -434,23 +442,31 @@ function StoreProductRow({
 }) {
   const [imgError, setImgError] = useState(false);
   const imageUrl = getProductImageUrl(product.image);
+  const outOfStock = isProductOutOfStock(product);
 
   return (
     <TouchableOpacity style={styles.productRow} onPress={onSelect} activeOpacity={0.8}>
-      {imageUrl && !imgError ? (
-        <Image
-          source={{ uri: imageUrl }}
-          style={styles.productImg}
-          resizeMode="cover"
-          onError={() => setImgError(true)}
-        />
-      ) : (
-        <Image
-          source={getCategoryImage(product.category)}
-          style={styles.productImg}
-          resizeMode="cover"
-        />
-      )}
+      <View style={styles.productImgWrap}>
+        {imageUrl && !imgError ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.productImg}
+            resizeMode="cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <Image
+            source={getCategoryImage(product.category)}
+            style={styles.productImg}
+            resizeMode="cover"
+          />
+        )}
+        {outOfStock && (
+          <View style={styles.thumbOosOverlay}>
+            <Text style={styles.thumbOosText}>OUT</Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={1}>
@@ -471,24 +487,33 @@ function StoreProductRow({
         <Text style={styles.productPrice}>
           ₱{Number(product.price).toFixed(2)} <Text style={styles.productUnit}>/ {product.unit}</Text>
         </Text>
+        <Text
+          style={[
+            styles.productStockLabel,
+            outOfStock && styles.productStockLabelOut,
+          ]}
+          numberOfLines={1}
+        >
+          {formatStocksAvailable(product.stock_quantity, product.is_available)}
+        </Text>
       </View>
 
       <View style={styles.productActions}>
         <TouchableOpacity
-          style={[styles.addBtn, !product.is_available && styles.btnDisabled]}
+          style={[styles.addBtn, outOfStock && styles.btnDisabled]}
           onPress={onAddToCart}
-          disabled={!product.is_available}
-          accessibilityLabel="Add to cart"
+          disabled={outOfStock}
+          accessibilityLabel={outOfStock ? 'Out of stock' : 'Add to cart'}
         >
           <Ionicons name="cart-outline" size={13} color="#1B6B45" />
           <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.buyBtn, !product.is_available && styles.btnDisabled]}
+          style={[styles.buyBtn, outOfStock && styles.btnDisabled]}
           onPress={onBuyNow}
-          disabled={!product.is_available}
-          accessibilityLabel="Buy now directly"
+          disabled={outOfStock}
+          accessibilityLabel={outOfStock ? 'Out of stock' : 'Buy now directly'}
         >
           <Ionicons name="flash" size={12} color="#FFFFFF" />
           <Text style={styles.buyBtnText}>Buy</Text>
@@ -1033,5 +1058,37 @@ const styles = StyleSheet.create({
   lightboxImage: {
     width: '100%',
     height: '80%',
+  },
+  productStockLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+    marginTop: 2,
+  },
+  productImgWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  thumbOosOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(220, 38, 38, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbOosText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  productStockLabelOut: {
+    color: '#DC2626',
   },
 });

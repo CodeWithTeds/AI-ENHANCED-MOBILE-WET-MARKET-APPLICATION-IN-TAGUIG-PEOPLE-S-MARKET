@@ -27,10 +27,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   cancelOrderChat,
-  confirmOrderChat,
   getOrderChat,
   markChatRead,
-  requestOrderConfirmation,
   sendChatMessage,
   type ConfirmationStatus,
   type OrderChatMessage,
@@ -53,7 +51,7 @@ interface OrderChatModalProps {
 }
 
 const CUSTOMER_QUICK_CLARIFICATIONS = [
-  'Confirming! Please prepare my order.',
+  'Hi! Checking on my order preparation status.',
   'What time will this be ready for pickup?',
   'Please pack items into separate bags.',
   'Are all meats/veggies freshly cut today?',
@@ -158,53 +156,6 @@ export const OrderChatModal: React.FC<OrderChatModalProps> = ({
     }
   };
 
-  const handleRequestConfirmation = async () => {
-    setActionLoading(true);
-    try {
-      const msg = await requestOrderConfirmation(orderId, vendorId, token);
-      setMessages((prev) => [...prev, msg]);
-      setConversation((prev) => (prev ? { ...prev, confirmation_status: 'pending_confirmation' } : null));
-      onStatusUpdated?.('pending_confirmation');
-      Alert.alert('Request Sent', 'Customer has been notified to confirm this order.');
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Failed to request confirmation.';
-      Alert.alert('Error', msg);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleConfirmOrder = async () => {
-    Alert.alert(
-      'Confirm Order',
-      'Are you sure you want to confirm this order? The vendor will now start butchering and preparing your items.',
-      [
-        { text: 'Wait, not yet', style: 'cancel' },
-        {
-          text: 'Yes, Confirm',
-          style: 'default',
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              const res = await confirmOrderChat(orderId, vendorId, token);
-              setMessages((prev) => [...prev, res.message]);
-              setConversation((prev) => (prev ? { ...prev, confirmation_status: 'confirmed' } : null));
-              onStatusUpdated?.('confirmed');
-              Alert.alert('Confirmed!', 'Your order has been confirmed. Vendor can now safely prepare it.');
-              setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-            } catch (err) {
-              const msg = err instanceof ApiError ? err.message : 'Failed to confirm order.';
-              Alert.alert('Error', msg);
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ],
-    );
-  };
-
   const handleCancelOrder = async () => {
     Alert.alert(
       'Cancel Order',
@@ -236,7 +187,10 @@ export const OrderChatModal: React.FC<OrderChatModalProps> = ({
   };
 
   const confirmationStatus: ConfirmationStatus =
-    conversation?.confirmation_status ?? (isCod ? 'pending_confirmation' : 'none');
+    conversation?.confirmation_status ?? (isCod ? 'confirmed' : 'none');
+
+  const vendorConfirmed =
+    conversation?.order?.status !== undefined && conversation.order.status !== 'pending';
 
   const displayOrderNum = conversation?.order?.order_number ?? orderNumber ?? `ORD-${orderId}`;
   const displayStall = conversation?.vendor?.stall_name ?? stallName ?? 'Vendor Stall';
@@ -292,66 +246,43 @@ export const OrderChatModal: React.FC<OrderChatModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* COD Confirmation Alert Banner */}
-          {confirmationStatus === 'pending_confirmation' && (
-            <View style={styles.alertBanner}>
-              <View style={styles.alertIconWrap}>
-                <Ionicons name="alert-circle" size={20} color="#D97706" />
-              </View>
-              <View style={styles.alertContent}>
-                <Text style={styles.alertTitle}>Awaiting Order Confirmation</Text>
-                <Text style={styles.alertDesc}>
-                  {userRole === 'customer'
-                    ? 'Vendors only prepare fresh perishable goods once you confirm you will claim this COD order.'
-                    : 'Customer must confirm this order before you butcher or prepare perishable items.'}
-                </Text>
-
-                {userRole === 'customer' && (
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={[styles.confirmBtn, actionLoading && styles.btnDisabled]}
-                      onPress={handleConfirmOrder}
-                      disabled={actionLoading}
-                    >
-                      <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                      <Text style={styles.confirmBtnText}>Confirm Order</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.cancelBtn, actionLoading && styles.btnDisabled]}
-                      onPress={handleCancelOrder}
-                      disabled={actionLoading}
-                    >
-                      <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
-                      <Text style={styles.cancelBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {userRole === 'vendor' && (
-                  <TouchableOpacity
-                    style={[styles.nudgeBtn, actionLoading && styles.btnDisabled]}
-                    onPress={handleRequestConfirmation}
-                    disabled={actionLoading}
-                  >
-                    <Ionicons name="notifications-outline" size={14} color="#D97706" />
-                    <Text style={styles.nudgeBtnText}>Re-send Confirmation Request</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          )}
-
+          {/* Confirmed / Ready for Preparation Banner */}
           {confirmationStatus === 'confirmed' && (
             <View style={[styles.alertBanner, styles.confirmedBanner]}>
               <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
               <View style={styles.alertContent}>
-                <Text style={[styles.alertTitle, { color: '#166534' }]}>Order Confirmed</Text>
+                <Text style={[styles.alertTitle, { color: '#166534' }]}>
+                  {isCod ? 'COD Order Confirmed' : 'Order Confirmed'}
+                </Text>
                 <Text style={[styles.alertDesc, { color: '#15803D' }]}>
                   {userRole === 'customer'
-                    ? 'You confirmed this order. The vendor is now preparing your items!'
-                    : 'Customer confirmed! You can now safely prepare and pack the items.'}
+                    ? 'Your order has been placed and sent directly to the vendor stall for preparation.'
+                    : 'Customer confirmed this order upon checkout. You may process and prepare the items.'}
                 </Text>
+              </View>
+            </View>
+          )}
+
+          {confirmationStatus === 'pending_confirmation' && userRole === 'customer' && !vendorConfirmed && (
+            <View style={styles.alertBanner}>
+              <View style={styles.alertIconWrap}>
+                <Ionicons name="information-circle" size={20} color="#059669" />
+              </View>
+              <View style={styles.alertContent}>
+                <Text style={styles.alertTitle}>Order Placed (COD)</Text>
+                <Text style={styles.alertDesc}>
+                  Your order was sent directly to the vendor stall. You may cancel below if the vendor has not confirmed it yet.
+                </Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.cancelBtn, actionLoading && styles.btnDisabled]}
+                    onPress={handleCancelOrder}
+                    disabled={actionLoading}
+                  >
+                    <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
+                    <Text style={styles.cancelBtnText}>Cancel Order</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           )}

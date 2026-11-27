@@ -27,7 +27,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { getToken } from '@/services/auth';
+import { useNowTick } from '@/hooks/useNowTick';
 import {
+  cancelVendorOrder,
+  canVendorCancelReadyOrder,
+  formatCountdown,
+  getPickupCancelUnlockAt,
+  getRemainingSeconds,
   getVendorOrders,
   getVendorPortionStatus,
   getVendorPortionTotal,
@@ -41,13 +47,13 @@ import {
 } from '@/services/orders';
 import { ApiError } from '@/services/api';
 import { OrderChatModal } from '@/components/chat/OrderChatModal';
-import { requestOrderConfirmation } from '@/services/chat';
 
 const STATUS_TABS: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'all',        label: 'All' },
   { value: 'pending',    label: 'Pending' },
   { value: 'ready',      label: 'Ready' },
   { value: 'completed',  label: 'Completed' },
+  { value: 'cancelled',  label: 'Cancelled' },
 ];
 
 /** Next logical status a vendor can set — Processing removed; pending→confirmed auto-advances to Ready on server */
@@ -67,8 +73,8 @@ export default function VendorOrdersScreen() {
   const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
-  const [requestingConfirmationId, setRequestingConfirmationId] = useState<number | null>(null);
   const [chatOrder, setChatOrder] = useState<{ order: Order; vendorId: number; customerName: string } | null>(null);
   const [currentToken, setCurrentToken] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +139,61 @@ export default function VendorOrdersScreen() {
     ? orders
     : orders.filter((o) => getVendorPortionStatus(o) === activeTab);
 
+  const hasActiveTimers = orders.some((o) => {
+    const portionStatus = getVendorPortionStatus(o);
+    return (
+      (portionStatus === 'pending' && o.confirmation_status === 'pending_confirmation' && Boolean(o.confirmation_expires_at)) ||
+      portionStatus === 'ready'
+    );
+  });
+  const earliestConfirmationDeadline =
+    orders
+      .filter(
+        (o) =>
+          getVendorPortionStatus(o) === 'pending' &&
+          o.confirmation_status === 'pending_confirmation' &&
+          Boolean(o.confirmation_expires_at),
+      )
+      .map((o) => o.confirmation_expires_at!)
+      .sort()[0] ?? null;
+  const nowMs = useNowTick(hasActiveTimers, earliestConfirmationDeadline, fetchOrders);
+
+  function handleVendorCancelOrder(order: Order) {
+    const authTokenPromise = Promise.resolve(token ?? getToken());
+    Alert.alert(
+      'Cancel Unclaimed Order',
+      `1 hour has passed since Order #${order.order_number} became Ready for Pickup. Cancel this unclaimed order and restore stock?`,
+      [
+        { text: 'Keep Order', style: 'cancel' },
+        {
+          text: 'Yes, Cancel Order',
+          style: 'destructive',
+          onPress: async () => {
+            const authToken = await authTokenPromise;
+            if (!authToken) return;
+            setCancellingId(order.id);
+            try {
+              const updated = await cancelVendorOrder(
+                order.id,
+                authToken,
+                'Customer did not pick up within 1 hour of being ready.',
+              );
+              setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+              await fetchOrders();
+              Alert.alert('Order Cancelled', 'Order cancelled and reserved stock has been restored.');
+            } catch (err) {
+              const msg = err instanceof ApiError ? err.message : 'Unable to cancel order.';
+              Alert.alert('Cannot Cancel Order', msg);
+              await fetchOrders();
+            } finally {
+              setCancellingId(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   async function handleStatusUpdate(order: Order) {
     const portionStatus = getVendorPortionStatus(order);
     const next = NEXT_STATUS[portionStatus];
@@ -174,29 +235,6 @@ export default function VendorOrdersScreen() {
         },
       ],
     );
-  }
-
-  async function handleRequestConfirmation(order: Order) {
-    const authToken = token ?? await getToken();
-    const vendorId = order.items[0]?.vendor_id;
-    if (!authToken || !vendorId) return;
-
-    setRequestingConfirmationId(order.id);
-    try {
-      await requestOrderConfirmation(order.id, vendorId, authToken);
-      setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, confirmation_status: 'pending_confirmation' } : o)),
-      );
-      Alert.alert(
-        'Confirmation Requested',
-        `A real-time notification has been sent to ${order.user?.name ?? 'the customer'} requesting order confirmation before preparing items.`,
-      );
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Failed to request confirmation';
-      Alert.alert('Error', msg);
-    } finally {
-      setRequestingConfirmationId(null);
-    }
   }
 
   async function handleVerifyPayment(order: Order, action: 'verify' | 'reject') {
@@ -373,12 +411,13 @@ export default function VendorOrdersScreen() {
               order={order}
               expanded={expandedId === order.id}
               updating={updatingId === order.id}
+              cancelling={cancellingId === order.id}
               verifying={verifyingId === order.id}
-              requestingConfirmation={requestingConfirmationId === order.id}
+              nowMs={nowMs}
               onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
               onStatusUpdate={() => handleStatusUpdate(order)}
+              onCancelOrder={() => handleVendorCancelOrder(order)}
               onVerify={(action) => handleVerifyPayment(order, action)}
-              onRequestConfirmation={() => handleRequestConfirmation(order)}
               onOpenChat={() => {
                 const vendorId = order.items[0]?.vendor_id ?? 1;
                 const customerName = order.user?.name ?? 'Customer';
@@ -414,23 +453,25 @@ function VendorOrderCard({
   order,
   expanded,
   updating,
+  cancelling = false,
   verifying,
-  requestingConfirmation,
+  nowMs,
   onToggle,
   onStatusUpdate,
+  onCancelOrder,
   onVerify,
-  onRequestConfirmation,
   onOpenChat,
 }: {
   order: Order;
   expanded: boolean;
   updating: boolean;
+  cancelling?: boolean;
   verifying: boolean;
-  requestingConfirmation?: boolean;
+  nowMs: number;
   onToggle: () => void;
   onStatusUpdate: () => void;
+  onCancelOrder?: () => void;
   onVerify: (action: 'verify' | 'reject') => void;
-  onRequestConfirmation?: () => void;
   onOpenChat?: () => void;
 }) {
   // This card always reflects the vendor's OWN portion — not the overall order.
@@ -453,6 +494,15 @@ function VendorOrderCard({
     hour: '2-digit', minute: '2-digit',
   });
 
+  const confirmationDeadline =
+    portionStatus === 'pending' && order.confirmation_status === 'pending_confirmation'
+      ? order.confirmation_expires_at
+      : null;
+  const pickupDeadline = portionStatus === 'ready' ? getPickupCancelUnlockAt(order) : null;
+  const confirmationRemaining = getRemainingSeconds(confirmationDeadline, nowMs);
+  const pickupRemaining = getRemainingSeconds(pickupDeadline, nowMs);
+  const canCancelReady = portionStatus === 'ready' && canVendorCancelReadyOrder(order, undefined, nowMs);
+
   return (
     <View style={[styles.card, { borderLeftColor: needsVerification ? '#D97706' : statusCfg.color }]}>
       {/* Compact Single-Line Header (collapsed) */}
@@ -474,19 +524,12 @@ function VendorOrderCard({
 
         <View style={styles.cardHeaderRight}>
           <Text style={styles.cardTotal}>₱{portionTotal.toFixed(2)}</Text>
-          {order.payment_method === 'cash' && order.confirmation_status === 'pending_confirmation' ? (
-            <View style={[styles.statusPill, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="alert-circle-outline" size={11} color="#D97706" />
-              <Text style={[styles.statusText, { color: '#D97706' }]}>Pending Confirm</Text>
-            </View>
-          ) : (
-            <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
-              <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
-              <Text style={[styles.statusText, { color: statusCfg.color }]}>
-                {statusCfg.label}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.statusPill, { backgroundColor: statusCfg.bg }]}>
+            <Ionicons name={statusCfg.icon as any} size={11} color={statusCfg.color} />
+            <Text style={[styles.statusText, { color: statusCfg.color }]}>
+              {statusCfg.label}
+            </Text>
+          </View>
           {needsVerification && (
             <View style={[styles.statusPill, { backgroundColor: paymentCfg.bg }]}>
               <Ionicons name={paymentCfg.icon as any} size={11} color={paymentCfg.color} />
@@ -638,28 +681,22 @@ function VendorOrderCard({
             <View
               style={[
                 styles.codVendorBanner,
-                order.confirmation_status === 'confirmed'
-                  ? styles.codVendorConfirmed
-                  : order.confirmation_status === 'cancelled'
+                order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
                   ? styles.codVendorCancelled
-                  : styles.codVendorPending,
+                  : styles.codVendorConfirmed,
               ]}
             >
               <Ionicons
                 name={
-                  order.confirmation_status === 'confirmed'
-                    ? 'checkmark-circle'
-                    : order.confirmation_status === 'cancelled'
+                  order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
                     ? 'close-circle'
-                    : 'alert-circle'
+                    : 'checkmark-circle'
                 }
                 size={18}
                 color={
-                  order.confirmation_status === 'confirmed'
-                    ? '#16A34A'
-                    : order.confirmation_status === 'cancelled'
+                  order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
                     ? '#DC2626'
-                    : '#D97706'
+                    : '#16A34A'
                 }
               />
               <View style={{ flex: 1 }}>
@@ -668,38 +705,34 @@ function VendorOrderCard({
                     styles.codVendorTitle,
                     {
                       color:
-                        order.confirmation_status === 'confirmed'
-                          ? '#166534'
-                          : order.confirmation_status === 'cancelled'
+                        order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
                           ? '#991B1B'
-                          : '#92400E',
+                          : '#166534',
                     },
                   ]}
                 >
-                  {order.confirmation_status === 'confirmed'
-                    ? 'Customer Confirmed (COD)'
-                    : order.confirmation_status === 'cancelled'
-                    ? 'Order Cancelled (COD)'
-                    : 'Awaiting Customer Confirmation (COD)'}
+                  {order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
+                    ? (order.cancelled_by === 'system'
+                      ? 'Auto-Cancelled (Timeout)'
+                      : order.cancelled_by === 'vendor'
+                      ? 'Cancelled by Vendor'
+                      : 'Order Cancelled (COD)')
+                    : 'COD Order Confirmed at Checkout'}
                 </Text>
                 <Text
                   style={[
                     styles.codVendorSub,
                     {
                       color:
-                        order.confirmation_status === 'confirmed'
-                          ? '#15803D'
-                          : order.confirmation_status === 'cancelled'
+                        order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
                           ? '#B91C1C'
-                          : '#B45309',
+                          : '#15803D',
                     },
                   ]}
                 >
-                  {order.confirmation_status === 'confirmed'
-                    ? 'Customer confirmed. You may now safely butcher and prepare fresh items!'
-                    : order.confirmation_status === 'cancelled'
-                    ? 'Customer cancelled. Items were not prepared.'
-                    : 'Vendor should request confirmation before preparing perishable goods to avoid unclaimed orders.'}
+                  {order.confirmation_status === 'cancelled' || portionStatus === 'cancelled'
+                    ? (order.cancellation_reason ?? 'Order was cancelled and stock was preserved.')
+                    : 'Customer confirmed upon placing the order. You may proceed to confirm and prepare items immediately.'}
                 </Text>
               </View>
             </View>
@@ -717,34 +750,42 @@ function VendorOrderCard({
             </TouchableOpacity>
           )}
 
-          {/* Request Confirmation Button (For COD pending orders) */}
-          {order.payment_method === 'cash' &&
-            order.confirmation_status !== 'confirmed' &&
-            order.confirmation_status !== 'cancelled' &&
-            onRequestConfirmation && (
-              <TouchableOpacity
-                style={styles.requestConfirmBtn}
-                onPress={onRequestConfirmation}
-                disabled={requestingConfirmation}
-                activeOpacity={0.85}
-              >
-                {requestingConfirmation ? (
-                  <ActivityIndicator size="small" color="#D97706" />
-                ) : (
-                  <>
-                    <Ionicons name="notifications-outline" size={16} color="#D97706" />
-                    <Text style={styles.requestConfirmBtnText}>Request Order Confirmation</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+          {/* 1-Hour Customer Confirmation Countdown on Pending COD Orders */}
+          {portionStatus === 'pending' &&
+            order.confirmation_status === 'pending_confirmation' &&
+            confirmationRemaining !== null && (
+              <View style={styles.timerBoxAmber}>
+                <Ionicons name="timer-outline" size={16} color="#D97706" />
+                <Text style={styles.timerBoxAmberText}>
+                  {confirmationRemaining > 0
+                    ? `Customer confirmation timer: ${formatCountdown(confirmationRemaining)} remaining before auto-cancel.`
+                    : '1-hour confirmation window expired — auto-cancelling order…'}
+                </Text>
+              </View>
             )}
+
+          {/* 1-Hour Pickup Countdown & Control on Ready Orders */}
+          {portionStatus === 'ready' && (
+            <View style={canCancelReady ? styles.timerBoxRed : styles.timerBoxGreen}>
+              <Ionicons
+                name={canCancelReady ? 'alert-circle-outline' : 'time-outline'}
+                size={16}
+                color={canCancelReady ? '#DC2626' : '#059669'}
+              />
+              <Text style={canCancelReady ? styles.timerBoxRedText : styles.timerBoxGreenText}>
+                {pickupRemaining !== null && pickupRemaining > 0
+                  ? `Pickup countdown: ${formatCountdown(pickupRemaining)} left. Vendor Cancel unlocks after 1 hr if unclaimed.`
+                  : '1 hour elapsed without pickup — you may cancel this unclaimed order to restore stock.'}
+              </Text>
+            </View>
+          )}
 
           {/* Status Update Button */}
           {nextCfg && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: nextCfg.color }]}
               onPress={onStatusUpdate}
-              disabled={updating}
+              disabled={updating || cancelling}
               activeOpacity={0.85}
             >
               {updating ? (
@@ -763,6 +804,36 @@ function VendorOrderCard({
             </TouchableOpacity>
           )}
 
+          {/* Vendor Cancel Order Control on Ready for Pickup (>= 1 hour unclaimed) */}
+          {portionStatus === 'ready' && (
+            canCancelReady ? (
+              <TouchableOpacity
+                style={[styles.vendorCancelBtn, cancelling && { opacity: 0.6 }]}
+                onPress={onCancelOrder}
+                disabled={cancelling || updating}
+                activeOpacity={0.85}
+              >
+                {cancelling ? (
+                  <ActivityIndicator size="small" color="#DC2626" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={17} color="#DC2626" />
+                    <Text style={styles.vendorCancelBtnText}>Cancel Order (Unclaimed &gt; 1 hr)</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.vendorCancelLockedBtn} accessibilityState={{ disabled: true }}>
+                <Ionicons name="lock-closed-outline" size={15} color="#9CA3AF" />
+                <Text style={styles.vendorCancelLockedText}>
+                  {pickupRemaining !== null
+                    ? `Cancel Order (Available in ${formatCountdown(pickupRemaining)})`
+                    : 'Cancel Order (Available after 1 hr ready)'}
+                </Text>
+              </View>
+            )
+          )}
+
           {portionStatus === 'completed' && (
             <View style={[styles.statusRow, { backgroundColor: '#F0FDF4' }]}>
               <Ionicons name="checkmark-done-circle" size={18} color="#16A34A" />
@@ -776,7 +847,18 @@ function VendorOrderCard({
           {portionStatus === 'cancelled' && (
             <View style={[styles.statusRow, { backgroundColor: '#FEF2F2' }]}>
               <Ionicons name="close-circle" size={18} color="#DC2626" />
-              <Text style={[styles.statusRowText, { color: '#B91C1C' }]}>Order cancelled</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.statusRowText, { color: '#B91C1C' }]}>
+                  {order.cancelled_by === 'system'
+                    ? 'Order auto-cancelled (1-hr timeout)'
+                    : order.cancelled_by === 'customer'
+                    ? 'Order cancelled by customer'
+                    : 'Order cancelled'}
+                </Text>
+                {!!order.cancellation_reason && (
+                  <Text style={styles.cancelledReasonSub}>{order.cancellation_reason}</Text>
+                )}
+              </View>
             </View>
           )}
         </View>
@@ -1098,4 +1180,70 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#D97706',
   },
+  timerBoxAmber: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  timerBoxAmberText: { flex: 1, fontSize: 11, fontWeight: '600', color: '#B45309', lineHeight: 15 },
+  timerBoxGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  timerBoxGreenText: { flex: 1, fontSize: 11, fontWeight: '600', color: '#047857', lineHeight: 15 },
+  timerBoxRed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  timerBoxRedText: { flex: 1, fontSize: 11, fontWeight: '600', color: '#B91C1C', lineHeight: 15 },
+  vendorCancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 11,
+    marginTop: 8,
+  },
+  vendorCancelBtnText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
+  vendorCancelLockedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  vendorCancelLockedText: { fontSize: 12, fontWeight: '600', color: '#9CA3AF' },
+  cancelledReasonSub: { fontSize: 11, color: '#991B1B', marginTop: 2 },
 });
